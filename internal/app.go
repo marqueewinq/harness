@@ -7,5 +7,4 @@ type App struct {
 	Git    *GitClient
 }
 
-// Stubs -- replaced by real implementations in later tasks
-type DB struct{}
+
