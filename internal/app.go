@@ -9,4 +9,3 @@ type App struct {
 
 // Stubs -- replaced by real implementations in later tasks
 type DB struct{}
-type GitClient struct{}
