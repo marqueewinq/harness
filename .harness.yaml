@@ -1,0 +1,33 @@
+# Harness dogfooding itself
+main_branch: main
+worktree_dir: .worktrees
+
+checks:
+  test:
+    run: make test
+  build:
+    run: make build
+    needs: [test]
+
+merge:
+  require:
+    checks: [build]
+    review: approved
+  strategy: merge
+  rerun_checks: true
+
+review:
+  type: agent
+  prompt: |
+    Review this change for: correctness, test coverage, Go conventions.
+    You have access to the full codebase.
+
+    Previous review comments:
+    {{previous_comments}}
+
+    Task description:
+    {{task_description}}
+
+    After reviewing, call one of:
+      harness record-review approve
+      harness record-review request-changes --comment "your comments here"
