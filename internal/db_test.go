@@ -124,11 +124,11 @@ func TestReviewCRUD(t *testing.T) {
 
 	db.CreateTask("test", "test-branch", ".worktrees/test", "main", "")
 
-	err = db.RecordReview("task-001", "request_changes", "fix the edge case")
+	err = db.RecordReview("task-001", "request_changes", "fix the edge case", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = db.RecordReview("task-001", "approve", "")
+	err = db.RecordReview("task-001", "approve", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,6 +381,83 @@ func TestGetQueuePositionMultiple(t *testing.T) {
 	}
 	if pos3 != 3 {
 		t.Errorf("position of task-003 = %d, want 3", pos3)
+	}
+}
+
+func TestRecordReviewWithCommitSHA(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("test", "test-branch", ".worktrees/test", "main", "")
+
+	sha := "abc123def456abc123def456abc123def456abc1"
+	err = db.RecordReview("task-001", "approve", "", sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reviews, err := db.GetReviews("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviews) != 1 {
+		t.Fatalf("len(reviews) = %d, want 1", len(reviews))
+	}
+	if reviews[0].CommitSHA != sha {
+		t.Errorf("CommitSHA = %q, want %q", reviews[0].CommitSHA, sha)
+	}
+}
+
+func TestGetLatestApproval(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("test", "test-branch", ".worktrees/test", "main", "")
+
+	// Record request_changes, then approve with SHA
+	db.RecordReview("task-001", "request_changes", "fix it", "")
+	sha := "abc123def456abc123def456abc123def456abc1"
+	db.RecordReview("task-001", "approve", "", sha)
+
+	approval, err := db.GetLatestApproval("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approval == nil {
+		t.Fatal("expected non-nil approval")
+	}
+	if approval.Decision != "approve" {
+		t.Errorf("Decision = %q, want %q", approval.Decision, "approve")
+	}
+	if approval.CommitSHA != sha {
+		t.Errorf("CommitSHA = %q, want %q", approval.CommitSHA, sha)
+	}
+}
+
+func TestGetLatestApprovalNone(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("test", "test-branch", ".worktrees/test", "main", "")
+
+	approval, err := db.GetLatestApproval("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approval != nil {
+		t.Errorf("expected nil approval, got %+v", approval)
 	}
 }
 

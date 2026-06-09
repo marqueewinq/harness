@@ -37,7 +37,6 @@ func TestInvalidTransitions(t *testing.T) {
 		{StateInProgress, StateMerged},
 		{StateChecksPassed, StateMerged},
 		{StateMerged, StateInProgress},
-		{StateApproved, StateInProgress},
 		{StateQueued, StateChecksPassed},
 	}
 
@@ -77,6 +76,12 @@ func TestClosedIsTerminal(t *testing.T) {
 	}
 	if len(targets) != 0 {
 		t.Errorf("StateClosed should have no outgoing transitions, got %v", targets)
+	}
+}
+
+func TestApprovedToInProgress(t *testing.T) {
+	if !ValidTransition(StateApproved, StateInProgress) {
+		t.Error("expected APPROVED -> IN_PROGRESS to be valid")
 	}
 }
 

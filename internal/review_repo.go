@@ -1,26 +1,30 @@
 package internal
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 type Review struct {
 	ID        int
 	TaskID    string
 	Decision  string
 	Comment   string
+	CommitSHA string
 	CreatedAt time.Time
 }
 
-func (db *DB) RecordReview(taskID, decision, comment string) error {
+func (db *DB) RecordReview(taskID, decision, comment, commitSHA string) error {
 	_, err := db.conn.Exec(
-		`INSERT INTO reviews (task_id, decision, comment) VALUES (?, ?, ?)`,
-		taskID, decision, comment,
+		`INSERT INTO reviews (task_id, decision, comment, commit_sha) VALUES (?, ?, ?, ?)`,
+		taskID, decision, comment, commitSHA,
 	)
 	return err
 }
 
 func (db *DB) GetReviews(taskID string) ([]Review, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, task_id, decision, comment, created_at
+		`SELECT id, task_id, decision, comment, commit_sha, created_at
 		 FROM reviews WHERE task_id = ? ORDER BY created_at ASC`, taskID,
 	)
 	if err != nil {
@@ -31,10 +35,27 @@ func (db *DB) GetReviews(taskID string) ([]Review, error) {
 	var reviews []Review
 	for rows.Next() {
 		var r Review
-		if err := rows.Scan(&r.ID, &r.TaskID, &r.Decision, &r.Comment, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.TaskID, &r.Decision, &r.Comment, &r.CommitSHA, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		reviews = append(reviews, r)
 	}
 	return reviews, nil
+}
+
+func (db *DB) GetLatestApproval(taskID string) (*Review, error) {
+	row := db.conn.QueryRow(
+		`SELECT id, task_id, decision, comment, commit_sha, created_at
+		 FROM reviews WHERE task_id = ? AND decision = 'approve'
+		 ORDER BY id DESC LIMIT 1`, taskID,
+	)
+	var r Review
+	err := row.Scan(&r.ID, &r.TaskID, &r.Decision, &r.Comment, &r.CommitSHA, &r.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
 }

@@ -18,6 +18,19 @@ func (a *App) CmdMerge(taskID string) error {
 		return fmt.Errorf("cannot merge in state %s (need APPROVED)", task.State)
 	}
 
+	// Check if review is still valid (approved commit matches current HEAD)
+	latestApproval, err := a.DB.GetLatestApproval(id)
+	if err == nil && latestApproval != nil && latestApproval.CommitSHA != "" {
+		currentHead, err := a.Git.RevParse(task.Branch)
+		if err == nil && currentHead != latestApproval.CommitSHA {
+			a.DB.UpdateTaskState(id, StateInProgress)
+			fmt.Printf("Review is stale: approved commit %s but branch is now at %s\n", latestApproval.CommitSHA[:8], currentHead[:8])
+			fmt.Printf("Task %s is now IN_PROGRESS.\n", id)
+			fmt.Println("Next: run harness check")
+			return nil
+		}
+	}
+
 	pos, err := a.DB.EnqueueTask(id)
 	if err != nil {
 		return fmt.Errorf("enqueue: %w", err)

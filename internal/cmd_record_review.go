@@ -17,7 +17,11 @@ func (a *App) CmdRecordReview(taskID, decision, comment string) error {
 
 	switch decision {
 	case "approve":
-		if err := a.DB.RecordReview(id, "approve", comment); err != nil {
+		sha, err := a.Git.RevParse(task.Branch)
+		if err != nil {
+			sha = ""
+		}
+		if err := a.DB.RecordReview(id, "approve", comment, sha); err != nil {
 			return err
 		}
 		if err := a.DB.UpdateTaskState(id, StateApproved); err != nil {
@@ -30,7 +34,7 @@ func (a *App) CmdRecordReview(taskID, decision, comment string) error {
 		if comment == "" {
 			return fmt.Errorf("--comment is required for request-changes")
 		}
-		if err := a.DB.RecordReview(id, "request_changes", comment); err != nil {
+		if err := a.DB.RecordReview(id, "request_changes", comment, ""); err != nil {
 			return err
 		}
 		if err := a.DB.UpdateTaskState(id, StateRequestChanges); err != nil {

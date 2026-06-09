@@ -774,6 +774,82 @@ func TestE2ESquashMerge(t *testing.T) {
 	}
 }
 
+func TestE2EStaleReviewBlocksMerge(t *testing.T) {
+	app, _, task := setupTask(t)
+	defer app.Close()
+
+	// check -> request-review -> approve
+	if err := app.CmdCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+	if err := app.CmdRequestReview(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+		t.Fatal("approve:", err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateApproved {
+		t.Fatalf("expected APPROVED, got %s", task.State)
+	}
+
+	// Make another commit AFTER approval
+	os.WriteFile(filepath.Join(task.WorktreePath, "extra.txt"), []byte("extra\n"), 0644)
+	gitRun(t, task.WorktreePath, "add", "extra.txt")
+	gitRun(t, task.WorktreePath, "commit", "-m", "add extra after approval")
+
+	// CmdMerge should NOT error, but task goes to IN_PROGRESS (stale review)
+	err := app.CmdMerge(task.ID)
+	if err != nil {
+		t.Fatal("merge should not error on stale review:", err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateInProgress {
+		t.Errorf("state after stale merge = %s, want IN_PROGRESS", task.State)
+	}
+
+	// Re-do: check -> request-review -> approve -> merge
+	if err := app.CmdCheck(task.ID); err != nil {
+		t.Fatal("re-check:", err)
+	}
+	if err := app.CmdRequestReview(task.ID); err != nil {
+		t.Fatal("re-request-review:", err)
+	}
+	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+		t.Fatal("re-approve:", err)
+	}
+	if err := app.CmdMerge(task.ID); err != nil {
+		t.Fatal("re-merge:", err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateMerged {
+		t.Errorf("state after re-merge = %s, want MERGED", task.State)
+	}
+}
+
+func TestE2EMergeWithUnchangedReview(t *testing.T) {
+	app, _, task := setupTask(t)
+	defer app.Close()
+
+	// Normal flow: check -> request-review -> approve -> merge (no new commits)
+	if err := app.CmdCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+	if err := app.CmdRequestReview(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+		t.Fatal("approve:", err)
+	}
+	if err := app.CmdMerge(task.ID); err != nil {
+		t.Fatal("merge:", err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateMerged {
+		t.Errorf("state = %s, want MERGED", task.State)
+	}
+}
+
 func TestE2ECustomReviewType(t *testing.T) {
 	dir := initTestRepo(t)
 

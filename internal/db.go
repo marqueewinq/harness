@@ -76,5 +76,8 @@ func createSchema(conn *sql.DB) error {
 	conn.Exec(`ALTER TABLE tasks ADD COLUMN base_branch TEXT NOT NULL DEFAULT ''`)
 	conn.Exec(`ALTER TABLE tasks ADD COLUMN parent_task_id TEXT DEFAULT NULL`)
 
+	// Migrate: add commit_sha to reviews
+	conn.Exec(`ALTER TABLE reviews ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''`)
+
 	return nil
 }
