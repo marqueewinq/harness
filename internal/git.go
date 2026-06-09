@@ -73,6 +73,14 @@ func (g *GitClient) MergeFF(branch string) error {
 	return err
 }
 
+func (g *GitClient) MergeSquash(branch, message string) error {
+	if _, err := g.run("merge", "--squash", branch); err != nil {
+		return err
+	}
+	_, err := g.run("commit", "-m", message)
+	return err
+}
+
 func (g *GitClient) Checkout(branch string) error {
 	_, err := g.run("checkout", branch)
 	return err
@@ -80,4 +88,35 @@ func (g *GitClient) Checkout(branch string) error {
 
 func (g *GitClient) RevParse(ref string) (string, error) {
 	return g.run("rev-parse", ref)
+}
+
+func (g *GitClient) RevParseShort(ref string) (string, error) {
+	return g.run("rev-parse", "--short", ref)
+}
+
+func (g *GitClient) MergeBase(a, b string) (string, error) {
+	return g.run("merge-base", a, b)
+}
+
+// DefaultBranch detects the repo's default branch from HEAD of origin,
+// or falls back to checking common names, or the current branch.
+func (g *GitClient) DefaultBranch() (string, error) {
+	// Try origin HEAD (works if a remote is configured)
+	if out, err := g.run("symbolic-ref", "refs/remotes/origin/HEAD"); err == nil {
+		// refs/remotes/origin/main -> main
+		parts := strings.Split(strings.TrimSpace(out), "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1], nil
+		}
+	}
+
+	// Try common default branch names
+	for _, name := range []string{"main", "master"} {
+		if _, err := g.run("rev-parse", "--verify", name); err == nil {
+			return name, nil
+		}
+	}
+
+	// Fall back to current branch
+	return g.CurrentBranch()
 }

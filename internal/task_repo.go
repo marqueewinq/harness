@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 )
@@ -11,21 +12,27 @@ type Task struct {
 	Branch       string
 	WorktreePath string
 	State        TaskState
+	BaseBranch   string
+	ParentTaskID string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
 
-func (db *DB) CreateTask(description, branch, worktreePath string) (*Task, error) {
+func (db *DB) CreateTask(description, branch, worktreePath, baseBranch, parentTaskID string) (*Task, error) {
 	id, err := db.nextTaskID()
 	if err != nil {
 		return nil, err
 	}
 
 	now := time.Now()
+	var parentVal interface{}
+	if parentTaskID != "" {
+		parentVal = parentTaskID
+	}
 	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, description, branch, worktree_path, state, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, description, branch, worktreePath, string(StateInProgress), now, now,
+		`INSERT INTO tasks (id, description, branch, worktree_path, state, base_branch, parent_task_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, description, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
@@ -34,6 +41,7 @@ func (db *DB) CreateTask(description, branch, worktreePath string) (*Task, error
 	return &Task{
 		ID: id, Description: description, Branch: branch,
 		WorktreePath: worktreePath, State: StateInProgress,
+		BaseBranch: baseBranch, ParentTaskID: parentTaskID,
 		CreatedAt: now, UpdatedAt: now,
 	}, nil
 }
@@ -49,31 +57,39 @@ func (db *DB) nextTaskID() (string, error) {
 
 func (db *DB) GetTask(id string) (*Task, error) {
 	t := &Task{}
+	var parentID sql.NullString
 	err := db.conn.QueryRow(
-		`SELECT id, description, branch, worktree_path, state, created_at, updated_at
+		`SELECT id, description, branch, worktree_path, state, base_branch, parent_task_id, created_at, updated_at
 		 FROM tasks WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Description, &t.Branch, &t.WorktreePath, &t.State, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Description, &t.Branch, &t.WorktreePath, &t.State, &t.BaseBranch, &parentID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("task %q not found: %w", id, err)
+	}
+	if parentID.Valid {
+		t.ParentTaskID = parentID.String
 	}
 	return t, nil
 }
 
 func (db *DB) GetTaskByBranch(branch string) (*Task, error) {
 	t := &Task{}
+	var parentID sql.NullString
 	err := db.conn.QueryRow(
-		`SELECT id, description, branch, worktree_path, state, created_at, updated_at
+		`SELECT id, description, branch, worktree_path, state, base_branch, parent_task_id, created_at, updated_at
 		 FROM tasks WHERE branch = ?`, branch,
-	).Scan(&t.ID, &t.Description, &t.Branch, &t.WorktreePath, &t.State, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Description, &t.Branch, &t.WorktreePath, &t.State, &t.BaseBranch, &parentID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("task with branch %q not found: %w", branch, err)
+	}
+	if parentID.Valid {
+		t.ParentTaskID = parentID.String
 	}
 	return t, nil
 }
 
 func (db *DB) ListTasks() ([]Task, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, description, branch, worktree_path, state, created_at, updated_at
+		`SELECT id, description, branch, worktree_path, state, base_branch, parent_task_id, created_at, updated_at
 		 FROM tasks ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -84,8 +100,37 @@ func (db *DB) ListTasks() ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Description, &t.Branch, &t.WorktreePath, &t.State, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		var parentID sql.NullString
+		if err := rows.Scan(&t.ID, &t.Description, &t.Branch, &t.WorktreePath, &t.State, &t.BaseBranch, &parentID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
+		}
+		if parentID.Valid {
+			t.ParentTaskID = parentID.String
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
+}
+
+func (db *DB) GetSubtasks(parentTaskID string) ([]Task, error) {
+	rows, err := db.conn.Query(
+		`SELECT id, description, branch, worktree_path, state, base_branch, parent_task_id, created_at, updated_at
+		 FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC`, parentTaskID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		var parentID sql.NullString
+		if err := rows.Scan(&t.ID, &t.Description, &t.Branch, &t.WorktreePath, &t.State, &t.BaseBranch, &parentID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if parentID.Valid {
+			t.ParentTaskID = parentID.String
 		}
 		tasks = append(tasks, t)
 	}

@@ -11,7 +11,7 @@ func (a *App) CmdDiff(taskID string) error {
 	if err != nil {
 		return err
 	}
-	diff, err := a.Git.Diff(a.Config.MainBranch, task.Branch)
+	diff, err := a.Git.Diff(task.BaseBranch, task.Branch)
 	if err != nil {
 		return fmt.Errorf("getting diff: %w", err)
 	}

@@ -40,12 +40,27 @@ func LoadApp(repoRoot string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	dbPath := filepath.Join(repoRoot, ".harness", "harness.db")
+	harnessDir := filepath.Join(repoRoot, ".harness")
+	if err := os.MkdirAll(harnessDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating .harness/: %w", err)
+	}
+	dbPath := filepath.Join(harnessDir, "harness.db")
 	db, err := OpenDB(dbPath)
 	if err != nil {
 		return nil, err
 	}
 	git := NewGitClient(repoRoot)
+
+	// Resolve main branch from git if not set in config
+	if cfg.MainBranch == "" {
+		branch, err := git.DefaultBranch()
+		if err != nil {
+			cfg.MainBranch = "main" // last resort fallback
+		} else {
+			cfg.MainBranch = branch
+		}
+	}
+
 	return &App{Config: cfg, DB: db, Git: git, RepoRoot: repoRoot}, nil
 }
 

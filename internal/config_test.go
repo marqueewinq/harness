@@ -72,8 +72,9 @@ checks:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MainBranch != "main" {
-		t.Errorf("MainBranch default = %q, want %q", cfg.MainBranch, "main")
+	// MainBranch is resolved at LoadApp time, not LoadConfig time
+	if cfg.MainBranch != "" {
+		t.Errorf("MainBranch default = %q, want empty (resolved later)", cfg.MainBranch)
 	}
 	if cfg.WorktreeDir != ".worktrees" {
 		t.Errorf("WorktreeDir default = %q, want %q", cfg.WorktreeDir, ".worktrees")

@@ -24,6 +24,7 @@ func main() {
 	rootCmd.AddCommand(recordReviewCmd())
 	rootCmd.AddCommand(reviewHistoryCmd())
 	rootCmd.AddCommand(mergeCmd())
+	rootCmd.AddCommand(setupCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -58,14 +59,17 @@ func withApp(fn func(*internal.App, *cobra.Command, []string) error) func(*cobra
 }
 
 func newCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "new [description]",
 		Short: "Create a new task with branch and worktree",
 		Args:  cobra.ExactArgs(1),
-		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			return app.CmdNew(args[0])
-		}),
 	}
+	var baseBranch string
+	cmd.Flags().StringVar(&baseBranch, "base", "", "Base branch to fork from and merge into (default: main branch)")
+	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
+		return app.CmdNew(args[0], baseBranch)
+	})
+	return cmd
 }
 
 func listCmd() *cobra.Command {
@@ -170,6 +174,22 @@ func reviewHistoryCmd() *cobra.Command {
 			return app.CmdReviewHistory(taskID)
 		}),
 	}
+}
+
+func setupCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "setup [agent]",
+		Short: "Configure agent permissions for harness",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "opencode",
+		Short: "Generate opencode.json with harness permissions",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir, _ := os.Getwd()
+			return internal.RunSetupOpencode(dir)
+		},
+	})
+	return cmd
 }
 
 func mergeCmd() *cobra.Command {

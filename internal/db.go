@@ -68,5 +68,13 @@ func createSchema(conn *sql.DB) error {
 	);
 	`
 	_, err := conn.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migrate: add base_branch and parent_task_id columns
+	conn.Exec(`ALTER TABLE tasks ADD COLUMN base_branch TEXT NOT NULL DEFAULT ''`)
+	conn.Exec(`ALTER TABLE tasks ADD COLUMN parent_task_id TEXT DEFAULT NULL`)
+
+	return nil
 }

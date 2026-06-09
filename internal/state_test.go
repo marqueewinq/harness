@@ -50,7 +50,7 @@ func TestInvalidTransitions(t *testing.T) {
 
 func TestCheckableStates(t *testing.T) {
 	checkable := []TaskState{
-		StateInProgress, StateChecksFailed, StateRequestChanges, StateMergeFailed,
+		StateInProgress, StateChecksFailed, StateRequestChanges, StateReviewRequested, StateMergeFailed,
 	}
 	for _, s := range checkable {
 		if !ValidTransition(s, StateChecksRunning) {

@@ -5,11 +5,21 @@ import (
 	"path/filepath"
 )
 
-func (a *App) CmdNew(description string) error {
+func (a *App) CmdNew(description string, baseBranch string) error {
+	if baseBranch == "" {
+		baseBranch = a.Config.MainBranch
+	}
+
+	// Check if baseBranch is another task's branch -> set parent
+	var parentTaskID string
+	if parentTask, err := a.DB.GetTaskByBranch(baseBranch); err == nil {
+		parentTaskID = parentTask.ID
+	}
+
 	branch := Slugify(description)
 	worktreePath := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, branch)
 
-	if err := a.Git.CreateBranch(branch, a.Config.MainBranch); err != nil {
+	if err := a.Git.CreateBranch(branch, baseBranch); err != nil {
 		return fmt.Errorf("creating branch: %w", err)
 	}
 
@@ -18,7 +28,7 @@ func (a *App) CmdNew(description string) error {
 		return fmt.Errorf("creating worktree: %w", err)
 	}
 
-	task, err := a.DB.CreateTask(description, branch, worktreePath)
+	task, err := a.DB.CreateTask(description, branch, worktreePath, baseBranch, parentTaskID)
 	if err != nil {
 		a.Git.RemoveWorktree(worktreePath)
 		a.Git.DeleteBranch(branch)
@@ -27,6 +37,11 @@ func (a *App) CmdNew(description string) error {
 
 	fmt.Printf("Created %s: %q\n", task.ID, description)
 	fmt.Printf("Branch: %s\n", branch)
+	baseInfo := baseBranch
+	if parentTaskID != "" {
+		baseInfo = fmt.Sprintf("%s (%s)", baseBranch, parentTaskID)
+	}
+	fmt.Printf("Base: %s\n", baseInfo)
 	fmt.Printf("Worktree: %s\n", worktreePath)
 	fmt.Printf("\nNext: implement the changes in %s/\n", worktreePath)
 	fmt.Println("      then run: harness check")

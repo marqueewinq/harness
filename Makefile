@@ -1,10 +1,14 @@
-.PHONY: build test install
+.PHONY: build test lint install
 
-build:
-	go build -o harness ./main.go
+lint:
+	go vet ./...
 
-test:
+test: lint
 	go test ./...
 
-install:
+build: test
+	go build -o harness ./main.go
+
+install: test
 	go install ./...
+	@ln -sf "$$(go env GOPATH)/bin/harness" ~/.local/bin/harness

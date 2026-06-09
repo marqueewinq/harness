@@ -44,13 +44,23 @@ func (a *App) CmdMerge(taskID string) error {
 		return err
 	}
 
+	strategy, err := NewMergeStrategy(a.Config.Merge.Strategy)
+	if err != nil {
+		a.DB.DequeueTask(id)
+		a.DB.UpdateTaskState(id, StateMergeFailed)
+		return err
+	}
+
+	targetBranch := task.BaseBranch
+
+	// Prepare (e.g., rebase)
 	wtGit := NewGitClient(task.WorktreePath)
-	fmt.Printf("Rebasing %s onto %s...\n", task.Branch, a.Config.MainBranch)
-	if err := wtGit.Rebase(a.Config.MainBranch); err != nil {
+	fmt.Printf("Preparing %s for %s merge into %s...\n", task.Branch, strategy.Name(), targetBranch)
+	if err := strategy.Prepare(wtGit, targetBranch); err != nil {
 		wtGit.RebaseAbort()
 		a.DB.DequeueTask(id)
 		a.DB.UpdateTaskState(id, StateMergeFailed)
-		fmt.Printf("Rebase conflict.\n")
+		fmt.Printf("Prepare failed: %s\n", err)
 		fmt.Printf("\nTask %s is now MERGE_FAILED.\n", id)
 		fmt.Println("Fix the conflicts, then run: harness check")
 		return nil
@@ -79,20 +89,36 @@ func (a *App) CmdMerge(taskID string) error {
 		if !allPassed {
 			a.DB.DequeueTask(id)
 			a.DB.UpdateTaskState(id, StateMergeFailed)
-			fmt.Printf("\nChecks failed after rebase.\n")
+			fmt.Printf("\nChecks failed.\n")
 			fmt.Printf("Task %s is now MERGE_FAILED.\n", id)
 			fmt.Println("Fix the failures, then run: harness check")
 			return nil
 		}
 	}
 
-	fmt.Printf("Merging %s into %s...\n", task.Branch, a.Config.MainBranch)
-	if err := a.Git.Checkout(a.Config.MainBranch); err != nil {
-		a.DB.DequeueTask(id)
-		a.DB.UpdateTaskState(id, StateMergeFailed)
-		return fmt.Errorf("checkout main: %w", err)
+	// Merge
+	// Determine which git client to use for the merge.
+	// If the target branch is checked out in a worktree (i.e., it's another task's branch),
+	// we must merge from that worktree instead of the main repo.
+	mergeGit := a.Git
+	if targetBranch != a.Config.MainBranch {
+		if parentTask, err := a.DB.GetTaskByBranch(targetBranch); err == nil {
+			mergeGit = NewGitClient(parentTask.WorktreePath)
+		}
 	}
-	if err := a.Git.MergeFF(task.Branch); err != nil {
+
+	fmt.Printf("Merging %s into %s (strategy: %s)...\n", task.Branch, targetBranch, strategy.Name())
+	if targetBranch == a.Config.MainBranch || mergeGit != a.Git {
+		// For main branch: checkout in main repo. For worktree targets: already on correct branch.
+	}
+	if targetBranch == a.Config.MainBranch {
+		if err := a.Git.Checkout(targetBranch); err != nil {
+			a.DB.DequeueTask(id)
+			a.DB.UpdateTaskState(id, StateMergeFailed)
+			return fmt.Errorf("checkout %s: %w", targetBranch, err)
+		}
+	}
+	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, task.Description); err != nil {
 		a.DB.DequeueTask(id)
 		a.DB.UpdateTaskState(id, StateMergeFailed)
 		fmt.Printf("Merge failed: %s\n", err)

@@ -21,7 +21,7 @@ func (a *App) CmdRequestReview(taskID string) error {
 		return err
 	}
 
-	diff, _ := a.Git.Diff(a.Config.MainBranch, task.Branch)
+	diff, _ := a.Git.Diff(task.BaseBranch, task.Branch)
 	reviews, _ := a.DB.GetReviews(id)
 	prevComments := "(none)"
 	if len(reviews) > 0 {
@@ -37,7 +37,7 @@ func (a *App) CmdRequestReview(taskID string) error {
 	}
 
 	fmt.Printf("Task %s is now REVIEW_REQUESTED.\n\n", id)
-	fmt.Printf("Diff (%s..%s):\n%s\n\n", a.Config.MainBranch, task.Branch, diff)
+	fmt.Printf("Diff (%s..%s):\n%s\n\n", task.BaseBranch, task.Branch, diff)
 	fmt.Printf("Task description: %s\n\n", task.Description)
 	fmt.Printf("Previous review comments:\n  %s\n\n", prevComments)
 

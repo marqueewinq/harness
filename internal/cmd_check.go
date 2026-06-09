@@ -13,13 +13,14 @@ func (a *App) CmdCheck(taskID string) error {
 	}
 
 	checkableStates := map[TaskState]bool{
-		StateInProgress:     true,
-		StateChecksFailed:   true,
-		StateRequestChanges: true,
-		StateMergeFailed:    true,
+		StateInProgress:      true,
+		StateChecksFailed:    true,
+		StateRequestChanges:  true,
+		StateReviewRequested: true,
+		StateMergeFailed:     true,
 	}
 	if !checkableStates[task.State] {
-		return fmt.Errorf("cannot run checks in state %s (allowed: IN_PROGRESS, CHECKS_FAILED, REQUEST_CHANGES, MERGE_FAILED)", task.State)
+		return fmt.Errorf("cannot run checks in state %s (allowed: IN_PROGRESS, CHECKS_FAILED, REQUEST_CHANGES, REVIEW_REQUESTED, MERGE_FAILED)", task.State)
 	}
 
 	if err := a.DB.UpdateTaskState(id, StateChecksRunning); err != nil {

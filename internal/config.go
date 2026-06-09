@@ -47,9 +47,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	if cfg.MainBranch == "" {
-		cfg.MainBranch = "main"
-	}
+	// MainBranch default is resolved at LoadApp time via git detection
 	if cfg.WorktreeDir == "" {
 		cfg.WorktreeDir = ".worktrees"
 	}

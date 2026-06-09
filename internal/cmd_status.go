@@ -20,6 +20,28 @@ func (a *App) CmdStatus(taskID string) error {
 	fmt.Printf("Worktree: %s\n", task.WorktreePath)
 	fmt.Printf("State: %s\n", task.State)
 
+	fmt.Printf("Base: %s\n", task.BaseBranch)
+	if task.ParentTaskID != "" {
+		if parent, err := a.DB.GetTask(task.ParentTaskID); err == nil {
+			fmt.Printf("Parent: %s %q\n", parent.ID, parent.Description)
+		}
+	}
+
+	// Show commit range
+	if task.State == StateMerged {
+		// For merged tasks, the branch is deleted. Show the merge point on base.
+		if headShort, err := a.Git.RevParseShort(task.BaseBranch); err == nil {
+			fmt.Printf("Merged into: %s (%s)\n", headShort, task.BaseBranch)
+		}
+	} else {
+		// For active tasks, show base..head range
+		baseShort, baseErr := a.Git.RevParseShort(task.BaseBranch)
+		headShort, headErr := a.Git.RevParseShort(task.Branch)
+		if baseErr == nil && headErr == nil {
+			fmt.Printf("Commits: %s..%s (%s..%s)\n", baseShort, headShort, task.BaseBranch, task.Branch)
+		}
+	}
+
 	runs, err := a.DB.GetLatestCheckRuns(task.ID)
 	if err == nil && len(runs) > 0 {
 		fmt.Println("\nLast check run:")
@@ -53,19 +75,26 @@ func (a *App) CmdStatus(taskID string) error {
 		fmt.Println("\nReview: not requested")
 	}
 
-	fmt.Println("\nMerge requirements:")
-	checksOK := task.State == StateChecksPassed || task.State == StateReviewRequested || task.State == StateApproved || task.State == StateQueued
-	reviewOK := task.State == StateApproved || task.State == StateQueued
-	mark := func(ok bool) string {
-		if ok {
-			return "[x]"
+	// Skip merge requirements for terminal states
+	if task.State != StateMerged {
+		fmt.Println("\nMerge requirements:")
+		passedStates := map[TaskState]bool{
+			StateChecksPassed: true, StateReviewRequested: true,
+			StateApproved: true, StateQueued: true, StateMerging: true,
 		}
-		return "[ ]"
-	}
-	fmt.Printf("  %s Work in worktree\n", mark(task.WorktreePath != ""))
-	fmt.Printf("  %s All checks pass\n", mark(checksOK))
-	if a.Config.Merge.Require.Review == "approved" {
-		fmt.Printf("  %s Review approved\n", mark(reviewOK))
+		checksOK := passedStates[task.State]
+		reviewOK := task.State == StateApproved || task.State == StateQueued || task.State == StateMerging
+		mark := func(ok bool) string {
+			if ok {
+				return "[x]"
+			}
+			return "[ ]"
+		}
+		fmt.Printf("  %s Work in worktree\n", mark(task.WorktreePath != ""))
+		fmt.Printf("  %s All checks pass\n", mark(checksOK))
+		if a.Config.Merge.Require.Review == "approved" {
+			fmt.Printf("  %s Review approved\n", mark(reviewOK))
+		}
 	}
 
 	fmt.Println()
@@ -92,6 +121,14 @@ func (a *App) CmdStatus(taskID string) error {
 		fmt.Printf("Queued at position #%d. harness merge is blocking.\n", pos)
 	case StateMerged:
 		fmt.Println("Task is complete.")
+	}
+
+	subtasks, _ := a.DB.GetSubtasks(task.ID)
+	if len(subtasks) > 0 {
+		fmt.Println("\nSubtasks:")
+		for _, st := range subtasks {
+			fmt.Printf("  %-10s %-20s %s\n", st.ID, st.State, st.Description)
+		}
 	}
 	return nil
 }

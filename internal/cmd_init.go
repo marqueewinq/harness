@@ -12,9 +12,17 @@ func RunInit(dir string) error {
 		return fmt.Errorf(".harness.yaml already exists")
 	}
 
-	scaffold := `# Harness workflow configuration
-main_branch: main
-worktree_dir: .worktrees
+	// Detect default branch
+	detectedBranch := "main"
+	git := NewGitClient(dir)
+	if branch, err := git.DefaultBranch(); err == nil {
+		detectedBranch = branch
+	}
+
+	scaffold := fmt.Sprintf(`# Harness workflow configuration
+# main_branch auto-detected; remove this line to auto-detect at runtime
+main_branch: %s
+worktree_dir: .worktrees`, detectedBranch) + `
 
 checks:
   test:
