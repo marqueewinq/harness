@@ -94,3 +94,58 @@ func TestReadyChecks(t *testing.T) {
 		t.Errorf("ready = %v, want [build]", ready)
 	}
 }
+
+func TestTopoSortEmpty(t *testing.T) {
+	order, err := TopoSort(map[string]CheckConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 0 {
+		t.Errorf("TopoSort(empty) = %v, want empty", order)
+	}
+}
+
+func TestTopoSortSelfRef(t *testing.T) {
+	checks := map[string]CheckConfig{
+		"a": {Run: "a", Needs: []string{"a"}},
+	}
+	_, err := TopoSort(checks)
+	if err == nil {
+		t.Error("expected error for self-referencing dependency")
+	}
+}
+
+func TestTopoSortDeepChain(t *testing.T) {
+	checks := map[string]CheckConfig{
+		"a": {Run: "a"},
+		"b": {Run: "b", Needs: []string{"a"}},
+		"c": {Run: "c", Needs: []string{"b"}},
+		"d": {Run: "d", Needs: []string{"c"}},
+	}
+	order, err := TopoSort(checks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(order, []string{"a", "b", "c", "d"}) {
+		t.Errorf("order = %v, want [a b c d]", order)
+	}
+}
+
+func TestReadyChecksAllDone(t *testing.T) {
+	checks := map[string]CheckConfig{
+		"a": {Run: "a"},
+		"b": {Run: "b", Needs: []string{"a"}},
+	}
+	completed := map[string]bool{"a": true, "b": true}
+	ready := ReadyChecks(checks, completed)
+	if len(ready) != 0 {
+		t.Errorf("ReadyChecks (all done) = %v, want empty", ready)
+	}
+}
+
+func TestReadyChecksEmpty(t *testing.T) {
+	ready := ReadyChecks(map[string]CheckConfig{}, map[string]bool{})
+	if len(ready) != 0 {
+		t.Errorf("ReadyChecks (empty) = %v, want empty", ready)
+	}
+}

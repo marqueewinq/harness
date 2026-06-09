@@ -48,6 +48,38 @@ func TestInvalidTransitions(t *testing.T) {
 	}
 }
 
+func TestCloseTransitions(t *testing.T) {
+	closeable := []TaskState{
+		StateInProgress, StateChecksPassed, StateChecksFailed,
+		StateReviewRequested, StateApproved, StateRequestChanges,
+		StateQueued, StateMergeFailed,
+	}
+	for _, s := range closeable {
+		if !ValidTransition(s, StateClosed) {
+			t.Errorf("expected %s -> CLOSED to be valid", s)
+		}
+	}
+
+	notCloseable := []TaskState{
+		StateNew, StateChecksRunning, StateMerging, StateMerged, StateClosed,
+	}
+	for _, s := range notCloseable {
+		if ValidTransition(s, StateClosed) {
+			t.Errorf("expected %s -> CLOSED to be invalid", s)
+		}
+	}
+}
+
+func TestClosedIsTerminal(t *testing.T) {
+	targets, ok := validTransitions[StateClosed]
+	if !ok {
+		t.Fatal("StateClosed not in validTransitions map")
+	}
+	if len(targets) != 0 {
+		t.Errorf("StateClosed should have no outgoing transitions, got %v", targets)
+	}
+}
+
 func TestCheckableStates(t *testing.T) {
 	checkable := []TaskState{
 		StateInProgress, StateChecksFailed, StateRequestChanges, StateReviewRequested, StateMergeFailed,

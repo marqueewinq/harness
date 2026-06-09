@@ -15,20 +15,22 @@ const (
 	StateMerging         TaskState = "MERGING"
 	StateMerged          TaskState = "MERGED"
 	StateMergeFailed     TaskState = "MERGE_FAILED"
+	StateClosed          TaskState = "CLOSED"
 )
 
 var validTransitions = map[TaskState][]TaskState{
 	StateNew:             {StateInProgress},
-	StateInProgress:      {StateChecksRunning},
+	StateInProgress:      {StateChecksRunning, StateClosed},
 	StateChecksRunning:   {StateChecksPassed, StateChecksFailed},
-	StateChecksPassed:    {StateReviewRequested},
-	StateChecksFailed:    {StateChecksRunning},
-	StateReviewRequested: {StateApproved, StateRequestChanges, StateChecksRunning},
-	StateApproved:        {StateQueued},
-	StateRequestChanges:  {StateChecksRunning},
-	StateQueued:          {StateMerging},
+	StateChecksPassed:    {StateReviewRequested, StateClosed},
+	StateChecksFailed:    {StateChecksRunning, StateClosed},
+	StateReviewRequested: {StateApproved, StateRequestChanges, StateChecksRunning, StateClosed},
+	StateApproved:        {StateQueued, StateClosed},
+	StateRequestChanges:  {StateChecksRunning, StateClosed},
+	StateQueued:          {StateMerging, StateClosed},
 	StateMerging:         {StateMerged, StateMergeFailed},
-	StateMergeFailed:     {StateChecksRunning},
+	StateMergeFailed:     {StateChecksRunning, StateClosed},
+	StateClosed:          {},
 }
 
 func ValidTransition(from, to TaskState) bool {

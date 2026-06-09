@@ -189,3 +189,212 @@ func TestMergeQueue(t *testing.T) {
 		t.Errorf("first after dequeue = %q, want task-002", first)
 	}
 }
+
+func TestGetTaskNotFound(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.GetTask("nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent task")
+	}
+}
+
+func TestGetTaskByBranchNotFound(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.GetTaskByBranch("nope")
+	if err == nil {
+		t.Error("expected error for nonexistent branch")
+	}
+}
+
+func TestGetSubtasks(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create parent
+	parent, err := db.CreateTask("parent", "parent-branch", ".worktrees/parent", "main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create 2 children
+	_, err = db.CreateTask("child 1", "child-1", ".worktrees/child-1", parent.Branch, parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.CreateTask("child 2", "child-2", ".worktrees/child-2", parent.Branch, parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subtasks, err := db.GetSubtasks(parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subtasks) != 2 {
+		t.Errorf("len(subtasks) = %d, want 2", len(subtasks))
+	}
+	if subtasks[0].Description != "child 1" {
+		t.Errorf("subtasks[0].Description = %q, want %q", subtasks[0].Description, "child 1")
+	}
+	if subtasks[1].Description != "child 2" {
+		t.Errorf("subtasks[1].Description = %q, want %q", subtasks[1].Description, "child 2")
+	}
+}
+
+func TestGetSubtasksNone(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	parent, err := db.CreateTask("parent", "parent-branch", ".worktrees/parent", "main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subtasks, err := db.GetSubtasks(parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subtasks) != 0 {
+		t.Errorf("len(subtasks) = %d, want 0", len(subtasks))
+	}
+}
+
+func TestNextRunGroup(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("test", "test-branch", ".worktrees/test", "main", "")
+
+	// No runs yet -> group 1
+	group, err := db.NextRunGroup("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group != 1 {
+		t.Errorf("NextRunGroup (no runs) = %d, want 1", group)
+	}
+
+	// Record a run in group 1
+	db.RecordCheckRun("task-001", "lint", 0, "", "", 1, time.Now(), time.Now())
+
+	// Next group should be 2
+	group, err = db.NextRunGroup("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group != 2 {
+		t.Errorf("NextRunGroup (after group 1) = %d, want 2", group)
+	}
+}
+
+func TestGetLatestCheckRunsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("test", "test-branch", ".worktrees/test", "main", "")
+
+	runs, err := db.GetLatestCheckRuns("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runs != nil {
+		t.Errorf("GetLatestCheckRuns (empty) = %v, want nil", runs)
+	}
+}
+
+func TestPeekQueueEmpty(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.PeekQueue()
+	if err == nil {
+		t.Error("expected error for empty queue")
+	}
+}
+
+func TestGetQueuePositionMultiple(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("task A", "branch-a", ".worktrees/a", "main", "")
+	db.CreateTask("task B", "branch-b", ".worktrees/b", "main", "")
+	db.CreateTask("task C", "branch-c", ".worktrees/c", "main", "")
+
+	db.EnqueueTask("task-001")
+	db.EnqueueTask("task-002")
+	db.EnqueueTask("task-003")
+
+	pos1, err := db.GetQueuePosition("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pos2, err := db.GetQueuePosition("task-002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pos3, err := db.GetQueuePosition("task-003")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pos1 != 1 {
+		t.Errorf("position of task-001 = %d, want 1", pos1)
+	}
+	if pos2 != 2 {
+		t.Errorf("position of task-002 = %d, want 2", pos2)
+	}
+	if pos3 != 3 {
+		t.Errorf("position of task-003 = %d, want 3", pos3)
+	}
+}
+
+func TestDequeueNonexistent(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// DELETE is idempotent - should not error
+	err = db.DequeueTask("nonexistent-task")
+	if err != nil {
+		t.Errorf("DequeueTask nonexistent should not error, got: %v", err)
+	}
+}

@@ -90,3 +90,53 @@ func TestLoadConfigMissing(t *testing.T) {
 		t.Error("expected error for missing config")
 	}
 }
+
+func TestLoadConfigInvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".harness.yaml"), []byte("{{invalid yaml::"), 0644)
+
+	_, err := LoadConfig(filepath.Join(dir, ".harness.yaml"))
+	if err == nil {
+		t.Error("expected error for invalid YAML")
+	}
+}
+
+func TestLoadConfigEmptyChecks(t *testing.T) {
+	dir := t.TempDir()
+	yaml := `
+main_branch: main
+`
+	os.WriteFile(filepath.Join(dir, ".harness.yaml"), []byte(yaml), 0644)
+
+	cfg, err := LoadConfig(filepath.Join(dir, ".harness.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Checks) != 0 {
+		t.Errorf("len(Checks) = %d, want 0", len(cfg.Checks))
+	}
+}
+
+func TestLoadConfigReviewType(t *testing.T) {
+	dir := t.TempDir()
+	yaml := `
+checks:
+  test:
+    run: echo ok
+review:
+  type: human
+  prompt: "Please review"
+`
+	os.WriteFile(filepath.Join(dir, ".harness.yaml"), []byte(yaml), 0644)
+
+	cfg, err := LoadConfig(filepath.Join(dir, ".harness.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Review.Type != "human" {
+		t.Errorf("Review.Type = %q, want %q", cfg.Review.Type, "human")
+	}
+	if cfg.Review.Prompt != "Please review" {
+		t.Errorf("Review.Prompt = %q, want %q", cfg.Review.Prompt, "Please review")
+	}
+}

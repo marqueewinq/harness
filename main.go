@@ -25,6 +25,7 @@ func main() {
 	rootCmd.AddCommand(reviewHistoryCmd())
 	rootCmd.AddCommand(mergeCmd())
 	rootCmd.AddCommand(setupCmd())
+	rootCmd.AddCommand(closeCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -188,6 +189,24 @@ func setupCmd() *cobra.Command {
 			dir, _ := os.Getwd()
 			return internal.RunSetupOpencode(dir)
 		},
+	})
+	return cmd
+}
+
+func closeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "close [task-id]",
+		Short: "Close a task without merging",
+		Args:  cobra.MaximumNArgs(1),
+	}
+	var cleanup bool
+	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Remove worktree and delete branch")
+	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
+		taskID := ""
+		if len(args) > 0 {
+			taskID = args[0]
+		}
+		return app.CmdClose(taskID, cleanup)
 	})
 	return cmd
 }

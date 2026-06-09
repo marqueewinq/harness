@@ -71,3 +71,74 @@ func TestRunnerParallel(t *testing.T) {
 		}
 	}
 }
+
+func TestRunnerEmpty(t *testing.T) {
+	runner := NewCheckRunner(map[string]CheckConfig{}, t.TempDir())
+	results, err := runner.RunAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("len(results) = %d, want 0", len(results))
+	}
+}
+
+func TestRunnerSingleFail(t *testing.T) {
+	checks := map[string]CheckConfig{
+		"bad": {Run: "exit 42"},
+	}
+	runner := NewCheckRunner(checks, t.TempDir())
+	results, err := runner.RunAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].ExitCode == 0 {
+		t.Error("expected non-zero exit code")
+	}
+}
+
+func TestRunnerDiamond(t *testing.T) {
+	// Diamond DAG: a -> b,c -> d
+	checks := map[string]CheckConfig{
+		"a": {Run: "echo a"},
+		"b": {Run: "echo b", Needs: []string{"a"}},
+		"c": {Run: "echo c", Needs: []string{"a"}},
+		"d": {Run: "echo d", Needs: []string{"b", "c"}},
+	}
+	runner := NewCheckRunner(checks, t.TempDir())
+	results, err := runner.RunAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 4 {
+		t.Fatalf("len(results) = %d, want 4", len(results))
+	}
+	for _, r := range results {
+		if r.ExitCode != 0 {
+			t.Errorf("check %q failed with exit %d", r.Name, r.ExitCode)
+		}
+	}
+}
+
+func TestRunnerStderrCapture(t *testing.T) {
+	checks := map[string]CheckConfig{
+		"noisy": {Run: "echo error-output >&2"},
+	}
+	runner := NewCheckRunner(checks, t.TempDir())
+	results, err := runner.RunAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].Stderr == "" {
+		t.Error("expected stderr to be captured")
+	}
+	if results[0].ExitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (echo to stderr succeeds)", results[0].ExitCode)
+	}
+}
