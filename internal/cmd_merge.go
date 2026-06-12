@@ -137,7 +137,17 @@ func (a *App) CmdWorkMerge(taskID string) error {
 			return fmt.Errorf("checkout %s: %w", targetBranch, err)
 		}
 	}
-	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, task.Description); err != nil {
+	// Render commit message through template
+	var epicID, projID string
+	if task.EpicID != "" {
+		epicID = task.EpicID
+		if epic, err := a.DB.GetEpic(task.EpicID); err == nil {
+			projID = epic.ProjectID
+		}
+	}
+	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Description)
+
+	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, mergeMessage); err != nil {
 		a.DB.DequeueTask(id)
 		a.DB.UpdateTaskState(id, StateMergeFailed)
 		fmt.Printf("Merge failed: %s\n", err)
