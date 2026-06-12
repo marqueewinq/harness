@@ -42,7 +42,7 @@ func (a *App) CmdProjectList() error {
 	return nil
 }
 
-func (a *App) CmdProjectStatus(projectID string) error {
+func (a *App) CmdProjectView(projectID string) error {
 	p, err := a.DB.GetProject(projectID)
 	if err != nil {
 		return err
@@ -100,5 +100,28 @@ func (a *App) CmdProjectClose(projectID string) error {
 		return err
 	}
 	fmt.Printf("Closed %s: %q\n", p.ID, p.Title)
+	return nil
+}
+
+func (a *App) CmdProjectEdit(projectID, title, description string, setTitle, setDescription bool) error {
+	p, err := a.DB.GetProject(projectID)
+	if err != nil {
+		return err
+	}
+	if p.Status == "closed" {
+		return fmt.Errorf("cannot edit closed project %s", projectID)
+	}
+	newTitle := p.Title
+	if setTitle {
+		newTitle = title
+	}
+	newDesc := p.Description
+	if setDescription {
+		newDesc = description
+	}
+	if err := a.DB.UpdateProject(projectID, newTitle, newDesc); err != nil {
+		return err
+	}
+	fmt.Printf("Updated %s: %q\n", projectID, newTitle)
 	return nil
 }

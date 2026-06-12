@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func (a *App) CmdStatus(taskID string) error {
+func (a *App) CmdWorkStatus(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
 		return err

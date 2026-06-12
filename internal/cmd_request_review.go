@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func (a *App) CmdRequestReview(taskID string) error {
+func (a *App) CmdReviewRequest(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
 		return err

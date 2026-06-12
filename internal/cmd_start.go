@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-func (a *App) CmdStart(taskID, baseBranch string) error {
+func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 	task, err := a.DB.GetTask(taskID)
 	if err != nil {
 		return err

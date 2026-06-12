@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-func (a *App) CmdNew(description string, baseBranch string) error {
+func (a *App) CmdNew(description, baseBranch, epicID, notes string) error {
 	if baseBranch == "" {
 		baseBranch = a.Config.MainBranch
 	}
@@ -28,7 +28,7 @@ func (a *App) CmdNew(description string, baseBranch string) error {
 		return fmt.Errorf("creating worktree: %w", err)
 	}
 
-	task, err := a.DB.CreateTask(description, branch, worktreePath, baseBranch, parentTaskID)
+	task, err := a.DB.CreateTask(description, notes, branch, worktreePath, baseBranch, parentTaskID, epicID)
 	if err != nil {
 		a.Git.RemoveWorktree(worktreePath)
 		a.Git.DeleteBranch(branch)

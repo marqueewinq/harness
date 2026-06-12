@@ -2,7 +2,7 @@ package internal
 
 import "fmt"
 
-func (a *App) CmdClose(taskID string, cleanup bool) error {
+func (a *App) CmdWorkClose(taskID string, cleanup bool) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
 		return err

@@ -98,3 +98,11 @@ func (db *DB) UpdateEpicStatus(id, status string) error {
 	_, err := db.conn.Exec(`UPDATE epics SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
 	return err
 }
+
+func (db *DB) UpdateEpic(id, title, description, projectID string) error {
+	_, err := db.conn.Exec(
+		`UPDATE epics SET title = ?, description = ?, project_id = ?, updated_at = ? WHERE id = ?`,
+		title, description, projectID, time.Now(), id,
+	)
+	return err
+}

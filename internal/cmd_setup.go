@@ -119,20 +119,20 @@ All git-mutating operations go through the ` + "`harness`" + ` CLI. Direct git c
 
 ## At Session Start
 
-Run ` + "`harness status`" + ` or ` + "`harness list`" + ` to see current tasks.
-If told to work on a specific task, run ` + "`harness start <task-id>`" + ` to begin.
+Run ` + "`harness status`" + ` or ` + "`harness task list --status=all`" + ` to see current tasks.
+If told to work on a specific task, run ` + "`harness task start <task-id>`" + ` to begin.
 If the task is already IN_PROGRESS, continue in its worktree.
 
 ## Workflow
 
-1. ` + "`harness new \"description\"`" + ` — creates branch + worktree + task
+1. ` + "`harness new \"title\"`" + ` — creates branch + worktree + task
 2. Implement changes in the worktree (the path is printed by harness new)
 3. ` + "`harness check`" + ` — runs configured checks (tests, build, lint)
-4. ` + "`harness request-review`" + ` — outputs diff + review context
+4. ` + "`harness review request`" + ` — outputs diff + review context
 5. Spawn a reviewer subagent with the diff; reviewer calls
-   ` + "`harness record-review approve`" + ` or ` + "`harness record-review request-changes --comment \"...\"`" + `
+   ` + "`harness review approve`" + ` or ` + "`harness review reject --comment \"...\"`" + `
 6. If changes requested: fix, then go to step 3
-7. ` + "`harness merge`" + ` — rebases, re-runs checks, merges to main, cleans up
+7. ` + "`harness work merge`" + ` — rebases, re-runs checks, merges to main, cleans up
 
 ## Rules
 
@@ -148,17 +148,17 @@ If the task is already IN_PROGRESS, continue in its worktree.
 
 | Command | Purpose |
 |---|---|
-| ` + "`harness list`" + ` | List all tasks |
+| ` + "`harness task list --status=all`" + ` | List all tasks |
 | ` + "`harness status [task-id]`" + ` | Show task state and next action |
-| ` + "`harness new \"desc\"`" + ` | Create task + branch + worktree |
+| ` + "`harness new \"title\"`" + ` | Create task + branch + worktree |
 | ` + "`harness check [task-id]`" + ` | Run checks |
 | ` + "`harness diff [task-id]`" + ` | Show diff vs main |
-| ` + "`harness request-review [task-id]`" + ` | Request review |
-| ` + "`harness record-review approve [task-id]`" + ` | Record approval |
-| ` + "`harness record-review request-changes --comment \"...\" [task-id]`" + ` | Record rejection |
-| ` + "`harness review-history [task-id]`" + ` | Show past reviews |
-| ` + "`harness merge [task-id]`" + ` | Merge to main |
-| ` + "`harness start <task-id>`" + ` | Start a planned task (creates branch + worktree) |
+| ` + "`harness review request [task-id]`" + ` | Request review |
+| ` + "`harness review approve [task-id]`" + ` | Record approval |
+| ` + "`harness review reject --comment \"...\" [task-id]`" + ` | Record rejection |
+| ` + "`harness review history [task-id]`" + ` | Show past reviews |
+| ` + "`harness work merge [task-id]`" + ` | Merge to main |
+| ` + "`harness task start <task-id>`" + ` | Start a planned task (creates branch + worktree) |
 `
 
 	if runtime.GOOS == "windows" {
@@ -201,18 +201,18 @@ Use when decomposing work into projects, epics, and tasks.
 1. ` + "`harness project list`" + ` — see existing projects
 2. ` + "`harness project new \"title\"`" + ` — create project
 3. ` + "`harness epic new \"title\" --project <id>`" + ` — create epics
-4. ` + "`harness plan \"description\" --epic <id>`" + ` — create planned tasks
+4. ` + "`harness task new \"description\" --epic <id>`" + ` — create planned tasks
 5. ` + "`harness dep add <from> <to>`" + ` — add blockers between tasks
-6. ` + "`harness ready`" + ` — see what is unblocked and ready to start
+6. ` + "`harness task list --ready`" + ` — see what is unblocked and ready to start
 
 ## Rules
 
 - Add dependencies when task B cannot start until task A is merged
-- Use ` + "`harness ready`" + ` to find the next task to work on
+- Use ` + "`harness task list --ready`" + ` to find the next task to work on
 
 ## Handing Off to Execution
 
-` + "`harness start <task-id>`" + ` — creates branch + worktree, then follow harness-workflow
+` + "`harness task start <task-id>`" + ` — creates branch + worktree, then follow harness-workflow
 
 ## Commands Reference
 
@@ -220,15 +220,15 @@ Use when decomposing work into projects, epics, and tasks.
 |---|---|
 | ` + "`harness project new \"title\"`" + ` | Create a project |
 | ` + "`harness project list`" + ` | List projects with progress |
-| ` + "`harness project status <id>`" + ` | Project details + epics + tasks |
+| ` + "`harness project view <id>`" + ` | Project details + epics + tasks |
 | ` + "`harness project close <id>`" + ` | Close a project |
 | ` + "`harness epic new \"title\" --project <id>`" + ` | Create epic under project |
 | ` + "`harness epic list [--project <id>]`" + ` | List epics |
-| ` + "`harness epic status <id>`" + ` | Epic details + tasks |
+| ` + "`harness epic view <id>`" + ` | Epic details + tasks |
 | ` + "`harness epic close <id>`" + ` | Close an epic |
-| ` + "`harness plan \"desc\" [--epic <id>]`" + ` | Create planned task |
-| ` + "`harness start <task-id> [--base <branch>]`" + ` | Start a planned task |
-| ` + "`harness ready`" + ` | List unblocked planned tasks |
+| ` + "`harness task new \"desc\" [--epic <id>]`" + ` | Create planned task |
+| ` + "`harness task start <task-id> [--base <branch>]`" + ` | Start a planned task |
+| ` + "`harness task list --ready`" + ` | List unblocked planned tasks |
 | ` + "`harness dep add <from> <to>`" + ` | Add blocker dependency |
 | ` + "`harness dep rm <from> <to>`" + ` | Remove dependency |
 `

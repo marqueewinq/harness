@@ -65,7 +65,7 @@ func TestE2EWorkflow(t *testing.T) {
 	defer app.Close()
 
 	// harness new
-	err = app.CmdNew("add hello feature", "")
+	err = app.CmdNew("add hello feature", "", "", "")
 	if err != nil {
 		t.Fatal("new:", err)
 	}
@@ -92,7 +92,7 @@ func TestE2EWorkflow(t *testing.T) {
 	cmd.Run()
 
 	// harness check
-	err = app.CmdCheck(task.ID)
+	err = app.CmdWorkCheck(task.ID)
 	if err != nil {
 		t.Fatal("check:", err)
 	}
@@ -102,7 +102,7 @@ func TestE2EWorkflow(t *testing.T) {
 	}
 
 	// harness request-review
-	err = app.CmdRequestReview(task.ID)
+	err = app.CmdReviewRequest(task.ID)
 	if err != nil {
 		t.Fatal("request-review:", err)
 	}
@@ -111,8 +111,8 @@ func TestE2EWorkflow(t *testing.T) {
 		t.Errorf("state after request-review = %s, want REVIEW_REQUESTED", task3.State)
 	}
 
-	// harness record-review approve
-	err = app.CmdRecordReview(task.ID, "approve", "")
+	// harness review approve
+	err = app.CmdReviewApprove(task.ID, "")
 	if err != nil {
 		t.Fatal("record-review:", err)
 	}
@@ -122,7 +122,7 @@ func TestE2EWorkflow(t *testing.T) {
 	}
 
 	// harness merge
-	err = app.CmdMerge(task.ID)
+	err = app.CmdWorkMerge(task.ID)
 	if err != nil {
 		t.Fatal("merge:", err)
 	}
@@ -165,7 +165,7 @@ func TestCmdCloseWithoutCleanup(t *testing.T) {
 	}
 	defer app.Close()
 
-	err = app.CmdNew("feature to close", "")
+	err = app.CmdNew("feature to close", "", "", "")
 	if err != nil {
 		t.Fatal("new:", err)
 	}
@@ -178,7 +178,7 @@ func TestCmdCloseWithoutCleanup(t *testing.T) {
 	gitRun(t, task.WorktreePath, "commit", "-m", "wip")
 
 	// Close without cleanup
-	err = app.CmdClose(task.ID, false)
+	err = app.CmdWorkClose(task.ID, false)
 	if err != nil {
 		t.Fatal("close:", err)
 	}
@@ -211,7 +211,7 @@ func TestCmdCloseWithCleanup(t *testing.T) {
 	}
 	defer app.Close()
 
-	err = app.CmdNew("feature to close with cleanup", "")
+	err = app.CmdNew("feature to close with cleanup", "", "", "")
 	if err != nil {
 		t.Fatal("new:", err)
 	}
@@ -226,7 +226,7 @@ func TestCmdCloseWithCleanup(t *testing.T) {
 	gitRun(t, wtPath, "commit", "-m", "wip")
 
 	// Close with cleanup
-	err = app.CmdClose(task.ID, true)
+	err = app.CmdWorkClose(task.ID, true)
 	if err != nil {
 		t.Fatal("close:", err)
 	}
@@ -269,7 +269,7 @@ func TestE2EFeatureBranch(t *testing.T) {
 	defer app.Close()
 
 	// Create parent feature task
-	err = app.CmdNew("big feature", "")
+	err = app.CmdNew("big feature", "", "", "")
 	if err != nil {
 		t.Fatal("new parent:", err)
 	}
@@ -279,7 +279,7 @@ func TestE2EFeatureBranch(t *testing.T) {
 	}
 
 	// Create subtask targeting parent's branch
-	err = app.CmdNew("subtask one", parent.Branch)
+	err = app.CmdNew("subtask one", parent.Branch, "", "")
 	if err != nil {
 		t.Fatal("new subtask:", err)
 	}
@@ -297,10 +297,10 @@ func TestE2EFeatureBranch(t *testing.T) {
 	gitRun(t, subtask.WorktreePath, "commit", "-m", "add sub.txt")
 
 	// Subtask: check -> review -> merge (into parent branch)
-	app.CmdCheck(subtask.ID)
-	app.CmdRequestReview(subtask.ID)
-	app.CmdRecordReview(subtask.ID, "approve", "")
-	err = app.CmdMerge(subtask.ID)
+	app.CmdWorkCheck(subtask.ID)
+	app.CmdReviewRequest(subtask.ID)
+	app.CmdReviewApprove(subtask.ID, "")
+	err = app.CmdWorkMerge(subtask.ID)
 	if err != nil {
 		t.Fatal("merge subtask:", err)
 	}
@@ -316,10 +316,10 @@ func TestE2EFeatureBranch(t *testing.T) {
 	}
 
 	// Now merge parent into main: check -> review -> merge
-	app.CmdCheck(parent.ID)
-	app.CmdRequestReview(parent.ID)
-	app.CmdRecordReview(parent.ID, "approve", "")
-	err = app.CmdMerge(parent.ID)
+	app.CmdWorkCheck(parent.ID)
+	app.CmdReviewRequest(parent.ID)
+	app.CmdReviewApprove(parent.ID, "")
+	err = app.CmdWorkMerge(parent.ID)
 	if err != nil {
 		t.Fatal("merge parent:", err)
 	}
@@ -356,7 +356,7 @@ func setupApp(t *testing.T) (*App, string) {
 func setupTask(t *testing.T) (*App, string, *Task) {
 	t.Helper()
 	app, dir := setupApp(t)
-	if err := app.CmdNew("test feature", ""); err != nil {
+	if err := app.CmdNew("test feature", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -372,7 +372,7 @@ func TestCmdCheckWrongState(t *testing.T) {
 	defer app.Close()
 
 	// Move to CHECKS_PASSED
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("first check:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -381,21 +381,21 @@ func TestCmdCheckWrongState(t *testing.T) {
 	}
 
 	// CmdCheck in CHECKS_PASSED -> error
-	err := app.CmdCheck(task.ID)
+	err := app.CmdWorkCheck(task.ID)
 	if err == nil {
 		t.Error("expected error running check in CHECKS_PASSED state")
 	}
 
 	// Move to APPROVED
-	app.CmdRequestReview(task.ID)
-	app.CmdRecordReview(task.ID, "approve", "")
+	app.CmdReviewRequest(task.ID)
+	app.CmdReviewApprove(task.ID, "")
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateApproved {
 		t.Fatalf("expected APPROVED, got %s", task.State)
 	}
 
 	// CmdCheck in APPROVED -> error
-	err = app.CmdCheck(task.ID)
+	err = app.CmdWorkCheck(task.ID)
 	if err == nil {
 		t.Error("expected error running check in APPROVED state")
 	}
@@ -409,7 +409,7 @@ func TestCmdRequestReviewWrongState(t *testing.T) {
 	defer app.Close()
 
 	// Task is IN_PROGRESS -> CmdRequestReview should fail
-	err := app.CmdRequestReview(task.ID)
+	err := app.CmdReviewRequest(task.ID)
 	if err == nil {
 		t.Error("expected error requesting review in IN_PROGRESS state")
 	}
@@ -421,14 +421,14 @@ func TestCmdRequestReviewWrongState(t *testing.T) {
 	os.WriteFile(filepath.Join(task.WorktreePath, "Makefile"), []byte("test:\n\t@exit 1\n"), 0644)
 	gitRun(t, task.WorktreePath, "add", "Makefile")
 	gitRun(t, task.WorktreePath, "commit", "-m", "break tests")
-	app.CmdCheck(task.ID)
+	app.CmdWorkCheck(task.ID)
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateChecksFailed {
 		t.Fatalf("expected CHECKS_FAILED, got %s", task.State)
 	}
 
 	// CHECKS_FAILED -> CmdRequestReview should fail
-	err = app.CmdRequestReview(task.ID)
+	err = app.CmdReviewRequest(task.ID)
 	if err == nil {
 		t.Error("expected error requesting review in CHECKS_FAILED state")
 	}
@@ -438,8 +438,8 @@ func TestCmdRecordReviewWrongState(t *testing.T) {
 	app, _, task := setupTask(t)
 	defer app.Close()
 
-	// Task is IN_PROGRESS -> CmdRecordReview should fail
-	err := app.CmdRecordReview(task.ID, "approve", "")
+	// Task is IN_PROGRESS -> CmdReviewApprove should fail
+	err := app.CmdReviewApprove(task.ID, "")
 	if err == nil {
 		t.Error("expected error recording review in IN_PROGRESS state")
 	}
@@ -453,41 +453,19 @@ func TestCmdRecordReviewMissingComment(t *testing.T) {
 	defer app.Close()
 
 	// Move to REVIEW_REQUESTED
-	app.CmdCheck(task.ID)
-	app.CmdRequestReview(task.ID)
+	app.CmdWorkCheck(task.ID)
+	app.CmdReviewRequest(task.ID)
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateReviewRequested {
 		t.Fatalf("expected REVIEW_REQUESTED, got %s", task.State)
 	}
 
-	// request-changes without comment -> error
-	err := app.CmdRecordReview(task.ID, "request-changes", "")
+	// reject without comment -> error
+	err := app.CmdReviewReject(task.ID, "")
 	if err == nil {
-		t.Error("expected error for request-changes without comment")
+		t.Error("expected error for reject without comment")
 	}
-	if err != nil && !strings.Contains(err.Error(), "--comment is required") {
-		t.Errorf("unexpected error message: %s", err)
-	}
-}
-
-func TestCmdRecordReviewUnknownDecision(t *testing.T) {
-	app, _, task := setupTask(t)
-	defer app.Close()
-
-	// Move to REVIEW_REQUESTED
-	app.CmdCheck(task.ID)
-	app.CmdRequestReview(task.ID)
-	task, _ = app.DB.GetTask(task.ID)
-	if task.State != StateReviewRequested {
-		t.Fatalf("expected REVIEW_REQUESTED, got %s", task.State)
-	}
-
-	// Unknown decision -> error
-	err := app.CmdRecordReview(task.ID, "invalid-decision", "")
-	if err == nil {
-		t.Error("expected error for unknown decision")
-	}
-	if err != nil && !strings.Contains(err.Error(), "unknown decision") {
+	if err != nil && !strings.Contains(err.Error(), "--comment is required for reject") {
 		t.Errorf("unexpected error message: %s", err)
 	}
 }
@@ -497,7 +475,7 @@ func TestCmdMergeWrongState(t *testing.T) {
 	defer app.Close()
 
 	// Task is IN_PROGRESS -> CmdMerge should fail
-	err := app.CmdMerge(task.ID)
+	err := app.CmdWorkMerge(task.ID)
 	if err == nil {
 		t.Error("expected error merging in IN_PROGRESS state")
 	}
@@ -533,10 +511,10 @@ func TestCmdCloseWrongState(t *testing.T) {
 	defer app.Close()
 
 	// Full workflow to MERGED
-	app.CmdCheck(task.ID)
-	app.CmdRequestReview(task.ID)
-	app.CmdRecordReview(task.ID, "approve", "")
-	if err := app.CmdMerge(task.ID); err != nil {
+	app.CmdWorkCheck(task.ID)
+	app.CmdReviewRequest(task.ID)
+	app.CmdReviewApprove(task.ID, "")
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -545,7 +523,7 @@ func TestCmdCloseWrongState(t *testing.T) {
 	}
 
 	// CmdClose on MERGED task -> error (terminal state, no transitions)
-	err := app.CmdClose(task.ID, false)
+	err := app.CmdWorkClose(task.ID, false)
 	if err == nil {
 		t.Error("expected error closing already-merged task")
 	}
@@ -561,14 +539,14 @@ func TestE2ERejectionCycle(t *testing.T) {
 	defer app.Close()
 
 	// check -> request-review -> request-changes
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "request-changes", "needs more tests"); err != nil {
-		t.Fatal("record-review request-changes:", err)
+	if err := app.CmdReviewReject(task.ID, "needs more tests"); err != nil {
+		t.Fatal("review reject:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateRequestChanges {
@@ -581,7 +559,7 @@ func TestE2ERejectionCycle(t *testing.T) {
 	gitRun(t, task.WorktreePath, "commit", "-m", "add more tests")
 
 	// check again -> request-review -> approve -> merge
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("second check:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -589,10 +567,10 @@ func TestE2ERejectionCycle(t *testing.T) {
 		t.Errorf("state after second check = %s, want CHECKS_PASSED", task.State)
 	}
 
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("second request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("approve:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -600,7 +578,7 @@ func TestE2ERejectionCycle(t *testing.T) {
 		t.Errorf("state after approve = %s, want APPROVED", task.State)
 	}
 
-	if err := app.CmdMerge(task.ID); err != nil {
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -635,7 +613,7 @@ func TestE2ECheckFailFix(t *testing.T) {
 	}
 	defer app.Close()
 
-	if err := app.CmdNew("fix tests", ""); err != nil {
+	if err := app.CmdNew("fix tests", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -646,7 +624,7 @@ func TestE2ECheckFailFix(t *testing.T) {
 	gitRun(t, task.WorktreePath, "commit", "-m", "add code")
 
 	// Check -> should fail (Makefile exits 1)
-	app.CmdCheck(task.ID)
+	app.CmdWorkCheck(task.ID)
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateChecksFailed {
 		t.Errorf("state after failing check = %s, want CHECKS_FAILED", task.State)
@@ -658,7 +636,7 @@ func TestE2ECheckFailFix(t *testing.T) {
 	gitRun(t, task.WorktreePath, "commit", "-m", "fix makefile")
 
 	// Check again -> should pass
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("second check:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -667,13 +645,13 @@ func TestE2ECheckFailFix(t *testing.T) {
 	}
 
 	// Continue: request-review -> approve -> merge
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("approve:", err)
 	}
-	if err := app.CmdMerge(task.ID); err != nil {
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -721,7 +699,7 @@ func TestE2ESquashMerge(t *testing.T) {
 	}
 	defer app.Close()
 
-	if err := app.CmdNew("squash feature", ""); err != nil {
+	if err := app.CmdNew("squash feature", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -736,16 +714,16 @@ func TestE2ESquashMerge(t *testing.T) {
 	gitRun(t, task.WorktreePath, "commit", "-m", "add b")
 
 	// check -> request-review -> approve -> merge
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("approve:", err)
 	}
-	if err := app.CmdMerge(task.ID); err != nil {
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -779,13 +757,13 @@ func TestE2EStaleReviewBlocksMerge(t *testing.T) {
 	defer app.Close()
 
 	// check -> request-review -> approve
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("approve:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -799,7 +777,7 @@ func TestE2EStaleReviewBlocksMerge(t *testing.T) {
 	gitRun(t, task.WorktreePath, "commit", "-m", "add extra after approval")
 
 	// CmdMerge should NOT error, but task goes to IN_PROGRESS (stale review)
-	err := app.CmdMerge(task.ID)
+	err := app.CmdWorkMerge(task.ID)
 	if err != nil {
 		t.Fatal("merge should not error on stale review:", err)
 	}
@@ -809,16 +787,16 @@ func TestE2EStaleReviewBlocksMerge(t *testing.T) {
 	}
 
 	// Re-do: check -> request-review -> approve -> merge
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("re-check:", err)
 	}
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("re-request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("re-approve:", err)
 	}
-	if err := app.CmdMerge(task.ID); err != nil {
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("re-merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -832,16 +810,16 @@ func TestE2EMergeWithUnchangedReview(t *testing.T) {
 	defer app.Close()
 
 	// Normal flow: check -> request-review -> approve -> merge (no new commits)
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("approve:", err)
 	}
-	if err := app.CmdMerge(task.ID); err != nil {
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -883,7 +861,7 @@ func TestE2ECustomReviewType(t *testing.T) {
 	}
 
 	// Full workflow should still work with agent review type
-	if err := app.CmdNew("agent reviewed feature", ""); err != nil {
+	if err := app.CmdNew("agent reviewed feature", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -892,16 +870,16 @@ func TestE2ECustomReviewType(t *testing.T) {
 	gitRun(t, task.WorktreePath, "add", "agent.txt")
 	gitRun(t, task.WorktreePath, "commit", "-m", "add agent file")
 
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("approve:", err)
 	}
-	if err := app.CmdMerge(task.ID); err != nil {
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -923,13 +901,13 @@ func TestE2EPlanningWorkflow(t *testing.T) {
 	if err := app.CmdEpicNew("Test Epic", "epic description", "proj-001"); err != nil {
 		t.Fatal("epic new:", err)
 	}
-	if err := app.CmdPlanNew("task A", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task A", "", "epic-001"); err != nil {
 		t.Fatal("plan A:", err)
 	}
-	if err := app.CmdPlanNew("task B", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task B", "", "epic-001"); err != nil {
 		t.Fatal("plan B:", err)
 	}
-	if err := app.CmdPlanNew("task C", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task C", "", "epic-001"); err != nil {
 		t.Fatal("plan C:", err)
 	}
 
@@ -974,7 +952,7 @@ func TestE2EPlanningWorkflow(t *testing.T) {
 	}
 
 	// Phase 2: Execute task A
-	if err := app.CmdStart("task-001", ""); err != nil {
+	if err := app.CmdTaskStart("task-001", ""); err != nil {
 		t.Fatal("start A:", err)
 	}
 	taskA, _ := app.DB.GetTask("task-001")
@@ -997,16 +975,16 @@ func TestE2EPlanningWorkflow(t *testing.T) {
 	gitRun(t, taskA.WorktreePath, "commit", "-m", "implement task A")
 
 	// Full flow: check -> request-review -> approve -> merge
-	if err := app.CmdCheck(taskA.ID); err != nil {
+	if err := app.CmdWorkCheck(taskA.ID); err != nil {
 		t.Fatal("check A:", err)
 	}
-	if err := app.CmdRequestReview(taskA.ID); err != nil {
+	if err := app.CmdReviewRequest(taskA.ID); err != nil {
 		t.Fatal("request-review A:", err)
 	}
-	if err := app.CmdRecordReview(taskA.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(taskA.ID, ""); err != nil {
 		t.Fatal("approve A:", err)
 	}
-	if err := app.CmdMerge(taskA.ID); err != nil {
+	if err := app.CmdWorkMerge(taskA.ID); err != nil {
 		t.Fatal("merge A:", err)
 	}
 	taskA, _ = app.DB.GetTask(taskA.ID)
@@ -1027,17 +1005,17 @@ func TestE2EPlanningWorkflow(t *testing.T) {
 	}
 
 	// Phase 4: Smoke test display commands (should not error)
-	if err := app.CmdList(); err != nil {
-		t.Errorf("CmdList: %v", err)
+	if err := app.CmdTaskList("", "", "all", false); err != nil {
+		t.Errorf("CmdTaskList: %v", err)
 	}
-	if err := app.CmdProjectStatus("proj-001"); err != nil {
-		t.Errorf("CmdProjectStatus: %v", err)
+	if err := app.CmdProjectView("proj-001"); err != nil {
+		t.Errorf("CmdProjectView: %v", err)
 	}
-	if err := app.CmdEpicStatus("epic-001"); err != nil {
-		t.Errorf("CmdEpicStatus: %v", err)
+	if err := app.CmdEpicView("epic-001"); err != nil {
+		t.Errorf("CmdEpicView: %v", err)
 	}
-	if err := app.CmdReady("", ""); err != nil {
-		t.Errorf("CmdReady: %v", err)
+	if err := app.CmdTaskList("", "", "planned", true); err != nil {
+		t.Errorf("CmdTaskList (ready): %v", err)
 	}
 }
 
@@ -1046,7 +1024,7 @@ func TestE2EClosePlannedTask(t *testing.T) {
 	defer app.Close()
 
 	// Plan a task without starting
-	if err := app.CmdPlanNew("planned only", "", ""); err != nil {
+	if err := app.CmdTaskNew("planned only", "", ""); err != nil {
 		t.Fatal("plan:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -1055,7 +1033,7 @@ func TestE2EClosePlannedTask(t *testing.T) {
 	}
 
 	// Close it without cleanup
-	if err := app.CmdClose("task-001", false); err != nil {
+	if err := app.CmdWorkClose("task-001", false); err != nil {
 		t.Fatal("close:", err)
 	}
 	task, _ = app.DB.GetTask("task-001")
@@ -1073,10 +1051,10 @@ func TestE2EClosePlannedTask(t *testing.T) {
 	// Close with cleanup should also work (no-op on branch/worktree)
 	app2, _ := setupApp(t)
 	defer app2.Close()
-	if err := app2.CmdPlanNew("planned only 2", "", ""); err != nil {
+	if err := app2.CmdTaskNew("planned only 2", "", ""); err != nil {
 		t.Fatal("plan2:", err)
 	}
-	if err := app2.CmdClose("task-001", true); err != nil {
+	if err := app2.CmdWorkClose("task-001", true); err != nil {
 		t.Fatal("close with cleanup:", err)
 	}
 	task2, _ := app2.DB.GetTask("task-001")
@@ -1090,10 +1068,10 @@ func TestE2EStartBlockedTask(t *testing.T) {
 	defer app.Close()
 
 	// Plan A and B
-	if err := app.CmdPlanNew("blocker task", "", ""); err != nil {
+	if err := app.CmdTaskNew("blocker task", "", ""); err != nil {
 		t.Fatal("plan A:", err)
 	}
-	if err := app.CmdPlanNew("blocked task", "", ""); err != nil {
+	if err := app.CmdTaskNew("blocked task", "", ""); err != nil {
 		t.Fatal("plan B:", err)
 	}
 
@@ -1103,7 +1081,7 @@ func TestE2EStartBlockedTask(t *testing.T) {
 	}
 
 	// Start B while A is still PLANNED -- should succeed with warning
-	if err := app.CmdStart("task-002", ""); err != nil {
+	if err := app.CmdTaskStart("task-002", ""); err != nil {
 		t.Fatal("start blocked task:", err)
 	}
 	task, _ := app.DB.GetTask("task-002")
@@ -1123,7 +1101,7 @@ func TestE2EOrphanPlannedTask(t *testing.T) {
 	defer app.Close()
 
 	// Plan without epic
-	if err := app.CmdPlanNew("orphan task", "", ""); err != nil {
+	if err := app.CmdTaskNew("orphan task", "", ""); err != nil {
 		t.Fatal("plan:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -1135,7 +1113,7 @@ func TestE2EOrphanPlannedTask(t *testing.T) {
 	}
 
 	// Start it
-	if err := app.CmdStart("task-001", ""); err != nil {
+	if err := app.CmdTaskStart("task-001", ""); err != nil {
 		t.Fatal("start:", err)
 	}
 	task, _ = app.DB.GetTask("task-001")
@@ -1148,16 +1126,16 @@ func TestE2EOrphanPlannedTask(t *testing.T) {
 	gitRun(t, task.WorktreePath, "add", "orphan.txt")
 	gitRun(t, task.WorktreePath, "commit", "-m", "orphan change")
 
-	if err := app.CmdCheck(task.ID); err != nil {
+	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdRequestReview(task.ID); err != nil {
+	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request-review:", err)
 	}
-	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
 		t.Fatal("approve:", err)
 	}
-	if err := app.CmdMerge(task.ID); err != nil {
+	if err := app.CmdWorkMerge(task.ID); err != nil {
 		t.Fatal("merge:", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -1165,9 +1143,9 @@ func TestE2EOrphanPlannedTask(t *testing.T) {
 		t.Errorf("state = %s, want MERGED", task.State)
 	}
 
-	// CmdList should not error (orphan shows in orphans section)
-	if err := app.CmdList(); err != nil {
-		t.Errorf("CmdList: %v", err)
+	// CmdTaskList should not error (orphan shows in orphans section)
+	if err := app.CmdTaskList("", "", "all", false); err != nil {
+		t.Errorf("CmdTaskList: %v", err)
 	}
 }
 
@@ -1176,7 +1154,7 @@ func TestE2EMixedWorkflow(t *testing.T) {
 	defer app.Close()
 
 	// Old style: CmdNew
-	if err := app.CmdNew("old style task", ""); err != nil {
+	if err := app.CmdNew("old style task", "", "", ""); err != nil {
 		t.Fatal("CmdNew:", err)
 	}
 	oldTask, _ := app.DB.GetTask("task-001")
@@ -1191,7 +1169,7 @@ func TestE2EMixedWorkflow(t *testing.T) {
 	if err := app.CmdEpicNew("Mixed Epic", "", "proj-001"); err != nil {
 		t.Fatal("epic:", err)
 	}
-	if err := app.CmdPlanNew("planned task", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("planned task", "", "epic-001"); err != nil {
 		t.Fatal("plan:", err)
 	}
 	plannedTask, _ := app.DB.GetTask("task-002")
@@ -1211,9 +1189,9 @@ func TestE2EMixedWorkflow(t *testing.T) {
 		t.Errorf("task count = %d, want 2", len(tasks))
 	}
 
-	// CmdList should not error
-	if err := app.CmdList(); err != nil {
-		t.Errorf("CmdList: %v", err)
+	// CmdTaskList should not error
+	if err := app.CmdTaskList("", "", "all", false); err != nil {
+		t.Errorf("CmdTaskList: %v", err)
 	}
 }
 

@@ -54,7 +54,7 @@ func (a *App) CmdEpicList(projectID string) error {
 	return nil
 }
 
-func (a *App) CmdEpicStatus(epicID string) error {
+func (a *App) CmdEpicView(epicID string) error {
 	e, err := a.DB.GetEpic(epicID)
 	if err != nil {
 		return err
@@ -97,5 +97,37 @@ func (a *App) CmdEpicClose(epicID string) error {
 		return err
 	}
 	fmt.Printf("Closed %s: %q\n", e.ID, e.Title)
+	return nil
+}
+
+func (a *App) CmdEpicEdit(epicID, title, description, projectID string, setTitle, setDescription, setProject bool) error {
+	e, err := a.DB.GetEpic(epicID)
+	if err != nil {
+		return err
+	}
+	if e.Status == "closed" {
+		return fmt.Errorf("cannot edit closed epic %s", epicID)
+	}
+	newTitle := e.Title
+	if setTitle {
+		newTitle = title
+	}
+	newDesc := e.Description
+	if setDescription {
+		newDesc = description
+	}
+	newProject := e.ProjectID
+	if setProject {
+		newProject = projectID
+		if newProject != "" {
+			if _, err := a.DB.GetProject(newProject); err != nil {
+				return err
+			}
+		}
+	}
+	if err := a.DB.UpdateEpic(epicID, newTitle, newDesc, newProject); err != nil {
+		return err
+	}
+	fmt.Printf("Updated %s: %q\n", epicID, newTitle)
 	return nil
 }

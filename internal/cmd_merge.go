@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func (a *App) CmdMerge(taskID string) error {
+func (a *App) CmdWorkMerge(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
 		return err

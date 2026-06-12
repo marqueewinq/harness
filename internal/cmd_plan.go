@@ -1,8 +1,11 @@
 package internal
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-func (a *App) CmdPlanNew(description, notes, epicID string) error {
+func (a *App) CmdTaskNew(description, notes, epicID string) error {
 	if epicID != "" {
 		e, err := a.DB.GetEpic(epicID)
 		if err != nil {
@@ -28,7 +31,7 @@ func (a *App) CmdPlanNew(description, notes, epicID string) error {
 	return nil
 }
 
-func (a *App) CmdPlanEdit(taskID, description, notes, epicID string, setDescription, setNotes, setEpic bool) error {
+func (a *App) CmdTaskEdit(taskID, description, notes, epicID string, setDescription, setNotes, setEpic bool) error {
 	task, err := a.DB.GetTask(taskID)
 	if err != nil {
 		return err
@@ -64,7 +67,7 @@ func (a *App) CmdPlanEdit(taskID, description, notes, epicID string, setDescript
 	return nil
 }
 
-func (a *App) CmdPlanDelete(taskID string) error {
+func (a *App) CmdTaskDelete(taskID string) error {
 	task, err := a.DB.GetTask(taskID)
 	if err != nil {
 		return err
@@ -76,7 +79,7 @@ func (a *App) CmdPlanDelete(taskID string) error {
 	return nil
 }
 
-func (a *App) CmdPlanView(taskID string) error {
+func (a *App) CmdTaskView(taskID string) error {
 	task, err := a.DB.GetTask(taskID)
 	if err != nil {
 		return err
@@ -118,14 +121,13 @@ func (a *App) CmdPlanView(taskID string) error {
 	return nil
 }
 
-func (a *App) CmdPlanList(filterEpic, filterProject string) error {
+func (a *App) CmdTaskList(filterEpic, filterProject, filterStatus string, readyOnly bool) error {
 	var candidates []Task
 	var err error
 
 	if filterEpic != "" {
 		candidates, err = a.DB.ListTasksByEpic(filterEpic)
 	} else if filterProject != "" {
-		// Collect tasks from all epics under this project
 		epics, err2 := a.DB.ListEpicsByProject(filterProject)
 		if err2 != nil {
 			return err2
@@ -141,21 +143,47 @@ func (a *App) CmdPlanList(filterEpic, filterProject string) error {
 		return err
 	}
 
-	var planned []Task
+	if filterStatus == "" {
+		filterStatus = "planned"
+	}
+
+	var filtered []Task
 	for _, t := range candidates {
-		if t.State == StatePlanned {
-			planned = append(planned, t)
+		if filterStatus == "all" || strings.ToUpper(filterStatus) == string(t.State) {
+			filtered = append(filtered, t)
 		}
 	}
 
-	if len(planned) == 0 {
-		fmt.Println("No planned tasks. Run: harness plan new \"description\"")
+	if readyOnly {
+		var readyFiltered []Task
+		for _, t := range filtered {
+			if t.State != StatePlanned {
+				readyFiltered = append(readyFiltered, t)
+				continue
+			}
+			blockers, _ := a.DB.GetBlockers(t.ID)
+			isBlocked := false
+			for _, b := range blockers {
+				bt, _ := a.DB.GetTask(b.FromTaskID)
+				if bt != nil && bt.State != StateMerged && bt.State != StateClosed {
+					isBlocked = true
+					break
+				}
+			}
+			if !isBlocked {
+				readyFiltered = append(readyFiltered, t)
+			}
+		}
+		filtered = readyFiltered
+	}
+
+	if len(filtered) == 0 {
+		fmt.Println("No tasks match the filter.")
 		return nil
 	}
 
-	// Build epic->project lookup
 	projectByEpic := map[string]string{}
-	for _, t := range planned {
+	for _, t := range filtered {
 		if t.EpicID != "" {
 			if _, ok := projectByEpic[t.EpicID]; !ok {
 				if e, err := a.DB.GetEpic(t.EpicID); err == nil {
@@ -165,15 +193,30 @@ func (a *App) CmdPlanList(filterEpic, filterProject string) error {
 		}
 	}
 
-	fmt.Printf("%-10s %-10s %-10s %s\n", "ID", "Project", "Epic", "Description")
-	for _, t := range planned {
+	fmt.Printf("%-10s %-20s %-10s %-10s %s\n", "ID", "State", "Project", "Epic", "Description")
+	for _, t := range filtered {
 		projInfo := ""
 		epicInfo := ""
 		if t.EpicID != "" {
 			epicInfo = t.EpicID
 			projInfo = projectByEpic[t.EpicID]
 		}
-		fmt.Printf("%-10s %-10s %-10s %s\n", t.ID, projInfo, epicInfo, t.Description)
+		fmt.Printf("%-10s %-20s %-10s %-10s %s\n", t.ID, t.State, projInfo, epicInfo, t.Description)
 	}
+	return nil
+}
+
+func (a *App) CmdTaskClose(taskID string) error {
+	task, err := a.DB.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+	if task.State != StatePlanned {
+		return fmt.Errorf("task close is for PLANNED tasks (task %s is %s); use 'harness work close' for active tasks", taskID, task.State)
+	}
+	if err := a.DB.UpdateTaskState(taskID, StateClosed); err != nil {
+		return err
+	}
+	fmt.Printf("Task %s is now CLOSED.\n", taskID)
 	return nil
 }

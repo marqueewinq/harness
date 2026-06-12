@@ -20,7 +20,7 @@ type Task struct {
 	UpdatedAt    time.Time
 }
 
-func (db *DB) CreateTask(description, branch, worktreePath, baseBranch, parentTaskID string) (*Task, error) {
+func (db *DB) CreateTask(description, notes, branch, worktreePath, baseBranch, parentTaskID, epicID string) (*Task, error) {
 	id, err := db.nextTaskID()
 	if err != nil {
 		return nil, err
@@ -31,19 +31,23 @@ func (db *DB) CreateTask(description, branch, worktreePath, baseBranch, parentTa
 	if parentTaskID != "" {
 		parentVal = parentTaskID
 	}
+	var epicVal interface{}
+	if epicID != "" {
+		epicVal = epicID
+	}
 	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, description, branch, worktree_path, state, base_branch, parent_task_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, description, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, now, now,
+		`INSERT INTO tasks (id, description, notes, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, description, notes, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, epicVal, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
 	}
 
 	return &Task{
-		ID: id, Description: description, Branch: branch,
+		ID: id, Description: description, Notes: notes, Branch: branch,
 		WorktreePath: worktreePath, State: StateInProgress,
-		BaseBranch: baseBranch, ParentTaskID: parentTaskID,
+		BaseBranch: baseBranch, ParentTaskID: parentTaskID, EpicID: epicID,
 		CreatedAt: now, UpdatedAt: now,
 	}, nil
 }

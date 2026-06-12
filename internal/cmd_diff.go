@@ -2,7 +2,7 @@ package internal
 
 import "fmt"
 
-func (a *App) CmdDiff(taskID string) error {
+func (a *App) CmdWorkDiff(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
 		return err

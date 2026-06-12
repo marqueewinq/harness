@@ -2,7 +2,7 @@ package internal
 
 import "fmt"
 
-func (a *App) CmdCheck(taskID string) error {
+func (a *App) CmdWorkCheck(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
 		return err
