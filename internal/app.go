@@ -85,6 +85,22 @@ func isEpicID(id string) bool {
 	return strings.HasPrefix(id, "epic-")
 }
 
+// BuildCommitMessage renders a commit message template with task hierarchy IDs.
+// Empty variables cause their surrounding [...] blocks to be stripped.
+func BuildCommitMessage(tmpl, taskID, epicID, projID, message string) string {
+	s := tmpl
+	s = strings.ReplaceAll(s, "{{task}}", taskID)
+	s = strings.ReplaceAll(s, "{{epic}}", epicID)
+	s = strings.ReplaceAll(s, "{{proj}}", projID)
+	s = strings.ReplaceAll(s, "{{message}}", message)
+
+	// Strip empty bracket blocks like "[] " or "[  ]"
+	emptyBrackets := regexp.MustCompile(`\[\s*\]\s*`)
+	s = emptyBrackets.ReplaceAllString(s, "")
+
+	return strings.TrimSpace(s)
+}
+
 func (a *App) ResolveTaskID(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil

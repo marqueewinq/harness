@@ -305,6 +305,27 @@ func TestRebase(t *testing.T) {
 	}
 }
 
+func TestCommit(t *testing.T) {
+	dir := initTestRepo(t)
+	git := NewGitClient(dir)
+
+	os.WriteFile(filepath.Join(dir, "test.txt"), []byte("test\n"), 0644)
+	git.run("add", "test.txt")
+
+	err := git.Commit("test commit")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := git.run("log", "--oneline", "-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "test commit") {
+		t.Errorf("commit message = %q, want to contain %q", out, "test commit")
+	}
+}
+
 func TestDiffEmpty(t *testing.T) {
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)

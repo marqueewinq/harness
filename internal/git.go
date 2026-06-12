@@ -81,6 +81,12 @@ func (g *GitClient) MergeSquash(branch, message string) error {
 	return err
 }
 
+func (g *GitClient) Commit(message string, extraArgs ...string) error {
+	args := append([]string{"commit", "-m", message}, extraArgs...)
+	_, err := g.run(args...)
+	return err
+}
+
 func (g *GitClient) Checkout(branch string) error {
 	_, err := g.run("checkout", branch)
 	return err

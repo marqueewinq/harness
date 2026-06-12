@@ -62,3 +62,70 @@ func TestSlugifyLeadingTrailingSpecial(t *testing.T) {
 		t.Errorf("Slugify(%q) = %q, want %q", "---hello---", got, want)
 	}
 }
+
+func TestBuildCommitMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		taskID   string
+		epicID   string
+		projID   string
+		message  string
+		want     string
+	}{
+		{
+			name:     "full hierarchy",
+			template: "[{{proj}}] [{{epic}}] [{{task}}] {{message}}",
+			taskID:   "task-003",
+			epicID:   "epic-002",
+			projID:   "proj-001",
+			message:  "fix auth bug",
+			want:     "[proj-001] [epic-002] [task-003] fix auth bug",
+		},
+		{
+			name:     "no project",
+			template: "[{{proj}}] [{{epic}}] [{{task}}] {{message}}",
+			taskID:   "task-003",
+			epicID:   "epic-002",
+			projID:   "",
+			message:  "fix auth bug",
+			want:     "[epic-002] [task-003] fix auth bug",
+		},
+		{
+			name:     "no epic or project",
+			template: "[{{proj}}] [{{epic}}] [{{task}}] {{message}}",
+			taskID:   "task-003",
+			epicID:   "",
+			projID:   "",
+			message:  "fix auth bug",
+			want:     "[task-003] fix auth bug",
+		},
+		{
+			name:     "passthrough default",
+			template: "{{message}}",
+			taskID:   "task-001",
+			epicID:   "",
+			projID:   "",
+			message:  "just a message",
+			want:     "just a message",
+		},
+		{
+			name:     "custom format",
+			template: "{{task}}: {{message}}",
+			taskID:   "task-005",
+			epicID:   "",
+			projID:   "",
+			message:  "refactor",
+			want:     "task-005: refactor",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildCommitMessage(tt.template, tt.taskID, tt.epicID, tt.projID, tt.message)
+			if got != tt.want {
+				t.Errorf("BuildCommitMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
