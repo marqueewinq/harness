@@ -136,6 +136,7 @@ If the task is already IN_PROGRESS, continue in its worktree.
 ## Rules
 
 - NEVER use git commit, git push, git merge, git add, git checkout directly
+- Use ` + "`harness work commit -m \"message\"`" + ` to commit (applies configured message template)
 - ALWAYS work in the worktree created by harness new
 - ALWAYS run harness check before requesting review
 - ALWAYS request and pass review before merging
@@ -157,6 +158,7 @@ If the task is already IN_PROGRESS, continue in its worktree.
 | ` + "`harness review reject --comment \"...\" [task-id]`" + ` | Record rejection |
 | ` + "`harness review history [task-id]`" + ` | Show past reviews |
 | ` + "`harness work merge [task-id]`" + ` | Merge to main |
+| ` + "`harness work commit -m \"msg\"`" + ` | Commit with message template |
 | ` + "`harness task start <task-id>`" + ` | Start a planned task (creates branch + worktree) |
 `
 
