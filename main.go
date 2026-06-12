@@ -93,6 +93,7 @@ func workCmd() *cobra.Command {
 	cmd.AddCommand(workDiffCmd())
 	cmd.AddCommand(workMergeCmd())
 	cmd.AddCommand(workCloseCmd())
+	cmd.AddCommand(workCommitCmd())
 	return cmd
 }
 
@@ -170,6 +171,25 @@ func workCloseCmd() *cobra.Command {
 			taskID = args[0]
 		}
 		return app.CmdWorkClose(taskID, cleanup)
+	})
+	return cmd
+}
+
+func workCommitCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "commit [task-id]",
+		Short: "Commit with message template",
+		Args:  cobra.MaximumNArgs(1),
+	}
+	var message string
+	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message")
+	cmd.MarkFlagRequired("message")
+	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
+		taskID := ""
+		if len(args) > 0 {
+			taskID = args[0]
+		}
+		return app.CmdWorkCommit(taskID, message, nil)
 	})
 	return cmd
 }
