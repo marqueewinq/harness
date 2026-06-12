@@ -29,11 +29,20 @@ type ReviewConfig struct {
 }
 
 type Config struct {
-	MainBranch  string                 `yaml:"main_branch"`
-	WorktreeDir string                 `yaml:"worktree_dir"`
-	Checks      map[string]CheckConfig `yaml:"checks"`
-	Merge       MergeConfig            `yaml:"merge"`
-	Review      ReviewConfig           `yaml:"review"`
+	MainBranch          string                 `yaml:"main_branch"`
+	WorktreeDir         string                 `yaml:"worktree_dir"`
+	EpicFeatureBranches *bool                  `yaml:"epic_feature_branches,omitempty"`
+	Checks              map[string]CheckConfig `yaml:"checks"`
+	Merge               MergeConfig            `yaml:"merge"`
+	Review              ReviewConfig           `yaml:"review"`
+}
+
+// EpicFeatureBranchesEnabled returns true (default) unless explicitly set to false.
+func (c *Config) EpicFeatureBranchesEnabled() bool {
+	if c.EpicFeatureBranches == nil {
+		return true
+	}
+	return *c.EpicFeatureBranches
 }
 
 func LoadConfig(path string) (*Config, error) {

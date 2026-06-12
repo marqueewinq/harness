@@ -111,19 +111,25 @@ func (a *App) CmdWorkMerge(taskID string) error {
 
 	// Merge
 	// Determine which git client to use for the merge.
-	// If the target branch is checked out in a worktree (i.e., it's another task's branch),
-	// we must merge from that worktree instead of the main repo.
+	// If target is a task's branch checked out in a worktree, merge there.
+	// If target is an epic branch (not in a worktree), checkout in main repo.
+	// If target is main, checkout in main repo.
 	mergeGit := a.Git
 	if targetBranch != a.Config.MainBranch {
 		if parentTask, err := a.DB.GetTaskByBranch(targetBranch); err == nil {
+			// Target is a task branch in a worktree
 			mergeGit = NewGitClient(parentTask.WorktreePath)
+		} else {
+			// Target is not a task branch (e.g. epic branch) - checkout in main repo
+			if err := a.Git.Checkout(targetBranch); err != nil {
+				a.DB.DequeueTask(id)
+				a.DB.UpdateTaskState(id, StateMergeFailed)
+				return fmt.Errorf("checkout %s: %w", targetBranch, err)
+			}
 		}
 	}
 
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", task.Branch, targetBranch, strategy.Name())
-	if targetBranch == a.Config.MainBranch || mergeGit != a.Git {
-		// For main branch: checkout in main repo. For worktree targets: already on correct branch.
-	}
 	if targetBranch == a.Config.MainBranch {
 		if err := a.Git.Checkout(targetBranch); err != nil {
 			a.DB.DequeueTask(id)

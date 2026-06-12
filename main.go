@@ -128,15 +128,15 @@ func workCheckCmd() *cobra.Command {
 
 func workDiffCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "diff [task-id]",
-		Short: "Show diff against main",
+		Use:   "diff [task-id|epic-id]",
+		Short: "Show diff",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
+			id := ""
 			if len(args) > 0 {
-				taskID = args[0]
+				id = args[0]
 			}
-			return app.CmdWorkDiff(taskID)
+			return app.CmdDiffDispatch(id)
 		}),
 	}
 }
@@ -190,66 +190,66 @@ func reviewCmd() *cobra.Command {
 
 func reviewRequestCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "request [task-id]",
-		Short: "Request review for task",
+		Use:   "request [task-id|epic-id]",
+		Short: "Request review for task or epic",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
+			id := ""
 			if len(args) > 0 {
-				taskID = args[0]
+				id = args[0]
 			}
-			return app.CmdReviewRequest(taskID)
+			return app.CmdReviewRequestDispatch(id)
 		}),
 	}
 }
 
 func reviewApproveCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "approve [task-id]",
-		Short: "Approve a task",
+		Use:   "approve [task-id|epic-id]",
+		Short: "Approve a task or epic",
 		Args:  cobra.MaximumNArgs(1),
 	}
 	var comment string
 	cmd.Flags().StringVar(&comment, "comment", "", "Review comment")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		taskID := ""
+		id := ""
 		if len(args) > 0 {
-			taskID = args[0]
+			id = args[0]
 		}
-		return app.CmdReviewApprove(taskID, comment)
+		return app.CmdReviewApproveDispatch(id, comment)
 	})
 	return cmd
 }
 
 func reviewRejectCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reject [task-id]",
-		Short: "Request changes on a task",
+		Use:   "reject [task-id|epic-id]",
+		Short: "Request changes on a task or epic",
 		Args:  cobra.MaximumNArgs(1),
 	}
 	var comment string
 	cmd.Flags().StringVar(&comment, "comment", "", "Review comment")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		taskID := ""
+		id := ""
 		if len(args) > 0 {
-			taskID = args[0]
+			id = args[0]
 		}
-		return app.CmdReviewReject(taskID, comment)
+		return app.CmdReviewRejectDispatch(id, comment)
 	})
 	return cmd
 }
 
 func reviewHistoryCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "history [task-id]",
+		Use:   "history [task-id|epic-id]",
 		Short: "Show review history",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
+			id := ""
 			if len(args) > 0 {
-				taskID = args[0]
+				id = args[0]
 			}
-			return app.CmdReviewHistory(taskID)
+			return app.CmdReviewHistoryDispatch(id)
 		}),
 	}
 }
@@ -459,6 +459,7 @@ func epicCmd() *cobra.Command {
 	cmd.AddCommand(epicListCmd())
 	cmd.AddCommand(epicViewCmd())
 	cmd.AddCommand(epicCloseCmd())
+	cmd.AddCommand(epicMergeCmd())
 	return cmd
 }
 
@@ -468,11 +469,12 @@ func epicNewCmd() *cobra.Command {
 		Short: "Create a new epic",
 		Args:  cobra.ExactArgs(1),
 	}
-	var epicDesc, epicProject string
+	var epicDesc, epicProject, epicBranch string
 	cmd.Flags().StringVar(&epicProject, "project", "", "Parent project ID")
 	cmd.Flags().StringVar(&epicDesc, "description", "", "Epic description")
+	cmd.Flags().StringVar(&epicBranch, "branch", "", "Branch for epic (default: epic/<slug>)")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		return app.CmdEpicNew(args[0], epicDesc, epicProject)
+		return app.CmdEpicNew(args[0], epicDesc, epicProject, epicBranch, c.Flags().Changed("branch"))
 	})
 	return cmd
 }
@@ -527,6 +529,17 @@ func epicCloseCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: withApp(func(app *internal.App, c *cobra.Command, args []string) error {
 			return app.CmdEpicClose(args[0])
+		}),
+	}
+}
+
+func epicMergeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "merge [epic-id]",
+		Short: "Merge epic branch into main",
+		Args:  cobra.ExactArgs(1),
+		RunE: withApp(func(app *internal.App, c *cobra.Command, args []string) error {
+			return app.CmdEpicMerge(args[0])
 		}),
 	}
 }
@@ -598,16 +611,16 @@ func aliasCheckCmd() *cobra.Command {
 
 func aliasDiffCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "diff [task-id]",
-		Short:  "Show diff against main (alias for work diff)",
+		Use:    "diff [task-id|epic-id]",
+		Short:  "Show diff (alias for work diff)",
 		Args:   cobra.MaximumNArgs(1),
 		Hidden: true,
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
+			id := ""
 			if len(args) > 0 {
-				taskID = args[0]
+				id = args[0]
 			}
-			return app.CmdWorkDiff(taskID)
+			return app.CmdDiffDispatch(id)
 		}),
 	}
 }

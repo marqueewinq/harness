@@ -56,6 +56,11 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v3: %w", err)
 		}
 	}
+	if version < 4 {
+		if err := migrateV4(conn); err != nil {
+			return fmt.Errorf("migration v4: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -180,4 +185,31 @@ func migrateV2(conn *sql.DB) error {
 func migrateV3(conn *sql.DB) error {
 	conn.Exec(`ALTER TABLE tasks ADD COLUMN notes TEXT NOT NULL DEFAULT ''`)
 	return setVersion(conn, 3)
+}
+
+func migrateV4(conn *sql.DB) error {
+	// Add branch column to epics
+	conn.Exec(`ALTER TABLE epics ADD COLUMN branch TEXT DEFAULT NULL`)
+
+	// Rebuild reviews table to add epic_id and make task_id nullable
+	rebuild := `
+	CREATE TABLE IF NOT EXISTS reviews_new (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id TEXT DEFAULT NULL,
+		epic_id TEXT DEFAULT NULL,
+		decision TEXT NOT NULL,
+		comment TEXT NOT NULL DEFAULT '',
+		commit_sha TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	INSERT OR IGNORE INTO reviews_new (id, task_id, decision, comment, commit_sha, created_at)
+		SELECT id, task_id, decision, comment, commit_sha, created_at
+		FROM reviews;
+	DROP TABLE reviews;
+	ALTER TABLE reviews_new RENAME TO reviews;
+	`
+	if _, err := conn.Exec(rebuild); err != nil {
+		return err
+	}
+	return setVersion(conn, 4)
 }

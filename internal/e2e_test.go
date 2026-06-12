@@ -898,7 +898,7 @@ func TestE2EPlanningWorkflow(t *testing.T) {
 	if err := app.CmdProjectNew("Test Project", "project description"); err != nil {
 		t.Fatal("project new:", err)
 	}
-	if err := app.CmdEpicNew("Test Epic", "epic description", "proj-001"); err != nil {
+	if err := app.CmdEpicNew("Test Epic", "epic description", "proj-001", "", false); err != nil {
 		t.Fatal("epic new:", err)
 	}
 	if err := app.CmdTaskNew("task A", "", "epic-001"); err != nil {
@@ -1166,7 +1166,7 @@ func TestE2EMixedWorkflow(t *testing.T) {
 	if err := app.CmdProjectNew("Mixed Project", ""); err != nil {
 		t.Fatal("project:", err)
 	}
-	if err := app.CmdEpicNew("Mixed Epic", "", "proj-001"); err != nil {
+	if err := app.CmdEpicNew("Mixed Epic", "", "proj-001", "", false); err != nil {
 		t.Fatal("epic:", err)
 	}
 	if err := app.CmdTaskNew("planned task", "", "epic-001"); err != nil {
@@ -1202,4 +1202,360 @@ func taskIDs(tasks []Task) []string {
 		ids[i] = t.ID
 	}
 	return ids
+}
+
+// --- Epic Feature Branch Tests ---
+
+func TestE2EEpicFeatureBranch(t *testing.T) {
+	app, dir := setupApp(t)
+	defer app.Close()
+
+	// Create project + epic (auto-creates epic branch)
+	if err := app.CmdProjectNew("Feature Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+	if err := app.CmdEpicNew("Big Feature", "", "proj-001", "", false); err != nil {
+		t.Fatal("epic new:", err)
+	}
+
+	epic, _ := app.DB.GetEpic("epic-001")
+	if epic.Branch != "epic/big-feature" {
+		t.Errorf("epic branch = %q, want %q", epic.Branch, "epic/big-feature")
+	}
+
+	// Verify git branch exists
+	if _, err := app.Git.RevParse("epic/big-feature"); err != nil {
+		t.Fatal("epic branch should exist in git:", err)
+	}
+
+	// Create a task under epic (should auto-resolve base from epic branch)
+	if err := app.CmdTaskNew("subtask one", "", "epic-001"); err != nil {
+		t.Fatal("plan subtask:", err)
+	}
+
+	// Start task - should use epic branch as base
+	if err := app.CmdTaskStart("task-001", ""); err != nil {
+		t.Fatal("start:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+	if task.BaseBranch != "epic/big-feature" {
+		t.Errorf("task base branch = %q, want %q", task.BaseBranch, "epic/big-feature")
+	}
+
+	// Make a change in task worktree
+	os.WriteFile(filepath.Join(task.WorktreePath, "sub.txt"), []byte("subtask\n"), 0644)
+	gitRun(t, task.WorktreePath, "add", "sub.txt")
+	gitRun(t, task.WorktreePath, "commit", "-m", "add sub.txt")
+
+	// check -> review -> merge (into epic branch)
+	if err := app.CmdWorkCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+	if err := app.CmdReviewRequest(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
+		t.Fatal("approve:", err)
+	}
+	if err := app.CmdWorkMerge(task.ID); err != nil {
+		t.Fatal("merge:", err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateMerged {
+		t.Errorf("task state = %s, want MERGED", task.State)
+	}
+
+	// sub.txt should NOT be on main yet
+	mainGit := NewGitClient(dir)
+	mainGit.Checkout("main")
+	if _, err := os.Stat(filepath.Join(dir, "sub.txt")); !os.IsNotExist(err) {
+		t.Error("sub.txt should NOT be on main yet")
+	}
+
+	// Now review the epic
+	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
+		t.Fatal("epic review request:", err)
+	}
+	if err := app.CmdReviewApproveDispatch("epic-001", ""); err != nil {
+		t.Fatal("epic review approve:", err)
+	}
+
+	// Merge epic into main
+	if err := app.CmdEpicMerge("epic-001"); err != nil {
+		t.Fatal("epic merge:", err)
+	}
+
+	// Verify epic is closed and branch cleared
+	epic, _ = app.DB.GetEpic("epic-001")
+	if epic.Status != "closed" {
+		t.Errorf("epic status = %q, want closed", epic.Status)
+	}
+
+	// sub.txt should be on main now
+	mainGit.Checkout("main")
+	if _, err := os.Stat(filepath.Join(dir, "sub.txt")); os.IsNotExist(err) {
+		t.Error("sub.txt should exist on main after epic merge")
+	}
+}
+
+func TestE2EEpicBranchFlag(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+
+	// --branch=main -> store main, no new branch
+	if err := app.CmdEpicNew("No Branch Epic", "", "proj-001", "main", true); err != nil {
+		t.Fatal("epic new:", err)
+	}
+	epic, _ := app.DB.GetEpic("epic-001")
+	if epic.Branch != "main" {
+		t.Errorf("epic branch = %q, want %q", epic.Branch, "main")
+	}
+
+	// Tasks under this epic should use main as base
+	if err := app.CmdTaskNew("task A", "", "epic-001"); err != nil {
+		t.Fatal("plan:", err)
+	}
+	if err := app.CmdTaskStart("task-001", ""); err != nil {
+		t.Fatal("start:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+	if task.BaseBranch != "main" {
+		t.Errorf("task base = %q, want main", task.BaseBranch)
+	}
+}
+
+func TestE2EEpicDisabledFeatureBranches(t *testing.T) {
+	dir := initTestRepo(t)
+
+	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
+	gitRun(t, dir, "add", "Makefile")
+	gitRun(t, dir, "commit", "-m", "add makefile")
+
+	RunInit(dir)
+
+	// Add epic_feature_branches: false to config
+	cfgPath := filepath.Join(dir, ".harness.yaml")
+	cfgData, _ := os.ReadFile(cfgPath)
+	cfgStr := string(cfgData) + "\nepic_feature_branches: false\n"
+	os.WriteFile(cfgPath, []byte(cfgStr), 0644)
+
+	gitRun(t, dir, "add", ".harness.yaml", ".gitignore")
+	gitRun(t, dir, "commit", "-m", "add harness config")
+
+	app, err := LoadApp(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+
+	if app.Config.EpicFeatureBranchesEnabled() {
+		t.Error("EpicFeatureBranchesEnabled should be false")
+	}
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+
+	// Epic without --branch and epic_feature_branches=false -> no branch
+	if err := app.CmdEpicNew("No Branch Epic", "", "proj-001", "", false); err != nil {
+		t.Fatal("epic new:", err)
+	}
+	epic, _ := app.DB.GetEpic("epic-001")
+	if epic.Branch != "" {
+		t.Errorf("epic branch = %q, want empty", epic.Branch)
+	}
+
+	// Tasks under this epic should use main as base
+	if err := app.CmdTaskNew("task A", "", "epic-001"); err != nil {
+		t.Fatal("plan:", err)
+	}
+	if err := app.CmdTaskStart("task-001", ""); err != nil {
+		t.Fatal("start:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+	if task.BaseBranch != "main" {
+		t.Errorf("task base = %q, want main", task.BaseBranch)
+	}
+}
+
+func TestE2EEpicReviewHistory(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+	if err := app.CmdEpicNew("Review Epic", "", "proj-001", "", false); err != nil {
+		t.Fatal("epic new:", err)
+	}
+
+	// Request review
+	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
+		t.Fatal("request:", err)
+	}
+
+	// Reject
+	if err := app.CmdReviewRejectDispatch("epic-001", "needs work"); err != nil {
+		t.Fatal("reject:", err)
+	}
+
+	// Request again
+	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
+		t.Fatal("request 2:", err)
+	}
+
+	// Approve
+	if err := app.CmdReviewApproveDispatch("epic-001", ""); err != nil {
+		t.Fatal("approve:", err)
+	}
+
+	// History should have 2 reviews
+	reviews, err := app.DB.GetEpicReviews("epic-001")
+	if err != nil {
+		t.Fatal("get reviews:", err)
+	}
+	if len(reviews) != 2 {
+		t.Errorf("review count = %d, want 2", len(reviews))
+	}
+	if reviews[0].Decision != "request_changes" {
+		t.Errorf("review[0] = %q, want request_changes", reviews[0].Decision)
+	}
+	if reviews[1].Decision != "approve" {
+		t.Errorf("review[1] = %q, want approve", reviews[1].Decision)
+	}
+
+	// CmdReviewHistoryDispatch should not error
+	if err := app.CmdReviewHistoryDispatch("epic-001"); err != nil {
+		t.Fatal("history:", err)
+	}
+}
+
+func TestE2EEpicMergeNoApproval(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+	if err := app.CmdEpicNew("Merge Epic", "", "proj-001", "", false); err != nil {
+		t.Fatal("epic new:", err)
+	}
+
+	// Merge without approval -> error
+	err := app.CmdEpicMerge("epic-001")
+	if err == nil {
+		t.Error("expected error merging epic without approval")
+	}
+	if err != nil && !strings.Contains(err.Error(), "no approval") {
+		t.Errorf("unexpected error: %s", err)
+	}
+}
+
+func TestE2EEpicMergeNoBranch(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+
+	// Create epic with epic_feature_branches default but --branch="" explicitly means use default behavior
+	// Actually to test no branch, we need to use --branch=main which means no merge needed,
+	// or use epic_feature_branches=false. Let's use the DB directly for a clean test.
+	app.DB.CreateEpic("No Branch", "", "proj-001", "")
+
+	err := app.CmdEpicMerge("epic-001")
+	if err == nil {
+		t.Error("expected error merging epic with no branch")
+	}
+	if err != nil && !strings.Contains(err.Error(), "no branch") {
+		t.Errorf("unexpected error: %s", err)
+	}
+}
+
+func TestE2EEpicNewWithCmdNew(t *testing.T) {
+	// Test that CmdNew (harness new) resolves epic branch
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+	if err := app.CmdEpicNew("Feature", "", "proj-001", "", false); err != nil {
+		t.Fatal("epic:", err)
+	}
+
+	epic, _ := app.DB.GetEpic("epic-001")
+	if epic.Branch == "" {
+		t.Fatal("epic should have branch")
+	}
+
+	// CmdNew with --epic should resolve to epic branch
+	if err := app.CmdNew("subtask via new", "", "epic-001", ""); err != nil {
+		t.Fatal("new:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+	if task.BaseBranch != epic.Branch {
+		t.Errorf("task base = %q, want %q", task.BaseBranch, epic.Branch)
+	}
+}
+
+func TestE2EEpicDiff(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+	if err := app.CmdEpicNew("Diff Epic", "", "proj-001", "", false); err != nil {
+		t.Fatal("epic:", err)
+	}
+
+	// CmdDiffDispatch with epic ID should not error
+	if err := app.CmdDiffDispatch("epic-001"); err != nil {
+		t.Fatal("epic diff:", err)
+	}
+}
+
+func TestE2EEpicBranchWithExistingBranch(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+
+	// Create a branch manually
+	if err := app.Git.CreateBranch("custom-epic", "main"); err != nil {
+		t.Fatal("create branch:", err)
+	}
+
+	// --branch=custom-epic -> use existing branch
+	if err := app.CmdEpicNew("Custom", "", "proj-001", "custom-epic", true); err != nil {
+		t.Fatal("epic new:", err)
+	}
+
+	epic, _ := app.DB.GetEpic("epic-001")
+	if epic.Branch != "custom-epic" {
+		t.Errorf("epic branch = %q, want custom-epic", epic.Branch)
+	}
+}
+
+func TestE2EEpicBranchNonexistent(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	if err := app.CmdProjectNew("Test Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+
+	// --branch=nonexistent -> error
+	err := app.CmdEpicNew("Bad", "", "proj-001", "nonexistent-branch", true)
+	if err == nil {
+		t.Error("expected error for nonexistent branch")
+	}
 }

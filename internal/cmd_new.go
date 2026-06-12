@@ -6,6 +6,12 @@ import (
 )
 
 func (a *App) CmdNew(description, baseBranch, epicID, notes string) error {
+	if baseBranch == "" && epicID != "" {
+		// Resolve base branch from epic
+		if epic, err := a.DB.GetEpic(epicID); err == nil && epic.Branch != "" {
+			baseBranch = epic.Branch
+		}
+	}
 	if baseBranch == "" {
 		baseBranch = a.Config.MainBranch
 	}

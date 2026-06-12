@@ -81,6 +81,10 @@ func Slugify(s string) string {
 	return s
 }
 
+func isEpicID(id string) bool {
+	return strings.HasPrefix(id, "epic-")
+}
+
 func (a *App) ResolveTaskID(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil

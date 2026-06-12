@@ -12,11 +12,12 @@ type Epic struct {
 	Title       string
 	Description string
 	Status      string
+	Branch      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-func (db *DB) CreateEpic(title, description, projectID string) (*Epic, error) {
+func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, error) {
 	if _, err := db.GetProject(projectID); err != nil {
 		return nil, fmt.Errorf("project %q not found", projectID)
 	}
@@ -25,15 +26,19 @@ func (db *DB) CreateEpic(title, description, projectID string) (*Epic, error) {
 		return nil, err
 	}
 	now := time.Now()
+	var branchVal interface{}
+	if branch != "" {
+		branchVal = branch
+	}
 	_, err = db.conn.Exec(
-		`INSERT INTO epics (id, project_id, title, description, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, 'open', ?, ?)`,
-		id, projectID, title, description, now, now,
+		`INSERT INTO epics (id, project_id, title, description, status, branch, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 'open', ?, ?, ?)`,
+		id, projectID, title, description, branchVal, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating epic: %w", err)
 	}
-	return &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: "open", CreatedAt: now, UpdatedAt: now}, nil
+	return &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: "open", Branch: branch, CreatedAt: now, UpdatedAt: now}, nil
 }
 
 func (db *DB) nextEpicID() (string, error) {
@@ -49,17 +54,19 @@ func (db *DB) nextEpicID() (string, error) {
 
 func (db *DB) GetEpic(id string) (*Epic, error) {
 	e := &Epic{}
+	var branch sql.NullString
 	err := db.conn.QueryRow(
-		`SELECT id, project_id, title, description, status, created_at, updated_at FROM epics WHERE id = ?`, id,
-	).Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &e.CreatedAt, &e.UpdatedAt)
+		`SELECT id, project_id, title, description, status, branch, created_at, updated_at FROM epics WHERE id = ?`, id,
+	).Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("epic %q not found: %w", id, err)
 	}
+	e.Branch = branch.String
 	return e, nil
 }
 
 func (db *DB) ListEpics() ([]Epic, error) {
-	rows, err := db.conn.Query(`SELECT id, project_id, title, description, status, created_at, updated_at FROM epics ORDER BY created_at ASC`)
+	rows, err := db.conn.Query(`SELECT id, project_id, title, description, status, branch, created_at, updated_at FROM epics ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -67,9 +74,11 @@ func (db *DB) ListEpics() ([]Epic, error) {
 	var epics []Epic
 	for rows.Next() {
 		var e Epic
-		if err := rows.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		var branch sql.NullString
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
+		e.Branch = branch.String
 		epics = append(epics, e)
 	}
 	return epics, nil
@@ -77,7 +86,7 @@ func (db *DB) ListEpics() ([]Epic, error) {
 
 func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, project_id, title, description, status, created_at, updated_at FROM epics WHERE project_id = ? ORDER BY created_at ASC`, projectID,
+		`SELECT id, project_id, title, description, status, branch, created_at, updated_at FROM epics WHERE project_id = ? ORDER BY created_at ASC`, projectID,
 	)
 	if err != nil {
 		return nil, err
@@ -86,9 +95,11 @@ func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 	var epics []Epic
 	for rows.Next() {
 		var e Epic
-		if err := rows.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		var branch sql.NullString
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
+		e.Branch = branch.String
 		epics = append(epics, e)
 	}
 	return epics, nil
@@ -103,6 +114,18 @@ func (db *DB) UpdateEpic(id, title, description, projectID string) error {
 	_, err := db.conn.Exec(
 		`UPDATE epics SET title = ?, description = ?, project_id = ?, updated_at = ? WHERE id = ?`,
 		title, description, projectID, time.Now(), id,
+	)
+	return err
+}
+
+func (db *DB) UpdateEpicBranch(id, branch string) error {
+	var branchVal interface{}
+	if branch != "" {
+		branchVal = branch
+	}
+	_, err := db.conn.Exec(
+		`UPDATE epics SET branch = ?, updated_at = ? WHERE id = ?`,
+		branchVal, time.Now(), id,
 	)
 	return err
 }

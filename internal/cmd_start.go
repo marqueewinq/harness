@@ -13,6 +13,12 @@ func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 	if task.State != StatePlanned {
 		return fmt.Errorf("task %s is %s, not PLANNED", taskID, task.State)
 	}
+	if baseBranch == "" && task.EpicID != "" {
+		// Resolve base branch from epic
+		if epic, err := a.DB.GetEpic(task.EpicID); err == nil && epic.Branch != "" {
+			baseBranch = epic.Branch
+		}
+	}
 	if baseBranch == "" {
 		baseBranch = a.Config.MainBranch
 	}

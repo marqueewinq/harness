@@ -489,8 +489,8 @@ func TestSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal("schema_version table missing:", err)
 	}
-	if version < 2 {
-		t.Errorf("schema version = %d, want >= 2", version)
+	if version < 4 {
+		t.Errorf("schema version = %d, want >= 4", version)
 	}
 }
 
@@ -567,7 +567,7 @@ func TestEpicCRUD(t *testing.T) {
 
 	proj, _ := db.CreateProject("Test project", "")
 
-	e, err := db.CreateEpic("OAuth2 support", "", proj.ID)
+	e, err := db.CreateEpic("OAuth2 support", "", proj.ID, "")
 	if err != nil {
 		t.Fatal("create:", err)
 	}
@@ -586,7 +586,7 @@ func TestEpicCRUD(t *testing.T) {
 		t.Errorf("title = %q", e2.Title)
 	}
 
-	db.CreateEpic("Rate limiting", "", proj.ID)
+	db.CreateEpic("Rate limiting", "", proj.ID, "")
 	epics, _ := db.ListEpicsByProject(proj.ID)
 	if len(epics) != 2 {
 		t.Fatalf("len = %d, want 2", len(epics))
@@ -612,9 +612,117 @@ func TestEpicRequiresProject(t *testing.T) {
 	}
 	defer db.Close()
 
-	_, err = db.CreateEpic("Orphan epic", "", "proj-999")
+	_, err = db.CreateEpic("Orphan epic", "", "proj-999", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent project")
+	}
+}
+
+func TestEpicBranchCRUD(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	proj, _ := db.CreateProject("Test project", "")
+
+	// Create with branch
+	e, err := db.CreateEpic("With branch", "", proj.ID, "epic/with-branch")
+	if err != nil {
+		t.Fatal("create:", err)
+	}
+	if e.Branch != "epic/with-branch" {
+		t.Errorf("branch = %q, want epic/with-branch", e.Branch)
+	}
+
+	// Get should return branch
+	e2, _ := db.GetEpic(e.ID)
+	if e2.Branch != "epic/with-branch" {
+		t.Errorf("get branch = %q, want epic/with-branch", e2.Branch)
+	}
+
+	// Create without branch
+	e3, _ := db.CreateEpic("No branch", "", proj.ID, "")
+	if e3.Branch != "" {
+		t.Errorf("branch = %q, want empty", e3.Branch)
+	}
+
+	// Update branch
+	db.UpdateEpicBranch(e.ID, "new-branch")
+	e4, _ := db.GetEpic(e.ID)
+	if e4.Branch != "new-branch" {
+		t.Errorf("updated branch = %q, want new-branch", e4.Branch)
+	}
+
+	// Clear branch
+	db.UpdateEpicBranch(e.ID, "")
+	e5, _ := db.GetEpic(e.ID)
+	if e5.Branch != "" {
+		t.Errorf("cleared branch = %q, want empty", e5.Branch)
+	}
+
+	// List should include branch
+	epics, _ := db.ListEpics()
+	if len(epics) != 2 {
+		t.Fatalf("len = %d, want 2", len(epics))
+	}
+}
+
+func TestEpicReviewCRUD(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	proj, _ := db.CreateProject("Test project", "")
+	db.CreateEpic("Test epic", "", proj.ID, "")
+
+	// Record epic review
+	err = db.RecordEpicReview("epic-001", "request_changes", "fix it", "")
+	if err != nil {
+		t.Fatal("record:", err)
+	}
+	sha := "abc123def456"
+	err = db.RecordEpicReview("epic-001", "approve", "", sha)
+	if err != nil {
+		t.Fatal("record approve:", err)
+	}
+
+	// Get reviews
+	reviews, err := db.GetEpicReviews("epic-001")
+	if err != nil {
+		t.Fatal("get:", err)
+	}
+	if len(reviews) != 2 {
+		t.Fatalf("len = %d, want 2", len(reviews))
+	}
+	if reviews[0].Decision != "request_changes" {
+		t.Errorf("decision[0] = %q", reviews[0].Decision)
+	}
+	if reviews[1].Decision != "approve" {
+		t.Errorf("decision[1] = %q", reviews[1].Decision)
+	}
+
+	// Latest approval
+	approval, err := db.GetLatestEpicApproval("epic-001")
+	if err != nil {
+		t.Fatal("latest:", err)
+	}
+	if approval == nil {
+		t.Fatal("expected approval")
+	}
+	if approval.CommitSHA != sha {
+		t.Errorf("sha = %q, want %q", approval.CommitSHA, sha)
+	}
+
+	// No approval for nonexistent
+	none, _ := db.GetLatestEpicApproval("epic-999")
+	if none != nil {
+		t.Errorf("expected nil for nonexistent")
 	}
 }
 
