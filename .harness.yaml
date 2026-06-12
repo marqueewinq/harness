@@ -18,9 +18,12 @@ merge:
 
 review:
   type: agent
+  cmd: 'claude -p "$(cat {{prompt_file}})" --allowedTools "Bash(harness review record-review*)"'
   prompt: |
-    Review this change for: correctness, test coverage, Go conventions.
-    You have access to the full codebase.
+    Review this diff for: correctness, test coverage, Go conventions.
+
+    Diff:
+    {{diff}}
 
     Previous review comments:
     {{previous_comments}}
@@ -29,5 +32,5 @@ review:
     {{task_description}}
 
     After reviewing, call one of:
-      harness record-review approve
-      harness record-review request-changes --comment "your comments here"
+      harness review record-review approve
+      harness review record-review request-changes --comment "your comments here"

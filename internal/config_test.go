@@ -140,3 +140,31 @@ review:
 		t.Errorf("Review.Prompt = %q, want %q", cfg.Review.Prompt, "Please review")
 	}
 }
+
+func TestLoadConfigReviewCmd(t *testing.T) {
+	dir := t.TempDir()
+	yaml := `
+checks:
+  test:
+    run: echo ok
+review:
+  type: agent
+  cmd: 'claude -p "$(cat {{prompt_file}})"'
+  prompt: "Review {{diff}}"
+`
+	os.WriteFile(filepath.Join(dir, ".harness.yaml"), []byte(yaml), 0644)
+
+	cfg, err := LoadConfig(filepath.Join(dir, ".harness.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Review.Type != "agent" {
+		t.Errorf("Review.Type = %q, want %q", cfg.Review.Type, "agent")
+	}
+	if cfg.Review.Cmd == "" {
+		t.Error("Review.Cmd should not be empty")
+	}
+	if cfg.Review.Prompt != "Review {{diff}}" {
+		t.Errorf("Review.Prompt = %q", cfg.Review.Prompt)
+	}
+}

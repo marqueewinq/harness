@@ -37,12 +37,22 @@ merge:
 
 review:
   type: human
+  # cmd: 'claude -p "$(cat {{prompt_file}})" --allowedTools "Bash(harness review*)"'
   prompt: |
-    Review this change for correctness, test coverage, and project conventions.
-    Previous review comments: {{previous_comments}}
-    Task description: {{task_description}}
-    After reviewing, call: harness record-review approve
-    or: harness record-review request-changes --comment "your comments"
+    Review this diff for correctness, test coverage, and project conventions.
+
+    Diff:
+    {{diff}}
+
+    Previous review comments:
+    {{previous_comments}}
+
+    Task description:
+    {{task_description}}
+
+    After reviewing, call one of:
+      harness review approve {{task_id}}
+      harness review reject --comment "your comments" {{task_id}}
 `
 	if err := os.WriteFile(configPath, []byte(scaffold), 0644); err != nil {
 		return fmt.Errorf("writing config: %w", err)

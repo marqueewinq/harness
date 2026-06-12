@@ -138,18 +138,20 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	case StateChecksFailed, StateMergeFailed:
 		fmt.Println("Next: fix the failures, then run: harness check")
 	case StateChecksPassed:
-		fmt.Println("Next: run harness request-review")
+		fmt.Println("Next: run harness review request")
 	case StateRequestChanges:
 		fmt.Println("Next: address review comments, then run: harness check")
 	case StateReviewRequested:
-		if a.Config.Review.Type == "human" {
+		if a.Config.Review.Cmd != "" {
+			fmt.Println("Next: run harness review request (will launch automated reviewer)")
+		} else if a.Config.Review.Type == "human" {
 			fmt.Println("Next: waiting for human review.")
-			fmt.Printf("      In another terminal: harness record-review approve %s\n", task.ID)
+			fmt.Printf("      In another terminal: harness review approve %s\n", task.ID)
 		} else {
-			fmt.Println("Next: spawn a reviewer subagent, then: harness record-review approve/request-changes")
+			fmt.Println("Next: spawn a reviewer subagent, then: harness review approve/reject")
 		}
 	case StateApproved:
-		fmt.Println("Next: run harness merge")
+		fmt.Println("Next: run harness work merge")
 	case StateQueued:
 		pos, _ := a.DB.GetQueuePosition(task.ID)
 		fmt.Printf("Queued at position #%d. harness merge is blocking.\n", pos)

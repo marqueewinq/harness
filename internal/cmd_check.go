@@ -62,7 +62,7 @@ func (a *App) CmdWorkCheck(taskID string) error {
 	if allPassed {
 		a.DB.UpdateTaskState(id, StateChecksPassed)
 		fmt.Println("\nAll checks passed.")
-		fmt.Println("Next: run harness request-review")
+		fmt.Println("Next: run harness review request")
 	} else {
 		a.DB.UpdateTaskState(id, StateChecksFailed)
 		fmt.Println("\nChecks failed.")

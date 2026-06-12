@@ -128,11 +128,10 @@ If the task is already IN_PROGRESS, continue in its worktree.
 1. ` + "`harness new \"title\"`" + ` — creates branch + worktree + task
 2. Implement changes in the worktree (the path is printed by harness new)
 3. ` + "`harness check`" + ` — runs configured checks (tests, build, lint)
-4. ` + "`harness review request`" + ` — outputs diff + review context
-5. Spawn a reviewer subagent with the diff; reviewer calls
-   ` + "`harness review approve`" + ` or ` + "`harness review reject --comment \"...\"`" + `
-6. If changes requested: fix, then go to step 3
-7. ` + "`harness work merge`" + ` — rebases, re-runs checks, merges to main, cleans up
+4. ` + "`harness review request`" + ` — if review.cmd is configured, launches the
+   reviewer automatically and waits for verdict. Otherwise prints diff + context.
+5. If changes requested: fix, then go to step 3
+6. ` + "`harness work merge`" + ` — rebases, re-runs checks, merges to main, cleans up
 
 ## Rules
 

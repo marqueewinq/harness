@@ -1559,3 +1559,249 @@ func TestE2EEpicBranchNonexistent(t *testing.T) {
 		t.Error("expected error for nonexistent branch")
 	}
 }
+
+// --- Automated Reviewer Tests ---
+
+// buildHarnessBinary builds the harness binary for use in automated reviewer tests.
+func buildHarnessBinary(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "harness")
+	cmd := exec.Command("go", "build", "-o", bin, "..")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("build harness binary: %s\n%s", err, out)
+	}
+	return bin
+}
+
+// setupAppWithReviewCmd creates a test repo with a configured review.cmd.
+func setupAppWithReviewCmd(t *testing.T, reviewCmd string) (*App, string) {
+	t.Helper()
+	dir := initTestRepo(t)
+	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
+	gitRun(t, dir, "add", "Makefile")
+	gitRun(t, dir, "commit", "-m", "add makefile")
+
+	RunInit(dir)
+
+	// Rewrite config with review.cmd
+	cfgPath := filepath.Join(dir, ".harness.yaml")
+	cfgContent := fmt.Sprintf(`
+main_branch: main
+worktree_dir: .worktrees
+checks:
+  test:
+    run: make test
+merge:
+  require:
+    checks: [test]
+    review: approved
+  strategy: merge
+review:
+  type: agent
+  cmd: '%s'
+  prompt: |
+    Review this diff:
+    {{diff}}
+    Task: {{task_description}}
+    Previous: {{previous_comments}}
+`, reviewCmd)
+	os.WriteFile(cfgPath, []byte(cfgContent), 0644)
+
+	gitRun(t, dir, "add", ".harness.yaml", ".gitignore")
+	gitRun(t, dir, "commit", "-m", "add harness config")
+
+	app, err := LoadApp(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return app, dir
+}
+
+func TestE2EAutomatedReviewerApprove(t *testing.T) {
+	bin := buildHarnessBinary(t)
+
+	// The reviewer cmd reads the prompt file and then approves
+	reviewCmd := fmt.Sprintf(
+		`cat {{prompt_file}} > /dev/null && %s review approve {{task_id}}`,
+		bin,
+	)
+
+	app, _ := setupAppWithReviewCmd(t, reviewCmd)
+	defer app.Close()
+
+	if err := app.CmdNew("auto-reviewed feature", "", "", ""); err != nil {
+		t.Fatal("new:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+
+	os.WriteFile(filepath.Join(task.WorktreePath, "feature.txt"), []byte("feature\n"), 0644)
+	gitRun(t, task.WorktreePath, "add", "feature.txt")
+	gitRun(t, task.WorktreePath, "commit", "-m", "add feature")
+
+	if err := app.CmdWorkCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+
+	// CmdReviewRequest should launch the reviewer and auto-approve
+	if err := app.CmdReviewRequest(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateApproved {
+		t.Errorf("state after auto-review = %s, want APPROVED", task.State)
+	}
+
+	// Should have a review record
+	reviews, _ := app.DB.GetReviews(task.ID)
+	if len(reviews) != 1 {
+		t.Errorf("review count = %d, want 1", len(reviews))
+	}
+	if len(reviews) > 0 && reviews[0].Decision != "approve" {
+		t.Errorf("review decision = %q, want approve", reviews[0].Decision)
+	}
+}
+
+func TestE2EAutomatedReviewerReject(t *testing.T) {
+	bin := buildHarnessBinary(t)
+
+	reviewCmd := fmt.Sprintf(
+		`%s review reject --comment "needs tests" {{task_id}}`,
+		bin,
+	)
+
+	app, _ := setupAppWithReviewCmd(t, reviewCmd)
+	defer app.Close()
+
+	if err := app.CmdNew("rejected feature", "", "", ""); err != nil {
+		t.Fatal("new:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+
+	os.WriteFile(filepath.Join(task.WorktreePath, "feature.txt"), []byte("feature\n"), 0644)
+	gitRun(t, task.WorktreePath, "add", "feature.txt")
+	gitRun(t, task.WorktreePath, "commit", "-m", "add feature")
+
+	if err := app.CmdWorkCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+
+	if err := app.CmdReviewRequest(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateRequestChanges {
+		t.Errorf("state after rejection = %s, want REQUEST_CHANGES", task.State)
+	}
+
+	reviews, _ := app.DB.GetReviews(task.ID)
+	if len(reviews) != 1 {
+		t.Errorf("review count = %d, want 1", len(reviews))
+	}
+	if len(reviews) > 0 && reviews[0].Comment != "needs tests" {
+		t.Errorf("review comment = %q, want %q", reviews[0].Comment, "needs tests")
+	}
+}
+
+func TestE2EAutomatedReviewerNoVerdict(t *testing.T) {
+	// Reviewer cmd exits without calling harness
+	app, _ := setupAppWithReviewCmd(t, "echo noop")
+	defer app.Close()
+
+	if err := app.CmdNew("no-verdict feature", "", "", ""); err != nil {
+		t.Fatal("new:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+
+	os.WriteFile(filepath.Join(task.WorktreePath, "feature.txt"), []byte("feature\n"), 0644)
+	gitRun(t, task.WorktreePath, "add", "feature.txt")
+	gitRun(t, task.WorktreePath, "commit", "-m", "add feature")
+
+	if err := app.CmdWorkCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+
+	// Should not error even though reviewer gave no verdict
+	if err := app.CmdReviewRequest(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+
+	// State should still be REVIEW_REQUESTED
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateReviewRequested {
+		t.Errorf("state = %s, want REVIEW_REQUESTED", task.State)
+	}
+}
+
+func TestE2EAutomatedReviewerPromptFile(t *testing.T) {
+	// Verify the prompt file contains the expected template-substituted content
+	outputFile := filepath.Join(t.TempDir(), "prompt-output.txt")
+	reviewCmd := fmt.Sprintf(`cp {{prompt_file}} %s`, outputFile)
+
+	app, _ := setupAppWithReviewCmd(t, reviewCmd)
+	defer app.Close()
+
+	if err := app.CmdNew("prompt-test feature", "", "", ""); err != nil {
+		t.Fatal("new:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+
+	os.WriteFile(filepath.Join(task.WorktreePath, "hello.txt"), []byte("hello\n"), 0644)
+	gitRun(t, task.WorktreePath, "add", "hello.txt")
+	gitRun(t, task.WorktreePath, "commit", "-m", "add hello")
+
+	if err := app.CmdWorkCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+	if err := app.CmdReviewRequest(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+
+	// Read the captured prompt
+	data, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatal("read prompt output:", err)
+	}
+	prompt := string(data)
+
+	// Should contain task description (template var {{task_description}})
+	if !strings.Contains(prompt, "prompt-test feature") {
+		t.Error("prompt should contain task description")
+	}
+
+	// Should contain diff content (template var {{diff}})
+	if !strings.Contains(prompt, "hello.txt") {
+		t.Error("prompt should contain diff (hello.txt)")
+	}
+
+	// Should contain the review instructions from the prompt template
+	if !strings.Contains(prompt, "Review this diff") {
+		t.Error("prompt should contain review instructions")
+	}
+}
+
+func TestE2EFallbackNoCmd(t *testing.T) {
+	// When review.cmd is empty, should fall back to printing instructions
+	app, _, task := setupTask(t)
+	defer app.Close()
+
+	// Default config from RunInit has no review.cmd
+	if app.Config.Review.Cmd != "" {
+		t.Fatalf("default config should have empty review.cmd, got %q", app.Config.Review.Cmd)
+	}
+
+	if err := app.CmdWorkCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+	// Should not error (fallback to manual instructions)
+	if err := app.CmdReviewRequest(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateReviewRequested {
+		t.Errorf("state = %s, want REVIEW_REQUESTED", task.State)
+	}
+}

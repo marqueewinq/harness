@@ -28,6 +28,7 @@ func (a *App) CmdReviewApprove(taskID, comment string) error {
 	fmt.Printf("Review recorded: APPROVE\n")
 	fmt.Printf("Task %s is now APPROVED.\n", id)
 	fmt.Println("Next: run harness work merge")
+
 	return nil
 }
 

@@ -25,6 +25,7 @@ type MergeConfig struct {
 
 type ReviewConfig struct {
 	Type   string `yaml:"type"`
+	Cmd    string `yaml:"cmd"`
 	Prompt string `yaml:"prompt"`
 }
 
