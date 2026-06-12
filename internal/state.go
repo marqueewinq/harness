@@ -16,9 +16,11 @@ const (
 	StateMerged          TaskState = "MERGED"
 	StateMergeFailed     TaskState = "MERGE_FAILED"
 	StateClosed          TaskState = "CLOSED"
+	StatePlanned         TaskState = "PLANNED"
 )
 
 var validTransitions = map[TaskState][]TaskState{
+	StatePlanned:         {StateInProgress, StateClosed},
 	StateNew:             {StateInProgress},
 	StateInProgress:      {StateChecksRunning, StateClosed},
 	StateChecksRunning:   {StateChecksPassed, StateChecksFailed},

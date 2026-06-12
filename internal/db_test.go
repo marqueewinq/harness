@@ -475,3 +475,170 @@ func TestDequeueNonexistent(t *testing.T) {
 		t.Errorf("DequeueTask nonexistent should not error, got: %v", err)
 	}
 }
+
+func TestSchemaVersion(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var version int
+	err = db.conn.QueryRow("SELECT version FROM schema_version").Scan(&version)
+	if err != nil {
+		t.Fatal("schema_version table missing:", err)
+	}
+	if version < 2 {
+		t.Errorf("schema version = %d, want >= 2", version)
+	}
+}
+
+func TestPlanningTablesExist(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	tables := []string{"projects", "epics", "task_dependencies"}
+	for _, table := range tables {
+		var name string
+		err := db.conn.QueryRow(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name=?", table,
+		).Scan(&name)
+		if err != nil {
+			t.Errorf("table %q not found: %v", table, err)
+		}
+	}
+}
+
+func TestProjectCRUD(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	p, err := db.CreateProject("Auth redesign", "Redesign the auth system")
+	if err != nil {
+		t.Fatal("create:", err)
+	}
+	if p.ID != "proj-001" {
+		t.Errorf("id = %q, want proj-001", p.ID)
+	}
+	if p.Status != "open" {
+		t.Errorf("status = %q, want open", p.Status)
+	}
+
+	p2, err := db.GetProject("proj-001")
+	if err != nil {
+		t.Fatal("get:", err)
+	}
+	if p2.Title != "Auth redesign" {
+		t.Errorf("title = %q", p2.Title)
+	}
+
+	db.CreateProject("Second project", "")
+	projects, err := db.ListProjects()
+	if err != nil {
+		t.Fatal("list:", err)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("len = %d, want 2", len(projects))
+	}
+
+	db.UpdateProjectStatus("proj-001", "closed")
+	p3, _ := db.GetProject("proj-001")
+	if p3.Status != "closed" {
+		t.Errorf("status = %q, want closed", p3.Status)
+	}
+}
+
+func TestEpicCRUD(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	proj, _ := db.CreateProject("Test project", "")
+
+	e, err := db.CreateEpic("OAuth2 support", "", proj.ID)
+	if err != nil {
+		t.Fatal("create:", err)
+	}
+	if e.ID != "epic-001" {
+		t.Errorf("id = %q, want epic-001", e.ID)
+	}
+	if e.ProjectID != proj.ID {
+		t.Errorf("project_id = %q, want %q", e.ProjectID, proj.ID)
+	}
+
+	e2, err := db.GetEpic("epic-001")
+	if err != nil {
+		t.Fatal("get:", err)
+	}
+	if e2.Title != "OAuth2 support" {
+		t.Errorf("title = %q", e2.Title)
+	}
+
+	db.CreateEpic("Rate limiting", "", proj.ID)
+	epics, _ := db.ListEpicsByProject(proj.ID)
+	if len(epics) != 2 {
+		t.Fatalf("len = %d, want 2", len(epics))
+	}
+
+	all, _ := db.ListEpics()
+	if len(all) != 2 {
+		t.Fatalf("len = %d, want 2", len(all))
+	}
+
+	db.UpdateEpicStatus("epic-001", "closed")
+	e3, _ := db.GetEpic("epic-001")
+	if e3.Status != "closed" {
+		t.Errorf("status = %q, want closed", e3.Status)
+	}
+}
+
+func TestEpicRequiresProject(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.CreateEpic("Orphan epic", "", "proj-999")
+	if err == nil {
+		t.Fatal("expected error for nonexistent project")
+	}
+}
+
+func TestTaskNullableBranch(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.conn.Exec(
+		`INSERT INTO tasks (id, description, branch, worktree_path, state, created_at, updated_at)
+		 VALUES ('task-001', 'test', NULL, NULL, 'PLANNED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+	)
+	if err != nil {
+		t.Fatal("inserting task with NULL branch:", err)
+	}
+
+	_, err = db.conn.Exec(
+		`INSERT INTO tasks (id, description, branch, worktree_path, state, created_at, updated_at)
+		 VALUES ('task-002', 'test2', NULL, NULL, 'PLANNED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+	)
+	if err != nil {
+		t.Fatal("second NULL branch should be allowed:", err)
+	}
+}

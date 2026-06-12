@@ -909,3 +909,319 @@ func TestE2ECustomReviewType(t *testing.T) {
 		t.Errorf("state = %s, want MERGED", task.State)
 	}
 }
+
+// --- Planning E2E Tests ---
+
+func TestE2EPlanningWorkflow(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	// Phase 1: Planning -- create project, epic, 3 tasks
+	if err := app.CmdProjectNew("Test Project", "project description"); err != nil {
+		t.Fatal("project new:", err)
+	}
+	if err := app.CmdEpicNew("Test Epic", "epic description", "proj-001"); err != nil {
+		t.Fatal("epic new:", err)
+	}
+	if err := app.CmdPlanNew("task A", "", "epic-001"); err != nil {
+		t.Fatal("plan A:", err)
+	}
+	if err := app.CmdPlanNew("task B", "", "epic-001"); err != nil {
+		t.Fatal("plan B:", err)
+	}
+	if err := app.CmdPlanNew("task C", "", "epic-001"); err != nil {
+		t.Fatal("plan C:", err)
+	}
+
+	// Verify all PLANNED with empty branch/worktree
+	for _, id := range []string{"task-001", "task-002", "task-003"} {
+		task, err := app.DB.GetTask(id)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
+		}
+		if task.State != StatePlanned {
+			t.Errorf("%s state = %s, want PLANNED", id, task.State)
+		}
+		if task.Branch != "" {
+			t.Errorf("%s branch = %q, want empty", id, task.Branch)
+		}
+		if task.WorktreePath != "" {
+			t.Errorf("%s worktree = %q, want empty", id, task.WorktreePath)
+		}
+		if task.EpicID != "epic-001" {
+			t.Errorf("%s epicID = %q, want epic-001", id, task.EpicID)
+		}
+	}
+
+	// Add dependencies: A blocks B, B blocks C
+	if err := app.CmdDepAdd("task-001", "task-002", "blocks"); err != nil {
+		t.Fatal("dep A->B:", err)
+	}
+	if err := app.CmdDepAdd("task-002", "task-003", "blocks"); err != nil {
+		t.Fatal("dep B->C:", err)
+	}
+
+	// Verify ready: only A ready, B and C blocked
+	ready, blocked, err := app.ComputeReady()
+	if err != nil {
+		t.Fatal("ComputeReady:", err)
+	}
+	if len(ready) != 1 || ready[0].ID != "task-001" {
+		t.Errorf("ready = %v, want [task-001]", taskIDs(ready))
+	}
+	if len(blocked) != 2 {
+		t.Errorf("blocked count = %d, want 2", len(blocked))
+	}
+
+	// Phase 2: Execute task A
+	if err := app.CmdStart("task-001", ""); err != nil {
+		t.Fatal("start A:", err)
+	}
+	taskA, _ := app.DB.GetTask("task-001")
+	if taskA.State != StateInProgress {
+		t.Errorf("A state = %s, want IN_PROGRESS", taskA.State)
+	}
+	if taskA.Branch == "" {
+		t.Error("A branch should be set after start")
+	}
+	if taskA.WorktreePath == "" {
+		t.Error("A worktree should be set after start")
+	}
+	if _, err := os.Stat(taskA.WorktreePath); os.IsNotExist(err) {
+		t.Error("A worktree dir should exist")
+	}
+
+	// Make change, commit in worktree
+	os.WriteFile(filepath.Join(taskA.WorktreePath, "a.txt"), []byte("task A\n"), 0644)
+	gitRun(t, taskA.WorktreePath, "add", "a.txt")
+	gitRun(t, taskA.WorktreePath, "commit", "-m", "implement task A")
+
+	// Full flow: check -> request-review -> approve -> merge
+	if err := app.CmdCheck(taskA.ID); err != nil {
+		t.Fatal("check A:", err)
+	}
+	if err := app.CmdRequestReview(taskA.ID); err != nil {
+		t.Fatal("request-review A:", err)
+	}
+	if err := app.CmdRecordReview(taskA.ID, "approve", ""); err != nil {
+		t.Fatal("approve A:", err)
+	}
+	if err := app.CmdMerge(taskA.ID); err != nil {
+		t.Fatal("merge A:", err)
+	}
+	taskA, _ = app.DB.GetTask(taskA.ID)
+	if taskA.State != StateMerged {
+		t.Errorf("A state after merge = %s, want MERGED", taskA.State)
+	}
+
+	// Phase 3: Verify dependency resolution
+	ready, blocked, err = app.ComputeReady()
+	if err != nil {
+		t.Fatal("ComputeReady after merge:", err)
+	}
+	if len(ready) != 1 || ready[0].ID != "task-002" {
+		t.Errorf("ready after A merged = %v, want [task-002]", taskIDs(ready))
+	}
+	if len(blocked) != 1 || blocked[0].ID != "task-003" {
+		t.Errorf("blocked after A merged = %v, want [task-003]", taskIDs(blocked))
+	}
+
+	// Phase 4: Smoke test display commands (should not error)
+	if err := app.CmdList(); err != nil {
+		t.Errorf("CmdList: %v", err)
+	}
+	if err := app.CmdProjectStatus("proj-001"); err != nil {
+		t.Errorf("CmdProjectStatus: %v", err)
+	}
+	if err := app.CmdEpicStatus("epic-001"); err != nil {
+		t.Errorf("CmdEpicStatus: %v", err)
+	}
+	if err := app.CmdReady("", ""); err != nil {
+		t.Errorf("CmdReady: %v", err)
+	}
+}
+
+func TestE2EClosePlannedTask(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	// Plan a task without starting
+	if err := app.CmdPlanNew("planned only", "", ""); err != nil {
+		t.Fatal("plan:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+	if task.State != StatePlanned {
+		t.Fatalf("state = %s, want PLANNED", task.State)
+	}
+
+	// Close it without cleanup
+	if err := app.CmdClose("task-001", false); err != nil {
+		t.Fatal("close:", err)
+	}
+	task, _ = app.DB.GetTask("task-001")
+	if task.State != StateClosed {
+		t.Errorf("state = %s, want CLOSED", task.State)
+	}
+	// No worktree/branch to worry about
+	if task.Branch != "" {
+		t.Errorf("branch = %q, want empty", task.Branch)
+	}
+	if task.WorktreePath != "" {
+		t.Errorf("worktree = %q, want empty", task.WorktreePath)
+	}
+
+	// Close with cleanup should also work (no-op on branch/worktree)
+	app2, _ := setupApp(t)
+	defer app2.Close()
+	if err := app2.CmdPlanNew("planned only 2", "", ""); err != nil {
+		t.Fatal("plan2:", err)
+	}
+	if err := app2.CmdClose("task-001", true); err != nil {
+		t.Fatal("close with cleanup:", err)
+	}
+	task2, _ := app2.DB.GetTask("task-001")
+	if task2.State != StateClosed {
+		t.Errorf("state = %s, want CLOSED", task2.State)
+	}
+}
+
+func TestE2EStartBlockedTask(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	// Plan A and B
+	if err := app.CmdPlanNew("blocker task", "", ""); err != nil {
+		t.Fatal("plan A:", err)
+	}
+	if err := app.CmdPlanNew("blocked task", "", ""); err != nil {
+		t.Fatal("plan B:", err)
+	}
+
+	// A blocks B
+	if err := app.CmdDepAdd("task-001", "task-002", "blocks"); err != nil {
+		t.Fatal("dep:", err)
+	}
+
+	// Start B while A is still PLANNED -- should succeed with warning
+	if err := app.CmdStart("task-002", ""); err != nil {
+		t.Fatal("start blocked task:", err)
+	}
+	task, _ := app.DB.GetTask("task-002")
+	if task.State != StateInProgress {
+		t.Errorf("state = %s, want IN_PROGRESS", task.State)
+	}
+	if task.Branch == "" {
+		t.Error("branch should be set")
+	}
+	if task.WorktreePath == "" {
+		t.Error("worktree should be set")
+	}
+}
+
+func TestE2EOrphanPlannedTask(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	// Plan without epic
+	if err := app.CmdPlanNew("orphan task", "", ""); err != nil {
+		t.Fatal("plan:", err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+	if task.EpicID != "" {
+		t.Errorf("epicID = %q, want empty", task.EpicID)
+	}
+	if task.State != StatePlanned {
+		t.Errorf("state = %s, want PLANNED", task.State)
+	}
+
+	// Start it
+	if err := app.CmdStart("task-001", ""); err != nil {
+		t.Fatal("start:", err)
+	}
+	task, _ = app.DB.GetTask("task-001")
+	if task.State != StateInProgress {
+		t.Errorf("state = %s, want IN_PROGRESS", task.State)
+	}
+
+	// Make change and verify full flow works
+	os.WriteFile(filepath.Join(task.WorktreePath, "orphan.txt"), []byte("orphan\n"), 0644)
+	gitRun(t, task.WorktreePath, "add", "orphan.txt")
+	gitRun(t, task.WorktreePath, "commit", "-m", "orphan change")
+
+	if err := app.CmdCheck(task.ID); err != nil {
+		t.Fatal("check:", err)
+	}
+	if err := app.CmdRequestReview(task.ID); err != nil {
+		t.Fatal("request-review:", err)
+	}
+	if err := app.CmdRecordReview(task.ID, "approve", ""); err != nil {
+		t.Fatal("approve:", err)
+	}
+	if err := app.CmdMerge(task.ID); err != nil {
+		t.Fatal("merge:", err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateMerged {
+		t.Errorf("state = %s, want MERGED", task.State)
+	}
+
+	// CmdList should not error (orphan shows in orphans section)
+	if err := app.CmdList(); err != nil {
+		t.Errorf("CmdList: %v", err)
+	}
+}
+
+func TestE2EMixedWorkflow(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	// Old style: CmdNew
+	if err := app.CmdNew("old style task", ""); err != nil {
+		t.Fatal("CmdNew:", err)
+	}
+	oldTask, _ := app.DB.GetTask("task-001")
+	if oldTask.State != StateInProgress {
+		t.Errorf("old task state = %s, want IN_PROGRESS", oldTask.State)
+	}
+
+	// New style: project + epic + plan
+	if err := app.CmdProjectNew("Mixed Project", ""); err != nil {
+		t.Fatal("project:", err)
+	}
+	if err := app.CmdEpicNew("Mixed Epic", "", "proj-001"); err != nil {
+		t.Fatal("epic:", err)
+	}
+	if err := app.CmdPlanNew("planned task", "", "epic-001"); err != nil {
+		t.Fatal("plan:", err)
+	}
+	plannedTask, _ := app.DB.GetTask("task-002")
+	if plannedTask.State != StatePlanned {
+		t.Errorf("planned task state = %s, want PLANNED", plannedTask.State)
+	}
+	if plannedTask.EpicID != "epic-001" {
+		t.Errorf("planned task epicID = %q, want epic-001", plannedTask.EpicID)
+	}
+
+	// Both coexist -- list shows both
+	tasks, err := app.DB.ListTasks()
+	if err != nil {
+		t.Fatal("list tasks:", err)
+	}
+	if len(tasks) != 2 {
+		t.Errorf("task count = %d, want 2", len(tasks))
+	}
+
+	// CmdList should not error
+	if err := app.CmdList(); err != nil {
+		t.Errorf("CmdList: %v", err)
+	}
+}
+
+// taskIDs extracts IDs from task slice for error messages.
+func taskIDs(tasks []Task) []string {
+	ids := make([]string, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.ID
+	}
+	return ids
+}

@@ -16,6 +16,9 @@ func (a *App) CmdStatus(taskID string) error {
 	}
 
 	fmt.Printf("Task: %s %q\n", task.ID, task.Description)
+	if task.Notes != "" {
+		fmt.Printf("Description: %s\n", task.Notes)
+	}
 	fmt.Printf("Branch: %s\n", task.Branch)
 	fmt.Printf("Worktree: %s\n", task.WorktreePath)
 	fmt.Printf("State: %s\n", task.State)
@@ -27,8 +30,39 @@ func (a *App) CmdStatus(taskID string) error {
 		}
 	}
 
+	// Show epic/project context
+	if task.EpicID != "" {
+		if epic, err := a.DB.GetEpic(task.EpicID); err == nil {
+			fmt.Printf("Epic: %s %q\n", epic.ID, epic.Title)
+			if proj, err := a.DB.GetProject(epic.ProjectID); err == nil {
+				fmt.Printf("Project: %s %q\n", proj.ID, proj.Title)
+			}
+		}
+	}
+
+	// Show dependencies
+	deps, _ := a.DB.GetDependencies(task.ID)
+	if len(deps) > 0 {
+		fmt.Println("\nDependencies:")
+		for _, d := range deps {
+			if d.FromTaskID == task.ID {
+				dt, _ := a.DB.GetTask(d.ToTaskID)
+				if dt != nil {
+					fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Description)
+				}
+			} else {
+				dt, _ := a.DB.GetTask(d.FromTaskID)
+				if dt != nil {
+					fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Description)
+				}
+			}
+		}
+	}
+
 	// Show commit range
-	if task.State == StateMerged {
+	if task.State == StatePlanned {
+		// No commits for planned tasks
+	} else if task.State == StateMerged {
 		// For merged tasks, the branch is deleted. Show the merge point on base.
 		if headShort, err := a.Git.RevParseShort(task.BaseBranch); err == nil {
 			fmt.Printf("Merged into: %s (%s)\n", headShort, task.BaseBranch)
@@ -119,6 +153,8 @@ func (a *App) CmdStatus(taskID string) error {
 	case StateQueued:
 		pos, _ := a.DB.GetQueuePosition(task.ID)
 		fmt.Printf("Queued at position #%d. harness merge is blocking.\n", pos)
+	case StatePlanned:
+		fmt.Printf("Next: run harness start %s\n", task.ID)
 	case StateMerged:
 		fmt.Println("Task is complete.")
 	}

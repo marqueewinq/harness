@@ -28,10 +28,14 @@ func (a *App) CmdClose(taskID string, cleanup bool) error {
 	fmt.Printf("Task %s is now CLOSED.\n", id)
 
 	if cleanup {
-		a.Git.RemoveWorktree(task.WorktreePath)
-		a.Git.DeleteBranch(task.Branch)
-		fmt.Printf("  Worktree: %s (removed)\n", task.WorktreePath)
-		fmt.Printf("  Branch: %s (deleted)\n", task.Branch)
+		if task.WorktreePath != "" {
+			a.Git.RemoveWorktree(task.WorktreePath)
+			fmt.Printf("  Worktree: %s (removed)\n", task.WorktreePath)
+		}
+		if task.Branch != "" {
+			a.Git.DeleteBranch(task.Branch)
+			fmt.Printf("  Branch: %s (deleted)\n", task.Branch)
+		}
 	}
 
 	return nil

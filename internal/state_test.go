@@ -49,7 +49,7 @@ func TestInvalidTransitions(t *testing.T) {
 
 func TestCloseTransitions(t *testing.T) {
 	closeable := []TaskState{
-		StateInProgress, StateChecksPassed, StateChecksFailed,
+		StatePlanned, StateInProgress, StateChecksPassed, StateChecksFailed,
 		StateReviewRequested, StateApproved, StateRequestChanges,
 		StateQueued, StateMergeFailed,
 	}
@@ -82,6 +82,18 @@ func TestClosedIsTerminal(t *testing.T) {
 func TestApprovedToInProgress(t *testing.T) {
 	if !ValidTransition(StateApproved, StateInProgress) {
 		t.Error("expected APPROVED -> IN_PROGRESS to be valid")
+	}
+}
+
+func TestPlannedTransitions(t *testing.T) {
+	if !ValidTransition(StatePlanned, StateInProgress) {
+		t.Error("PLANNED -> IN_PROGRESS should be valid")
+	}
+	if !ValidTransition(StatePlanned, StateClosed) {
+		t.Error("PLANNED -> CLOSED should be valid")
+	}
+	if ValidTransition(StatePlanned, StateChecksRunning) {
+		t.Error("PLANNED -> CHECKS_RUNNING should be invalid")
 	}
 }
 

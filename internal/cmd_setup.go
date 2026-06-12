@@ -79,9 +79,12 @@ func RunSetupOpencode(dir string) error {
 	fmt.Println()
 	fmt.Println("The agent must use 'harness' for all git-mutating operations.")
 
-	// Install skill
+	// Install skills
 	if err := installOpenCodeSkill(); err != nil {
 		return fmt.Errorf("installing skill: %w", err)
+	}
+	if err := installPlanningSkill(); err != nil {
+		return fmt.Errorf("installing planning skill: %w", err)
 	}
 
 	return nil
@@ -117,6 +120,8 @@ All git-mutating operations go through the ` + "`harness`" + ` CLI. Direct git c
 ## At Session Start
 
 Run ` + "`harness status`" + ` or ` + "`harness list`" + ` to see current tasks.
+If told to work on a specific task, run ` + "`harness start <task-id>`" + ` to begin.
+If the task is already IN_PROGRESS, continue in its worktree.
 
 ## Workflow
 
@@ -136,6 +141,7 @@ Run ` + "`harness status`" + ` or ` + "`harness list`" + ` to see current tasks.
 - ALWAYS run harness check before requesting review
 - ALWAYS request and pass review before merging
 - If harness status shows an existing task, continue it instead of creating a new one
+- Use git add and git commit freely inside the worktree
 - Commit changes in the worktree using git (inside the worktree directory)
 
 ## Commands Reference
@@ -152,6 +158,7 @@ Run ` + "`harness status`" + ` or ` + "`harness list`" + ` to see current tasks.
 | ` + "`harness record-review request-changes --comment \"...\" [task-id]`" + ` | Record rejection |
 | ` + "`harness review-history [task-id]`" + ` | Show past reviews |
 | ` + "`harness merge [task-id]`" + ` | Merge to main |
+| ` + "`harness start <task-id>`" + ` | Start a planned task (creates branch + worktree) |
 `
 
 	if runtime.GOOS == "windows" {
@@ -165,5 +172,69 @@ Run ` + "`harness status`" + ` or ` + "`harness list`" + ` to see current tasks.
 	fmt.Printf("\nInstalled skill: %s\n", skillPath)
 	fmt.Println("The agent will load the harness-workflow skill automatically.")
 
+	return nil
+}
+
+func installPlanningSkill() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	skillDir := filepath.Join(home, ".claude", "skills", "harness-planning")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return err
+	}
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	skill := `---
+name: harness-planning
+description: >
+  Use when discussing strategy, decomposing work, or creating projects, epics, and tasks.
+  Use at the start of planning sessions.
+---
+
+# Harness Planning
+
+Use when decomposing work into projects, epics, and tasks.
+
+## Workflow
+
+1. ` + "`harness project list`" + ` — see existing projects
+2. ` + "`harness project new \"title\"`" + ` — create project
+3. ` + "`harness epic new \"title\" --project <id>`" + ` — create epics
+4. ` + "`harness plan \"description\" --epic <id>`" + ` — create planned tasks
+5. ` + "`harness dep add <from> <to>`" + ` — add blockers between tasks
+6. ` + "`harness ready`" + ` — see what is unblocked and ready to start
+
+## Rules
+
+- Add dependencies when task B cannot start until task A is merged
+- Use ` + "`harness ready`" + ` to find the next task to work on
+
+## Handing Off to Execution
+
+` + "`harness start <task-id>`" + ` — creates branch + worktree, then follow harness-workflow
+
+## Commands Reference
+
+| Command | Purpose |
+|---|---|
+| ` + "`harness project new \"title\"`" + ` | Create a project |
+| ` + "`harness project list`" + ` | List projects with progress |
+| ` + "`harness project status <id>`" + ` | Project details + epics + tasks |
+| ` + "`harness project close <id>`" + ` | Close a project |
+| ` + "`harness epic new \"title\" --project <id>`" + ` | Create epic under project |
+| ` + "`harness epic list [--project <id>]`" + ` | List epics |
+| ` + "`harness epic status <id>`" + ` | Epic details + tasks |
+| ` + "`harness epic close <id>`" + ` | Close an epic |
+| ` + "`harness plan \"desc\" [--epic <id>]`" + ` | Create planned task |
+| ` + "`harness start <task-id> [--base <branch>]`" + ` | Start a planned task |
+| ` + "`harness ready`" + ` | List unblocked planned tasks |
+| ` + "`harness dep add <from> <to>`" + ` | Add blocker dependency |
+| ` + "`harness dep rm <from> <to>`" + ` | Remove dependency |
+`
+	if err := os.WriteFile(skillPath, []byte(skill), 0644); err != nil {
+		return err
+	}
+	fmt.Printf("Installed skill: %s\n", skillPath)
 	return nil
 }
