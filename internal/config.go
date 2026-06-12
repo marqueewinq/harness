@@ -29,12 +29,17 @@ type ReviewConfig struct {
 	Prompt string `yaml:"prompt"`
 }
 
+type CommitConfig struct {
+	Message string `yaml:"message"`
+}
+
 type Config struct {
 	MainBranch          string                 `yaml:"main_branch"`
 	WorktreeDir         string                 `yaml:"worktree_dir"`
 	EpicFeatureBranches *bool                  `yaml:"epic_feature_branches,omitempty"`
 	Checks              map[string]CheckConfig `yaml:"checks"`
 	Merge               MergeConfig            `yaml:"merge"`
+	Commit              CommitConfig           `yaml:"commit"`
 	Review              ReviewConfig           `yaml:"review"`
 }
 
@@ -63,6 +68,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Merge.Strategy == "" {
 		cfg.Merge.Strategy = "merge"
+	}
+	if cfg.Commit.Message == "" {
+		cfg.Commit.Message = "{{message}}"
 	}
 
 	return cfg, nil

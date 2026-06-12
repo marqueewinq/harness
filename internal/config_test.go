@@ -168,3 +168,40 @@ review:
 		t.Errorf("Review.Prompt = %q", cfg.Review.Prompt)
 	}
 }
+
+func TestLoadConfigCommitMessage(t *testing.T) {
+	dir := t.TempDir()
+	yaml := `
+main_branch: main
+commit:
+  message: "[{{proj}}] [{{epic}}] [{{task}}] {{message}}"
+checks:
+  test:
+    run: echo ok
+`
+	os.WriteFile(filepath.Join(dir, ".harness.yaml"), []byte(yaml), 0644)
+
+	cfg, err := LoadConfig(filepath.Join(dir, ".harness.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Commit.Message != "[{{proj}}] [{{epic}}] [{{task}}] {{message}}" {
+		t.Errorf("Commit.Message = %q", cfg.Commit.Message)
+	}
+}
+
+func TestLoadConfigCommitMessageDefault(t *testing.T) {
+	dir := t.TempDir()
+	yaml := `
+main_branch: main
+`
+	os.WriteFile(filepath.Join(dir, ".harness.yaml"), []byte(yaml), 0644)
+
+	cfg, err := LoadConfig(filepath.Join(dir, ".harness.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Commit.Message != "{{message}}" {
+		t.Errorf("Commit.Message default = %q, want %q", cfg.Commit.Message, "{{message}}")
+	}
+}
