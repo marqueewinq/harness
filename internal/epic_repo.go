@@ -38,7 +38,9 @@ func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, e
 	if err != nil {
 		return nil, fmt.Errorf("creating epic: %w", err)
 	}
-	return &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: "open", Branch: branch, CreatedAt: now, UpdatedAt: now}, nil
+	epic := &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: "open", Branch: branch, CreatedAt: now, UpdatedAt: now}
+	db.RecordEpicTransition(id, "", "open")
+	return epic, nil
 }
 
 func (db *DB) nextEpicID() (string, error) {
@@ -106,8 +108,15 @@ func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 }
 
 func (db *DB) UpdateEpicStatus(id, status string) error {
+	var current string
+	if err := db.conn.QueryRow(`SELECT status FROM epics WHERE id = ?`, id).Scan(&current); err != nil {
+		return fmt.Errorf("reading current status for epic %s: %w", id, err)
+	}
 	_, err := db.conn.Exec(`UPDATE epics SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
-	return err
+	if err != nil {
+		return err
+	}
+	return db.RecordEpicTransition(id, current, status)
 }
 
 func (db *DB) UpdateEpic(id, title, description, projectID string) error {

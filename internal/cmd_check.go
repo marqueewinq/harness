@@ -28,6 +28,10 @@ func (a *App) CmdWorkCheck(taskID string) error {
 		return err
 	}
 
+	// Resolve commit SHA from the worktree HEAD
+	worktreeGit := NewGitClient(task.WorktreePath)
+	commitSHA, _ := worktreeGit.RevParse("HEAD")
+
 	fmt.Println("Running checks...")
 	runner := NewCheckRunner(a.Config.Checks, task.WorktreePath)
 	results, err := runner.RunAll()
@@ -47,7 +51,7 @@ func (a *App) CmdWorkCheck(taskID string) error {
 		if r.Skipped {
 			exitCode = -1
 		}
-		a.DB.RecordCheckRun(id, r.Name, exitCode, r.Stdout, r.Stderr, runGroup, r.StartedAt, r.FinishedAt)
+		a.DB.RecordCheckRun(id, r.Name, exitCode, r.Stdout, r.Stderr, runGroup, r.StartedAt, r.FinishedAt, commitSHA)
 
 		if r.Skipped {
 			fmt.Printf("  %-12s SKIP\n", r.Name)

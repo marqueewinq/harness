@@ -44,12 +44,14 @@ func (db *DB) CreateTask(description, notes, branch, worktreePath, baseBranch, p
 		return nil, fmt.Errorf("creating task: %w", err)
 	}
 
-	return &Task{
+	task := &Task{
 		ID: id, Description: description, Notes: notes, Branch: branch,
 		WorktreePath: worktreePath, State: StateInProgress,
 		BaseBranch: baseBranch, ParentTaskID: parentTaskID, EpicID: epicID,
 		CreatedAt: now, UpdatedAt: now,
-	}, nil
+	}
+	db.RecordTaskTransition(id, "", string(StateInProgress))
+	return task, nil
 }
 
 func (db *DB) nextTaskID() (string, error) {
@@ -186,11 +188,18 @@ func (db *DB) ListTasksByEpic(epicID string) ([]Task, error) {
 }
 
 func (db *DB) UpdateTaskState(id string, state TaskState) error {
+	var current string
+	if err := db.conn.QueryRow(`SELECT state FROM tasks WHERE id = ?`, id).Scan(&current); err != nil {
+		return fmt.Errorf("reading current state for %s: %w", id, err)
+	}
 	_, err := db.conn.Exec(
 		`UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?`,
 		string(state), time.Now(), id,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return db.RecordTaskTransition(id, current, string(state))
 }
 
 func (db *DB) CreatePlannedTask(description, notes, epicID string) (*Task, error) {
@@ -211,11 +220,13 @@ func (db *DB) CreatePlannedTask(description, notes, epicID string) (*Task, error
 	if err != nil {
 		return nil, fmt.Errorf("creating planned task: %w", err)
 	}
-	return &Task{
+	task := &Task{
 		ID: id, Description: description, Notes: notes,
 		State: StatePlanned, EpicID: epicID,
 		CreatedAt: now, UpdatedAt: now,
-	}, nil
+	}
+	db.RecordTaskTransition(id, "", string(StatePlanned))
+	return task, nil
 }
 
 func (db *DB) UpdatePlannedTask(id, description, notes, epicID string) error {
@@ -272,5 +283,8 @@ func (db *DB) StartTask(id, branch, worktreePath, baseBranch, parentTaskID strin
 		branch, worktreePath, string(StateInProgress), baseBranch,
 		parentVal, time.Now(), id, string(StatePlanned),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return db.RecordTaskTransition(id, string(StatePlanned), string(StateInProgress))
 }

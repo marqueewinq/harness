@@ -61,6 +61,11 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v4: %w", err)
 		}
 	}
+	if version < 5 {
+		if err := migrateV5(conn); err != nil {
+			return fmt.Errorf("migration v5: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -212,4 +217,35 @@ func migrateV4(conn *sql.DB) error {
 		return err
 	}
 	return setVersion(conn, 4)
+}
+
+func migrateV5(conn *sql.DB) error {
+	tables := `
+	CREATE TABLE IF NOT EXISTS task_state_transitions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id TEXT NOT NULL REFERENCES tasks(id),
+		from_state TEXT NOT NULL DEFAULT '',
+		to_state TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS epic_state_transitions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		epic_id TEXT NOT NULL REFERENCES epics(id),
+		from_state TEXT NOT NULL DEFAULT '',
+		to_state TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS project_state_transitions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		project_id TEXT NOT NULL REFERENCES projects(id),
+		from_state TEXT NOT NULL DEFAULT '',
+		to_state TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err := conn.Exec(tables); err != nil {
+		return err
+	}
+	conn.Exec(`ALTER TABLE check_runs ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''`)
+	return setVersion(conn, 5)
 }

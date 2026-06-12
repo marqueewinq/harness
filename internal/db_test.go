@@ -96,11 +96,11 @@ func TestCheckRunCRUD(t *testing.T) {
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
 
-	err = db.RecordCheckRun("task-001", "test", 0, "ok\n", "", 1, time.Now(), time.Now())
+	err = db.RecordCheckRun("task-001", "test", 0, "ok\n", "", 1, time.Now(), time.Now(), "abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = db.RecordCheckRun("task-001", "lint", 1, "", "fail\n", 1, time.Now(), time.Now())
+	err = db.RecordCheckRun("task-001", "lint", 1, "", "fail\n", 1, time.Now(), time.Now(), "abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestNextRunGroup(t *testing.T) {
 	}
 
 	// Record a run in group 1
-	db.RecordCheckRun("task-001", "lint", 0, "", "", 1, time.Now(), time.Now())
+	db.RecordCheckRun("task-001", "lint", 0, "", "", 1, time.Now(), time.Now(), "def456")
 
 	// Next group should be 2
 	group, err = db.NextRunGroup("task-001")
@@ -489,8 +489,8 @@ func TestSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal("schema_version table missing:", err)
 	}
-	if version < 4 {
-		t.Errorf("schema version = %d, want >= 4", version)
+	if version < 5 {
+		t.Errorf("schema version = %d, want >= 5", version)
 	}
 }
 
@@ -628,7 +628,6 @@ func TestEpicBranchCRUD(t *testing.T) {
 
 	proj, _ := db.CreateProject("Test project", "")
 
-	// Create with branch
 	e, err := db.CreateEpic("With branch", "", proj.ID, "epic/with-branch")
 	if err != nil {
 		t.Fatal("create:", err)
@@ -637,33 +636,28 @@ func TestEpicBranchCRUD(t *testing.T) {
 		t.Errorf("branch = %q, want epic/with-branch", e.Branch)
 	}
 
-	// Get should return branch
 	e2, _ := db.GetEpic(e.ID)
 	if e2.Branch != "epic/with-branch" {
 		t.Errorf("get branch = %q, want epic/with-branch", e2.Branch)
 	}
 
-	// Create without branch
 	e3, _ := db.CreateEpic("No branch", "", proj.ID, "")
 	if e3.Branch != "" {
 		t.Errorf("branch = %q, want empty", e3.Branch)
 	}
 
-	// Update branch
 	db.UpdateEpicBranch(e.ID, "new-branch")
 	e4, _ := db.GetEpic(e.ID)
 	if e4.Branch != "new-branch" {
 		t.Errorf("updated branch = %q, want new-branch", e4.Branch)
 	}
 
-	// Clear branch
 	db.UpdateEpicBranch(e.ID, "")
 	e5, _ := db.GetEpic(e.ID)
 	if e5.Branch != "" {
 		t.Errorf("cleared branch = %q, want empty", e5.Branch)
 	}
 
-	// List should include branch
 	epics, _ := db.ListEpics()
 	if len(epics) != 2 {
 		t.Fatalf("len = %d, want 2", len(epics))
@@ -681,7 +675,6 @@ func TestEpicReviewCRUD(t *testing.T) {
 	proj, _ := db.CreateProject("Test project", "")
 	db.CreateEpic("Test epic", "", proj.ID, "")
 
-	// Record epic review
 	err = db.RecordEpicReview("epic-001", "request_changes", "fix it", "")
 	if err != nil {
 		t.Fatal("record:", err)
@@ -692,7 +685,6 @@ func TestEpicReviewCRUD(t *testing.T) {
 		t.Fatal("record approve:", err)
 	}
 
-	// Get reviews
 	reviews, err := db.GetEpicReviews("epic-001")
 	if err != nil {
 		t.Fatal("get:", err)
@@ -707,7 +699,6 @@ func TestEpicReviewCRUD(t *testing.T) {
 		t.Errorf("decision[1] = %q", reviews[1].Decision)
 	}
 
-	// Latest approval
 	approval, err := db.GetLatestEpicApproval("epic-001")
 	if err != nil {
 		t.Fatal("latest:", err)
@@ -719,10 +710,170 @@ func TestEpicReviewCRUD(t *testing.T) {
 		t.Errorf("sha = %q, want %q", approval.CommitSHA, sha)
 	}
 
-	// No approval for nonexistent
 	none, _ := db.GetLatestEpicApproval("epic-999")
 	if none != nil {
 		t.Errorf("expected nil for nonexistent")
+	}
+}
+
+func TestTaskStateTransitions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "")
+	transitions, err := db.GetTaskTransitions("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transitions) != 1 {
+		t.Fatalf("len(transitions) = %d, want 1", len(transitions))
+	}
+	if transitions[0].FromState != "" || transitions[0].ToState != "IN_PROGRESS" {
+		t.Errorf("initial transition = %q -> %q, want '' -> 'IN_PROGRESS'", transitions[0].FromState, transitions[0].ToState)
+	}
+
+	db.UpdateTaskState("task-001", StateChecksRunning)
+	db.UpdateTaskState("task-001", StateChecksPassed)
+	transitions, _ = db.GetTaskTransitions("task-001")
+	if len(transitions) != 3 {
+		t.Fatalf("len(transitions) = %d, want 3", len(transitions))
+	}
+	if transitions[1].FromState != "IN_PROGRESS" || transitions[1].ToState != "CHECKS_RUNNING" {
+		t.Errorf("transition[1] = %q -> %q", transitions[1].FromState, transitions[1].ToState)
+	}
+	if transitions[2].FromState != "CHECKS_RUNNING" || transitions[2].ToState != "CHECKS_PASSED" {
+		t.Errorf("transition[2] = %q -> %q", transitions[2].FromState, transitions[2].ToState)
+	}
+}
+
+func TestPlannedTaskTransitions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreatePlannedTask("plan it", "", "")
+	transitions, _ := db.GetTaskTransitions("task-001")
+	if len(transitions) != 1 {
+		t.Fatalf("len = %d, want 1", len(transitions))
+	}
+	if transitions[0].ToState != "PLANNED" {
+		t.Errorf("to = %q, want PLANNED", transitions[0].ToState)
+	}
+
+	db.StartTask("task-001", "branch", "/tmp/wt", "main", "")
+	transitions, _ = db.GetTaskTransitions("task-001")
+	if len(transitions) != 2 {
+		t.Fatalf("len = %d, want 2", len(transitions))
+	}
+	if transitions[1].FromState != "PLANNED" || transitions[1].ToState != "IN_PROGRESS" {
+		t.Errorf("transition[1] = %q -> %q", transitions[1].FromState, transitions[1].ToState)
+	}
+}
+
+func TestEpicStateTransitions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateProject("proj", "")
+	db.CreateEpic("epic", "", "proj-001", "")
+
+	transitions, _ := db.GetEpicTransitions("epic-001")
+	if len(transitions) != 1 {
+		t.Fatalf("len = %d, want 1", len(transitions))
+	}
+	if transitions[0].ToState != "open" {
+		t.Errorf("to = %q, want open", transitions[0].ToState)
+	}
+
+	db.UpdateEpicStatus("epic-001", "closed")
+	transitions, _ = db.GetEpicTransitions("epic-001")
+	if len(transitions) != 2 {
+		t.Fatalf("len = %d, want 2", len(transitions))
+	}
+	if transitions[1].FromState != "open" || transitions[1].ToState != "closed" {
+		t.Errorf("transition[1] = %q -> %q", transitions[1].FromState, transitions[1].ToState)
+	}
+}
+
+func TestProjectStateTransitions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateProject("proj", "")
+	transitions, _ := db.GetProjectTransitions("proj-001")
+	if len(transitions) != 1 {
+		t.Fatalf("len = %d, want 1", len(transitions))
+	}
+	if transitions[0].ToState != "open" {
+		t.Errorf("to = %q, want open", transitions[0].ToState)
+	}
+
+	db.UpdateProjectStatus("proj-001", "closed")
+	transitions, _ = db.GetProjectTransitions("proj-001")
+	if len(transitions) != 2 {
+		t.Fatalf("len = %d, want 2", len(transitions))
+	}
+	if transitions[1].FromState != "open" || transitions[1].ToState != "closed" {
+		t.Errorf("transition[1] = %q -> %q", transitions[1].FromState, transitions[1].ToState)
+	}
+}
+
+func TestCheckRunCommitSHA(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	sha := "abc123def456"
+	db.RecordCheckRun("task-001", "lint", 0, "ok", "", 1, time.Now(), time.Now(), sha)
+
+	runs, err := db.GetLatestCheckRuns("task-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("len = %d, want 1", len(runs))
+	}
+	if runs[0].CommitSHA != sha {
+		t.Errorf("CommitSHA = %q, want %q", runs[0].CommitSHA, sha)
+	}
+}
+
+func TestTransitionTablesExist(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	tables := []string{"task_state_transitions", "epic_state_transitions", "project_state_transitions"}
+	for _, table := range tables {
+		var name string
+		err := db.conn.QueryRow(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name=?", table,
+		).Scan(&name)
+		if err != nil {
+			t.Errorf("table %q not found: %v", table, err)
+		}
 	}
 }
 

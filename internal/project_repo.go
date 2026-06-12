@@ -29,7 +29,9 @@ func (db *DB) CreateProject(title, description string) (*Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}
-	return &Project{ID: id, Title: title, Description: description, Status: "open", CreatedAt: now, UpdatedAt: now}, nil
+	proj := &Project{ID: id, Title: title, Description: description, Status: "open", CreatedAt: now, UpdatedAt: now}
+	db.RecordProjectTransition(id, "", "open")
+	return proj, nil
 }
 
 func (db *DB) nextProjectID() (string, error) {
@@ -72,8 +74,15 @@ func (db *DB) ListProjects() ([]Project, error) {
 }
 
 func (db *DB) UpdateProjectStatus(id, status string) error {
+	var current string
+	if err := db.conn.QueryRow(`SELECT status FROM projects WHERE id = ?`, id).Scan(&current); err != nil {
+		return fmt.Errorf("reading current status for project %s: %w", id, err)
+	}
 	_, err := db.conn.Exec(`UPDATE projects SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
-	return err
+	if err != nil {
+		return err
+	}
+	return db.RecordProjectTransition(id, current, status)
 }
 
 func (db *DB) UpdateProject(id, title, description string) error {

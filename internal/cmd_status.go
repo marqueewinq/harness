@@ -78,7 +78,15 @@ func (a *App) CmdWorkStatus(taskID string) error {
 
 	runs, err := a.DB.GetLatestCheckRuns(task.ID)
 	if err == nil && len(runs) > 0 {
-		fmt.Println("\nLast check run:")
+		header := "\nLast check run:"
+		if runs[0].CommitSHA != "" {
+			short := runs[0].CommitSHA
+			if len(short) > 8 {
+				short = short[:8]
+			}
+			header = fmt.Sprintf("\nLast check run (commit %s):", short)
+		}
+		fmt.Println(header)
 		for _, r := range runs {
 			if r.ExitCode == -1 {
 				fmt.Printf("  %-12s SKIP\n", r.CheckName)
@@ -159,6 +167,18 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		fmt.Printf("Next: run harness start %s\n", task.ID)
 	case StateMerged:
 		fmt.Println("Task is complete.")
+	}
+
+	transitions, _ := a.DB.GetTaskTransitions(task.ID)
+	if len(transitions) > 0 {
+		fmt.Println("\nState history:")
+		for _, tr := range transitions {
+			from := tr.FromState
+			if from == "" {
+				from = "(created)"
+			}
+			fmt.Printf("  %s  %s -> %s\n", tr.CreatedAt.Format("15:04:05"), from, tr.ToState)
+		}
 	}
 
 	subtasks, _ := a.DB.GetSubtasks(task.ID)
