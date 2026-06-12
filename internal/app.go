@@ -85,20 +85,35 @@ func isEpicID(id string) bool {
 	return strings.HasPrefix(id, "epic-")
 }
 
+var emptyBrackets = regexp.MustCompile(`\[\s*\]\s*`)
+
 // BuildCommitMessage renders a commit message template with task hierarchy IDs.
-// Empty variables cause their surrounding [...] blocks to be stripped.
+// Empty variables cause their surrounding [...] blocks to be stripped before
+// {{message}} is substituted, so literal [] in user messages are preserved.
 func BuildCommitMessage(tmpl, taskID, epicID, projID, message string) string {
 	s := tmpl
 	s = strings.ReplaceAll(s, "{{task}}", taskID)
 	s = strings.ReplaceAll(s, "{{epic}}", epicID)
 	s = strings.ReplaceAll(s, "{{proj}}", projID)
-	s = strings.ReplaceAll(s, "{{message}}", message)
 
-	// Strip empty bracket blocks like "[] " or "[  ]"
-	emptyBrackets := regexp.MustCompile(`\[\s*\]\s*`)
+	// Strip empty bracket blocks before message substitution
+	// so [] in user's message text is preserved.
 	s = emptyBrackets.ReplaceAllString(s, "")
 
+	s = strings.ReplaceAll(s, "{{message}}", message)
+
 	return strings.TrimSpace(s)
+}
+
+// resolveTaskHierarchy returns epicID and projID for a task.
+func (a *App) resolveTaskHierarchy(task *Task) (epicID, projID string) {
+	if task.EpicID != "" {
+		epicID = task.EpicID
+		if epic, err := a.DB.GetEpic(task.EpicID); err == nil {
+			projID = epic.ProjectID
+		}
+	}
+	return
 }
 
 func (a *App) ResolveTaskID(explicit string) (string, error) {

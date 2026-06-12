@@ -118,6 +118,15 @@ func TestBuildCommitMessage(t *testing.T) {
 			message:  "refactor",
 			want:     "task-005: refactor",
 		},
+		{
+			name:     "brackets in message preserved",
+			template: "[{{proj}}] [{{epic}}] [{{task}}] {{message}}",
+			taskID:   "task-003",
+			epicID:   "",
+			projID:   "",
+			message:  "fix empty array [] in parser",
+			want:     "[task-003] fix empty array [] in parser",
+		},
 	}
 
 	for _, tt := range tests {

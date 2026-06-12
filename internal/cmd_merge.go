@@ -138,13 +138,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		}
 	}
 	// Render commit message through template
-	var epicID, projID string
-	if task.EpicID != "" {
-		epicID = task.EpicID
-		if epic, err := a.DB.GetEpic(task.EpicID); err == nil {
-			projID = epic.ProjectID
-		}
-	}
+	epicID, projID := a.resolveTaskHierarchy(task)
 	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Description)
 
 	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, mergeMessage); err != nil {

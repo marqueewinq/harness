@@ -12,15 +12,7 @@ func (a *App) CmdWorkCommit(taskID, message string, extraGitArgs []string) error
 		return err
 	}
 
-	// Resolve hierarchy: task -> epic -> project
-	var epicID, projID string
-	if task.EpicID != "" {
-		epicID = task.EpicID
-		if epic, err := a.DB.GetEpic(task.EpicID); err == nil {
-			projID = epic.ProjectID
-		}
-	}
-
+	epicID, projID := a.resolveTaskHierarchy(task)
 	rendered := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, message)
 
 	wtGit := NewGitClient(task.WorktreePath)
