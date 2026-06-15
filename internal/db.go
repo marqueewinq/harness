@@ -29,6 +29,17 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
+func (db *DB) nextID(table, prefix string, width int) (string, error) {
+	var maxID sql.NullString
+	err := db.conn.QueryRow(fmt.Sprintf(`SELECT MAX(id) FROM %s`, table)).Scan(&maxID)
+	if err != nil || !maxID.Valid {
+		return fmt.Sprintf("%s-%0*d", prefix, width, 1), nil
+	}
+	var num int
+	fmt.Sscanf(maxID.String, prefix+"-%d", &num)
+	return fmt.Sprintf("%s-%0*d", prefix, width, num+1), nil
+}
+
 func createSchema(conn *sql.DB) error {
 	_, err := conn.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`)
 	if err != nil {

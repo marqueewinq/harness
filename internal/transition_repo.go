@@ -1,6 +1,9 @@
 package internal
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type TaskStateTransition struct {
 	ID        int
@@ -26,12 +29,17 @@ type ProjectStateTransition struct {
 	CreatedAt time.Time
 }
 
-func (db *DB) RecordTaskTransition(taskID, fromState, toState string) error {
-	_, err := db.conn.Exec(
-		`INSERT INTO task_state_transitions (task_id, from_state, to_state, created_at) VALUES (?, ?, ?, ?)`,
-		taskID, fromState, toState, time.Now(),
+func (db *DB) recordTransition(table, idCol, id, from, to string) error {
+	query := fmt.Sprintf(
+		`INSERT INTO %s (%s, from_state, to_state, created_at) VALUES (?, ?, ?, ?)`,
+		table, idCol,
 	)
+	_, err := db.conn.Exec(query, id, from, to, time.Now())
 	return err
+}
+
+func (db *DB) RecordTaskTransition(taskID, fromState, toState string) error {
+	return db.recordTransition("task_state_transitions", "task_id", taskID, fromState, toState)
 }
 
 func (db *DB) GetTaskTransitions(taskID string) ([]TaskStateTransition, error) {
@@ -56,11 +64,7 @@ func (db *DB) GetTaskTransitions(taskID string) ([]TaskStateTransition, error) {
 }
 
 func (db *DB) RecordEpicTransition(epicID, fromState, toState string) error {
-	_, err := db.conn.Exec(
-		`INSERT INTO epic_state_transitions (epic_id, from_state, to_state, created_at) VALUES (?, ?, ?, ?)`,
-		epicID, fromState, toState, time.Now(),
-	)
-	return err
+	return db.recordTransition("epic_state_transitions", "epic_id", epicID, fromState, toState)
 }
 
 func (db *DB) GetEpicTransitions(epicID string) ([]EpicStateTransition, error) {
@@ -85,11 +89,7 @@ func (db *DB) GetEpicTransitions(epicID string) ([]EpicStateTransition, error) {
 }
 
 func (db *DB) RecordProjectTransition(projectID, fromState, toState string) error {
-	_, err := db.conn.Exec(
-		`INSERT INTO project_state_transitions (project_id, from_state, to_state, created_at) VALUES (?, ?, ?, ?)`,
-		projectID, fromState, toState, time.Now(),
-	)
-	return err
+	return db.recordTransition("project_state_transitions", "project_id", projectID, fromState, toState)
 }
 
 func (db *DB) GetProjectTransitions(projectID string) ([]ProjectStateTransition, error) {

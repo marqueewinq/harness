@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 )
@@ -16,7 +15,7 @@ type Project struct {
 }
 
 func (db *DB) CreateProject(title, description string) (*Project, error) {
-	id, err := db.nextProjectID()
+	id, err := db.nextID("projects", "proj", 3)
 	if err != nil {
 		return nil, err
 	}
@@ -32,17 +31,6 @@ func (db *DB) CreateProject(title, description string) (*Project, error) {
 	proj := &Project{ID: id, Title: title, Description: description, Status: "open", CreatedAt: now, UpdatedAt: now}
 	db.RecordProjectTransition(id, "", "open")
 	return proj, nil
-}
-
-func (db *DB) nextProjectID() (string, error) {
-	var maxID sql.NullString
-	err := db.conn.QueryRow(`SELECT MAX(id) FROM projects`).Scan(&maxID)
-	if err != nil || !maxID.Valid {
-		return "proj-001", nil
-	}
-	var num int
-	fmt.Sscanf(maxID.String, "proj-%d", &num)
-	return fmt.Sprintf("proj-%03d", num+1), nil
 }
 
 func (db *DB) GetProject(id string) (*Project, error) {

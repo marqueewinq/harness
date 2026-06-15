@@ -20,8 +20,29 @@ type Task struct {
 	UpdatedAt    time.Time
 }
 
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+const taskColumns = `id, description, notes, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at`
+
+func scanTask(s rowScanner) (*Task, error) {
+	t := &Task{}
+	var parentID, epicID, branch, worktreePath sql.NullString
+	err := s.Scan(&t.ID, &t.Description, &t.Notes, &branch, &worktreePath,
+		&t.State, &t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	t.Branch = branch.String
+	t.WorktreePath = worktreePath.String
+	t.ParentTaskID = parentID.String
+	t.EpicID = epicID.String
+	return t, nil
+}
+
 func (db *DB) CreateTask(description, notes, branch, worktreePath, baseBranch, parentTaskID, epicID string) (*Task, error) {
-	id, err := db.nextTaskID()
+	id, err := db.nextID("tasks", "task", 3)
 	if err != nil {
 		return nil, err
 	}
@@ -54,60 +75,29 @@ func (db *DB) CreateTask(description, notes, branch, worktreePath, baseBranch, p
 	return task, nil
 }
 
-func (db *DB) nextTaskID() (string, error) {
-	var maxID sql.NullString
-	err := db.conn.QueryRow(`SELECT MAX(id) FROM tasks`).Scan(&maxID)
-	if err != nil || !maxID.Valid {
-		return "task-001", nil
-	}
-	var num int
-	fmt.Sscanf(maxID.String, "task-%d", &num)
-	return fmt.Sprintf("task-%03d", num+1), nil
-}
-
 func (db *DB) GetTask(id string) (*Task, error) {
-	t := &Task{}
-	var parentID, epicID, branch, worktreePath sql.NullString
-	err := db.conn.QueryRow(
-		`SELECT id, description, notes, branch, worktree_path, state, base_branch,
-		        parent_task_id, epic_id, created_at, updated_at
-		 FROM tasks WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Description, &t.Notes, &branch, &worktreePath, &t.State,
-		&t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt)
+	t, err := scanTask(db.conn.QueryRow(
+		`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id,
+	))
 	if err != nil {
 		return nil, fmt.Errorf("task %q not found: %w", id, err)
 	}
-	t.Branch = branch.String
-	t.WorktreePath = worktreePath.String
-	t.ParentTaskID = parentID.String
-	t.EpicID = epicID.String
 	return t, nil
 }
 
 func (db *DB) GetTaskByBranch(branch string) (*Task, error) {
-	t := &Task{}
-	var parentID, epicID, branchVal, worktreePath sql.NullString
-	err := db.conn.QueryRow(
-		`SELECT id, description, notes, branch, worktree_path, state, base_branch,
-		        parent_task_id, epic_id, created_at, updated_at
-		 FROM tasks WHERE branch = ?`, branch,
-	).Scan(&t.ID, &t.Description, &t.Notes, &branchVal, &worktreePath, &t.State,
-		&t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt)
+	t, err := scanTask(db.conn.QueryRow(
+		`SELECT `+taskColumns+` FROM tasks WHERE branch = ?`, branch,
+	))
 	if err != nil {
 		return nil, fmt.Errorf("task with branch %q not found: %w", branch, err)
 	}
-	t.Branch = branchVal.String
-	t.WorktreePath = worktreePath.String
-	t.ParentTaskID = parentID.String
-	t.EpicID = epicID.String
 	return t, nil
 }
 
 func (db *DB) ListTasks() ([]Task, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, description, notes, branch, worktree_path, state, base_branch,
-		        parent_task_id, epic_id, created_at, updated_at
-		 FROM tasks ORDER BY created_at ASC`,
+		`SELECT ` + taskColumns + ` FROM tasks ORDER BY created_at ASC`,
 	)
 	if err != nil {
 		return nil, err
@@ -116,26 +106,18 @@ func (db *DB) ListTasks() ([]Task, error) {
 
 	var tasks []Task
 	for rows.Next() {
-		var t Task
-		var parentID, epicID, branch, worktreePath sql.NullString
-		if err := rows.Scan(&t.ID, &t.Description, &t.Notes, &branch, &worktreePath, &t.State,
-			&t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		t, err := scanTask(rows)
+		if err != nil {
 			return nil, err
 		}
-		t.Branch = branch.String
-		t.WorktreePath = worktreePath.String
-		t.ParentTaskID = parentID.String
-		t.EpicID = epicID.String
-		tasks = append(tasks, t)
+		tasks = append(tasks, *t)
 	}
 	return tasks, nil
 }
 
 func (db *DB) GetSubtasks(parentTaskID string) ([]Task, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, description, notes, branch, worktree_path, state, base_branch,
-		        parent_task_id, epic_id, created_at, updated_at
-		 FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC`, parentTaskID,
+		`SELECT `+taskColumns+` FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC`, parentTaskID,
 	)
 	if err != nil {
 		return nil, err
@@ -144,26 +126,18 @@ func (db *DB) GetSubtasks(parentTaskID string) ([]Task, error) {
 
 	var tasks []Task
 	for rows.Next() {
-		var t Task
-		var parentID, epicID, branch, worktreePath sql.NullString
-		if err := rows.Scan(&t.ID, &t.Description, &t.Notes, &branch, &worktreePath, &t.State,
-			&t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		t, err := scanTask(rows)
+		if err != nil {
 			return nil, err
 		}
-		t.Branch = branch.String
-		t.WorktreePath = worktreePath.String
-		t.ParentTaskID = parentID.String
-		t.EpicID = epicID.String
-		tasks = append(tasks, t)
+		tasks = append(tasks, *t)
 	}
 	return tasks, nil
 }
 
 func (db *DB) ListTasksByEpic(epicID string) ([]Task, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, description, notes, branch, worktree_path, state, base_branch,
-		        parent_task_id, epic_id, created_at, updated_at
-		 FROM tasks WHERE epic_id = ? ORDER BY created_at ASC`, epicID,
+		`SELECT `+taskColumns+` FROM tasks WHERE epic_id = ? ORDER BY created_at ASC`, epicID,
 	)
 	if err != nil {
 		return nil, err
@@ -171,18 +145,11 @@ func (db *DB) ListTasksByEpic(epicID string) ([]Task, error) {
 	defer rows.Close()
 	var tasks []Task
 	for rows.Next() {
-		var t Task
-		var parentID, epicIDN, branch, worktreePath sql.NullString
-		if err := rows.Scan(&t.ID, &t.Description, &t.Notes, &branch, &worktreePath,
-			&t.State, &t.BaseBranch, &parentID, &epicIDN,
-			&t.CreatedAt, &t.UpdatedAt); err != nil {
+		t, err := scanTask(rows)
+		if err != nil {
 			return nil, err
 		}
-		t.Branch = branch.String
-		t.WorktreePath = worktreePath.String
-		t.ParentTaskID = parentID.String
-		t.EpicID = epicIDN.String
-		tasks = append(tasks, t)
+		tasks = append(tasks, *t)
 	}
 	return tasks, nil
 }
@@ -203,7 +170,7 @@ func (db *DB) UpdateTaskState(id string, state TaskState) error {
 }
 
 func (db *DB) CreatePlannedTask(description, notes, epicID string) (*Task, error) {
-	id, err := db.nextTaskID()
+	id, err := db.nextID("tasks", "task", 3)
 	if err != nil {
 		return nil, err
 	}

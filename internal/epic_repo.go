@@ -17,11 +17,24 @@ type Epic struct {
 	UpdatedAt   time.Time
 }
 
+const epicColumns = `id, project_id, title, description, status, branch, created_at, updated_at`
+
+func scanEpic(s rowScanner) (*Epic, error) {
+	e := &Epic{}
+	var branch sql.NullString
+	err := s.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	e.Branch = branch.String
+	return e, nil
+}
+
 func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, error) {
 	if _, err := db.GetProject(projectID); err != nil {
 		return nil, fmt.Errorf("project %q not found", projectID)
 	}
-	id, err := db.nextEpicID()
+	id, err := db.nextID("epics", "epic", 3)
 	if err != nil {
 		return nil, err
 	}
@@ -43,52 +56,36 @@ func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, e
 	return epic, nil
 }
 
-func (db *DB) nextEpicID() (string, error) {
-	var maxID sql.NullString
-	err := db.conn.QueryRow(`SELECT MAX(id) FROM epics`).Scan(&maxID)
-	if err != nil || !maxID.Valid {
-		return "epic-001", nil
-	}
-	var num int
-	fmt.Sscanf(maxID.String, "epic-%d", &num)
-	return fmt.Sprintf("epic-%03d", num+1), nil
-}
-
 func (db *DB) GetEpic(id string) (*Epic, error) {
-	e := &Epic{}
-	var branch sql.NullString
-	err := db.conn.QueryRow(
-		`SELECT id, project_id, title, description, status, branch, created_at, updated_at FROM epics WHERE id = ?`, id,
-	).Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt)
+	e, err := scanEpic(db.conn.QueryRow(
+		`SELECT `+epicColumns+` FROM epics WHERE id = ?`, id,
+	))
 	if err != nil {
 		return nil, fmt.Errorf("epic %q not found: %w", id, err)
 	}
-	e.Branch = branch.String
 	return e, nil
 }
 
 func (db *DB) ListEpics() ([]Epic, error) {
-	rows, err := db.conn.Query(`SELECT id, project_id, title, description, status, branch, created_at, updated_at FROM epics ORDER BY created_at ASC`)
+	rows, err := db.conn.Query(`SELECT ` + epicColumns + ` FROM epics ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var epics []Epic
 	for rows.Next() {
-		var e Epic
-		var branch sql.NullString
-		if err := rows.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		e, err := scanEpic(rows)
+		if err != nil {
 			return nil, err
 		}
-		e.Branch = branch.String
-		epics = append(epics, e)
+		epics = append(epics, *e)
 	}
 	return epics, nil
 }
 
 func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, project_id, title, description, status, branch, created_at, updated_at FROM epics WHERE project_id = ? ORDER BY created_at ASC`, projectID,
+		`SELECT `+epicColumns+` FROM epics WHERE project_id = ? ORDER BY created_at ASC`, projectID,
 	)
 	if err != nil {
 		return nil, err
@@ -96,13 +93,11 @@ func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 	defer rows.Close()
 	var epics []Epic
 	for rows.Next() {
-		var e Epic
-		var branch sql.NullString
-		if err := rows.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		e, err := scanEpic(rows)
+		if err != nil {
 			return nil, err
 		}
-		e.Branch = branch.String
-		epics = append(epics, e)
+		epics = append(epics, *e)
 	}
 	return epics, nil
 }
