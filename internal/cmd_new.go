@@ -1,37 +1,13 @@
 package internal
 
-import (
-	"fmt"
-	"path/filepath"
-)
+import "fmt"
 
 func (a *App) CmdNew(title, baseBranch, epicID, description string) error {
-	if baseBranch == "" && epicID != "" {
-		// Resolve base branch from epic
-		if epic, err := a.DB.GetEpic(epicID); err == nil && epic.Branch != "" {
-			baseBranch = epic.Branch
-		}
-	}
-	if baseBranch == "" {
-		baseBranch = a.Config.MainBranch
-	}
-
-	// Check if baseBranch is another task's branch -> set parent
-	var parentTaskID string
-	if parentTask, err := a.DB.GetTaskByBranch(baseBranch); err == nil {
-		parentTaskID = parentTask.ID
-	}
-
-	branch := Slugify(title)
-	worktreePath := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, branch)
-
-	if err := a.Git.CreateBranch(branch, baseBranch); err != nil {
-		return fmt.Errorf("creating branch: %w", err)
-	}
-
-	if err := a.Git.CreateWorktree(branch, worktreePath); err != nil {
-		a.Git.DeleteBranch(branch)
-		return fmt.Errorf("creating worktree: %w", err)
+	baseBranch = a.resolveBaseBranch(baseBranch, epicID)
+	slug := Slugify(title)
+	branch, worktreePath, parentTaskID, err := a.createTaskBranch(slug, baseBranch)
+	if err != nil {
+		return err
 	}
 
 	task, err := a.DB.CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID)

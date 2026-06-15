@@ -11,7 +11,7 @@ type Epic struct {
 	ProjectID   string
 	Title       string
 	Description string
-	Status      string
+	Status      EpicStatus
 	Branch      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -22,10 +22,12 @@ const epicColumns = `id, project_id, title, description, status, branch, created
 func scanEpic(s rowScanner) (*Epic, error) {
 	e := &Epic{}
 	var branch sql.NullString
-	err := s.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &e.Status, &branch, &e.CreatedAt, &e.UpdatedAt)
+	var status string
+	err := s.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &status, &branch, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
+	e.Status = EpicStatus(status)
 	e.Branch = branch.String
 	return e, nil
 }
@@ -51,8 +53,8 @@ func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, e
 	if err != nil {
 		return nil, fmt.Errorf("creating epic: %w", err)
 	}
-	epic := &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: "open", Branch: branch, CreatedAt: now, UpdatedAt: now}
-	db.RecordEpicTransition(id, "", "open")
+	epic := &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: EpicStatusOpen, Branch: branch, CreatedAt: now, UpdatedAt: now}
+	db.RecordEpicTransition(id, "", string(EpicStatusOpen))
 	return epic, nil
 }
 
@@ -102,17 +104,17 @@ func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 	return epics, nil
 }
 
-func (db *DB) UpdateEpicStatus(id, status string) error {
+func (db *DB) UpdateEpicStatus(id string, status EpicStatus) error {
 	return db.WithTx(func(tx *sql.Tx) error {
 		var current string
 		if err := tx.QueryRow(`SELECT status FROM epics WHERE id = ?`, id).Scan(&current); err != nil {
 			return fmt.Errorf("reading current status for epic %s: %w", id, err)
 		}
-		_, err := tx.Exec(`UPDATE epics SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
+		_, err := tx.Exec(`UPDATE epics SET status = ?, updated_at = ? WHERE id = ?`, string(status), time.Now(), id)
 		if err != nil {
 			return err
 		}
-		return recordTransition(tx, "epic_state_transitions", "epic_id", id, current, status)
+		return recordTransition(tx, "epic_state_transitions", "epic_id", id, current, string(status))
 	})
 }
 

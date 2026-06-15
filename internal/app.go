@@ -116,6 +116,40 @@ func (a *App) resolveTaskHierarchy(task *Task) (epicID, projID string) {
 	return
 }
 
+// resolveBaseBranch determines the base branch for a new task.
+func (a *App) resolveBaseBranch(explicit, epicID string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if epicID != "" {
+		if epic, err := a.DB.GetEpic(epicID); err == nil && epic.Branch != "" {
+			return epic.Branch
+		}
+	}
+	return a.Config.MainBranch
+}
+
+// createTaskBranch creates a git branch + worktree for a task.
+// Returns branch name, worktree path, parent task ID, or an error.
+// On failure, cleans up partially created resources.
+func (a *App) createTaskBranch(slug, baseBranch string) (branch, worktreePath, parentTaskID string, err error) {
+	branch = slug
+	worktreePath = filepath.Join(a.RepoRoot, a.Config.WorktreeDir, branch)
+
+	if parentTask, pErr := a.DB.GetTaskByBranch(baseBranch); pErr == nil {
+		parentTaskID = parentTask.ID
+	}
+
+	if err = a.Git.CreateBranch(branch, baseBranch); err != nil {
+		return "", "", "", fmt.Errorf("creating branch: %w", err)
+	}
+	if err = a.Git.CreateWorktree(branch, worktreePath); err != nil {
+		a.Git.DeleteBranch(branch)
+		return "", "", "", fmt.Errorf("creating worktree: %w", err)
+	}
+	return branch, worktreePath, parentTaskID, nil
+}
+
 func (a *App) ResolveTaskID(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil

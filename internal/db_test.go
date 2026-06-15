@@ -529,7 +529,7 @@ func TestProjectCRUD(t *testing.T) {
 	if p.ID != "proj-001" {
 		t.Errorf("id = %q, want proj-001", p.ID)
 	}
-	if p.Status != "open" {
+	if p.Status != ProjectStatusOpen {
 		t.Errorf("status = %q, want open", p.Status)
 	}
 
@@ -550,9 +550,9 @@ func TestProjectCRUD(t *testing.T) {
 		t.Fatalf("len = %d, want 2", len(projects))
 	}
 
-	db.UpdateProjectStatus("proj-001", "closed")
+	db.UpdateProjectStatus("proj-001", ProjectStatusClosed)
 	p3, _ := db.GetProject("proj-001")
-	if p3.Status != "closed" {
+	if p3.Status != ProjectStatusClosed {
 		t.Errorf("status = %q, want closed", p3.Status)
 	}
 }
@@ -597,9 +597,9 @@ func TestEpicCRUD(t *testing.T) {
 		t.Fatalf("len = %d, want 2", len(all))
 	}
 
-	db.UpdateEpicStatus("epic-001", "closed")
+	db.UpdateEpicStatus("epic-001", EpicStatusClosed)
 	e3, _ := db.GetEpic("epic-001")
-	if e3.Status != "closed" {
+	if e3.Status != EpicStatusClosed {
 		t.Errorf("status = %q, want closed", e3.Status)
 	}
 }
@@ -796,7 +796,7 @@ func TestEpicStateTransitions(t *testing.T) {
 		t.Errorf("to = %q, want open", transitions[0].ToState)
 	}
 
-	db.UpdateEpicStatus("epic-001", "closed")
+	db.UpdateEpicStatus("epic-001", EpicStatusClosed)
 	transitions, _ = db.GetEpicTransitions("epic-001")
 	if len(transitions) != 2 {
 		t.Fatalf("len = %d, want 2", len(transitions))
@@ -823,7 +823,7 @@ func TestProjectStateTransitions(t *testing.T) {
 		t.Errorf("to = %q, want open", transitions[0].ToState)
 	}
 
-	db.UpdateProjectStatus("proj-001", "closed")
+	db.UpdateProjectStatus("proj-001", ProjectStatusClosed)
 	transitions, _ = db.GetProjectTransitions("proj-001")
 	if len(transitions) != 2 {
 		t.Fatalf("len = %d, want 2", len(transitions))

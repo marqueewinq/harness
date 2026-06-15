@@ -1,9 +1,6 @@
 package internal
 
-import (
-	"fmt"
-	"path/filepath"
-)
+import "fmt"
 
 func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 	task, err := a.DB.GetTask(taskID)
@@ -13,15 +10,8 @@ func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 	if task.State != StatePlanned {
 		return fmt.Errorf("task %s is %s, not PLANNED", taskID, task.State)
 	}
-	if baseBranch == "" && task.EpicID != "" {
-		// Resolve base branch from epic
-		if epic, err := a.DB.GetEpic(task.EpicID); err == nil && epic.Branch != "" {
-			baseBranch = epic.Branch
-		}
-	}
-	if baseBranch == "" {
-		baseBranch = a.Config.MainBranch
-	}
+
+	baseBranch = a.resolveBaseBranch(baseBranch, task.EpicID)
 
 	// Warn about blockers but proceed
 	blockers, _ := a.DB.GetBlockers(taskID)
@@ -35,21 +25,10 @@ func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 		}
 	}
 
-	// Detect parent task from base branch
-	var parentTaskID string
-	if parentTask, err := a.DB.GetTaskByBranch(baseBranch); err == nil {
-		parentTaskID = parentTask.ID
-	}
-
-	branch := Slugify(task.Title)
-	worktreePath := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, branch)
-
-	if err := a.Git.CreateBranch(branch, baseBranch); err != nil {
-		return fmt.Errorf("creating branch: %w", err)
-	}
-	if err := a.Git.CreateWorktree(branch, worktreePath); err != nil {
-		a.Git.DeleteBranch(branch)
-		return fmt.Errorf("creating worktree: %w", err)
+	slug := Slugify(task.Title)
+	branch, worktreePath, parentTaskID, err := a.createTaskBranch(slug, baseBranch)
+	if err != nil {
+		return err
 	}
 	if err := a.DB.StartTask(taskID, branch, worktreePath, baseBranch, parentTaskID); err != nil {
 		a.Git.RemoveWorktree(worktreePath)

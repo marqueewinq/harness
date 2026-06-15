@@ -64,18 +64,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 
 	diff, _ := a.Git.Diff(task.BaseBranch, task.Branch)
 	reviews, _ := a.DB.GetReviews(id)
-	prevComments := "(none)"
-	if len(reviews) > 0 {
-		var parts []string
-		for _, r := range reviews {
-			if r.Comment != "" {
-				parts = append(parts, fmt.Sprintf("[%s] %s", r.Decision, r.Comment))
-			}
-		}
-		if len(parts) > 0 {
-			prevComments = strings.Join(parts, "\n  ")
-		}
-	}
+	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Task %s is now REVIEW_REQUESTED.\n\n", id)
 

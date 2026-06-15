@@ -13,7 +13,7 @@ func (a *App) CmdEpicNew(title, description, projectID, branchFlag string, branc
 	if err != nil {
 		return err
 	}
-	if p.Status == "closed" {
+	if p.Status == ProjectStatusClosed {
 		fmt.Printf("Warning: project %s is closed\n", projectID)
 	}
 
@@ -70,15 +70,10 @@ func (a *App) CmdEpicList(projectID string) error {
 	fmt.Printf("%-10s %-10s %-8s %-20s %s\n", "ID", "Project", "Status", "Branch", "Title")
 	for _, e := range epics {
 		tasks, _ := a.DB.ListTasksByEpic(e.ID)
-		var done int
-		for _, t := range tasks {
-			if t.State == StateMerged || t.State == StateClosed {
-				done++
-			}
-		}
+		done, total := CountDone(tasks)
 		progress := ""
-		if len(tasks) > 0 {
-			progress = fmt.Sprintf(" (%d/%d)", done, len(tasks))
+		if total > 0 {
+			progress = fmt.Sprintf(" (%d/%d)", done, total)
 		}
 		branchDisplay := "-"
 		if e.Branch != "" {
@@ -122,16 +117,11 @@ func (a *App) CmdEpicClose(epicID string) error {
 		return err
 	}
 	tasks, _ := a.DB.ListTasksByEpic(e.ID)
-	var openCount int
-	for _, t := range tasks {
-		if t.State != StateMerged && t.State != StateClosed {
-			openCount++
-		}
-	}
-	if openCount > 0 {
+	done, total := CountDone(tasks)
+	if openCount := total - done; openCount > 0 {
 		fmt.Printf("Warning: %d tasks are still open under this epic\n", openCount)
 	}
-	if err := a.DB.UpdateEpicStatus(epicID, "closed"); err != nil {
+	if err := a.DB.UpdateEpicStatus(epicID, EpicStatusClosed); err != nil {
 		return err
 	}
 	fmt.Printf("Closed %s: %q\n", e.ID, e.Title)
@@ -143,7 +133,7 @@ func (a *App) CmdEpicEdit(epicID, title, description, projectID string, setTitle
 	if err != nil {
 		return err
 	}
-	if e.Status == "closed" {
+	if e.Status == EpicStatusClosed {
 		return fmt.Errorf("cannot edit closed epic %s", epicID)
 	}
 	newTitle := e.Title
@@ -205,13 +195,8 @@ func (a *App) CmdEpicMerge(epicID string) error {
 
 	// Warn about open tasks
 	tasks, _ := a.DB.ListTasksByEpic(epicID)
-	var openCount int
-	for _, t := range tasks {
-		if t.State != StateMerged && t.State != StateClosed {
-			openCount++
-		}
-	}
-	if openCount > 0 {
+	done, total := CountDone(tasks)
+	if openCount := total - done; openCount > 0 {
 		fmt.Printf("Warning: %d tasks are still open under this epic\n", openCount)
 	}
 
@@ -249,17 +234,7 @@ func (a *App) CmdEpicMerge(epicID string) error {
 			a.Git.RemoveWorktree(tmpWorktree)
 			return fmt.Errorf("check execution error: %w", err)
 		}
-		allPassed := true
-		for _, r := range results {
-			if r.Skipped {
-				fmt.Printf("  %-12s SKIP\n", r.Name)
-			} else if r.ExitCode == 0 {
-				fmt.Printf("  %-12s PASS\n", r.Name)
-			} else {
-				fmt.Printf("  %-12s FAIL\n", r.Name)
-				allPassed = false
-			}
-		}
+		allPassed := PrintCheckResults(results)
 		if !allPassed {
 			a.Git.RemoveWorktree(tmpWorktree)
 			fmt.Println("Checks failed. Fix and retry.")
@@ -283,7 +258,7 @@ func (a *App) CmdEpicMerge(epicID string) error {
 	a.Git.RemoveWorktree(tmpWorktree)
 	a.Git.DeleteBranch(e.Branch)
 	a.DB.UpdateEpicBranch(epicID, "")
-	a.DB.UpdateEpicStatus(epicID, "closed")
+	a.DB.UpdateEpicStatus(epicID, EpicStatusClosed)
 
 	fmt.Println("Merge successful.")
 	fmt.Printf("Epic %s is now closed.\n", epicID)
@@ -332,18 +307,7 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 
 	diff, _ := a.Git.Diff(a.Config.MainBranch, e.Branch)
 	reviews, _ := a.DB.GetEpicReviews(epicID)
-	prevComments := "(none)"
-	if len(reviews) > 0 {
-		var parts []string
-		for _, r := range reviews {
-			if r.Comment != "" {
-				parts = append(parts, fmt.Sprintf("[%s] %s", r.Decision, r.Comment))
-			}
-		}
-		if len(parts) > 0 {
-			prevComments = strings.Join(parts, "\n  ")
-		}
-	}
+	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Review requested for epic %s.\n\n", epicID)
 	fmt.Printf("Diff (%s..%s):\n%s\n\n", a.Config.MainBranch, e.Branch, diff)

@@ -37,23 +37,15 @@ func (a *App) CmdWorkCheck(taskID string) error {
 		return err
 	}
 
-	allPassed := true
 	for _, r := range results {
 		exitCode := r.ExitCode
 		if r.Skipped {
 			exitCode = -1
 		}
 		a.DB.RecordCheckRun(id, r.Name, exitCode, r.Stdout, r.Stderr, runGroup, r.StartedAt, r.FinishedAt, commitSHA)
-
-		if r.Skipped {
-			fmt.Printf("  %-12s SKIP\n", r.Name)
-		} else if r.ExitCode == 0 {
-			fmt.Printf("  %-12s PASS  (%.1fs)\n", r.Name, r.Duration.Seconds())
-		} else {
-			fmt.Printf("  %-12s FAIL  (%.1fs)\n", r.Name, r.Duration.Seconds())
-			allPassed = false
-		}
 	}
+
+	allPassed := PrintCheckResults(results)
 
 	if allPassed {
 		a.DB.UpdateTaskState(id, StateChecksPassed)

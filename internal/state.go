@@ -19,6 +19,20 @@ const (
 	StatePlanned         TaskState = "PLANNED"
 )
 
+type EpicStatus string
+
+const (
+	EpicStatusOpen   EpicStatus = "open"
+	EpicStatusClosed EpicStatus = "closed"
+)
+
+type ProjectStatus string
+
+const (
+	ProjectStatusOpen   ProjectStatus = "open"
+	ProjectStatusClosed ProjectStatus = "closed"
+)
+
 var validTransitions = map[TaskState][]TaskState{
 	StatePlanned:         {StateInProgress, StateClosed},
 	StateNew:             {StateInProgress},

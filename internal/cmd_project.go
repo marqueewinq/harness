@@ -26,12 +26,9 @@ func (a *App) CmdProjectList() error {
 		var totalTasks, doneTasks int
 		for _, e := range epics {
 			tasks, _ := a.DB.ListTasksByEpic(e.ID)
-			totalTasks += len(tasks)
-			for _, t := range tasks {
-				if t.State == StateMerged || t.State == StateClosed {
-					doneTasks++
-				}
-			}
+			done, total := CountDone(tasks)
+			totalTasks += total
+			doneTasks += done
 		}
 		progress := ""
 		if totalTasks > 0 {
@@ -60,15 +57,10 @@ func (a *App) CmdProjectView(projectID string) error {
 	fmt.Println("\nEpics:")
 	for _, e := range epics {
 		tasks, _ := a.DB.ListTasksByEpic(e.ID)
-		var done int
-		for _, t := range tasks {
-			if t.State == StateMerged || t.State == StateClosed {
-				done++
-			}
-		}
+		done, total := CountDone(tasks)
 		progress := ""
-		if len(tasks) > 0 {
-			progress = fmt.Sprintf(" (%d/%d)", done, len(tasks))
+		if total > 0 {
+			progress = fmt.Sprintf(" (%d/%d)", done, total)
 		}
 		fmt.Printf("  %-10s %-8s %s%s\n", e.ID, e.Status, e.Title, progress)
 		for _, t := range tasks {
@@ -87,16 +79,13 @@ func (a *App) CmdProjectClose(projectID string) error {
 	var openCount int
 	for _, e := range epics {
 		tasks, _ := a.DB.ListTasksByEpic(e.ID)
-		for _, t := range tasks {
-			if t.State != StateMerged && t.State != StateClosed {
-				openCount++
-			}
-		}
+		done, total := CountDone(tasks)
+		openCount += total - done
 	}
 	if openCount > 0 {
 		fmt.Printf("Warning: %d tasks are still open under this project\n", openCount)
 	}
-	if err := a.DB.UpdateProjectStatus(projectID, "closed"); err != nil {
+	if err := a.DB.UpdateProjectStatus(projectID, ProjectStatusClosed); err != nil {
 		return err
 	}
 	fmt.Printf("Closed %s: %q\n", p.ID, p.Title)
@@ -108,7 +97,7 @@ func (a *App) CmdProjectEdit(projectID, title, description string, setTitle, set
 	if err != nil {
 		return err
 	}
-	if p.Status == "closed" {
+	if p.Status == ProjectStatusClosed {
 		return fmt.Errorf("cannot edit closed project %s", projectID)
 	}
 	newTitle := p.Title

@@ -88,17 +88,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 			a.DB.UpdateTaskState(id, StateMergeFailed)
 			return fmt.Errorf("check execution error: %w", err)
 		}
-		allPassed := true
-		for _, r := range results {
-			if r.Skipped {
-				fmt.Printf("  %-12s SKIP\n", r.Name)
-			} else if r.ExitCode == 0 {
-				fmt.Printf("  %-12s PASS\n", r.Name)
-			} else {
-				fmt.Printf("  %-12s FAIL\n", r.Name)
-				allPassed = false
-			}
-		}
+		allPassed := PrintCheckResults(results)
 		if !allPassed {
 			a.DB.DequeueTask(id)
 			a.DB.UpdateTaskState(id, StateMergeFailed)
