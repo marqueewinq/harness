@@ -2,6 +2,9 @@
 main_branch: main
 worktree_dir: .worktrees
 
+commit:
+  message: "[{{proj}}] [{{epic}}] [{{task}}] {{message}}"
+
 checks:
   test:
     run: make test
@@ -18,7 +21,7 @@ merge:
 
 review:
   type: agent
-  cmd: 'claude -p "$(cat {{prompt_file}})" --allowedTools "Bash(harness review record-review*)"'
+  # cmd: 'claude -p "$(cat {{prompt_file}})" --allowedTools "Bash(harness review record-review*)"'
   prompt: |
     Review this diff for: correctness, test coverage, Go conventions.
 
