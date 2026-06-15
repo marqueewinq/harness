@@ -46,8 +46,8 @@ func TestTaskCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Description != "fix bug" {
-		t.Errorf("Description = %q", got.Description)
+	if got.Title != "fix bug" {
+		t.Errorf("Title = %q", got.Title)
 	}
 
 	tasks, err := db.ListTasks()
@@ -249,11 +249,11 @@ func TestGetSubtasks(t *testing.T) {
 	if len(subtasks) != 2 {
 		t.Errorf("len(subtasks) = %d, want 2", len(subtasks))
 	}
-	if subtasks[0].Description != "child 1" {
-		t.Errorf("subtasks[0].Description = %q, want %q", subtasks[0].Description, "child 1")
+	if subtasks[0].Title != "child 1" {
+		t.Errorf("subtasks[0].Title = %q, want %q", subtasks[0].Title, "child 1")
 	}
-	if subtasks[1].Description != "child 2" {
-		t.Errorf("subtasks[1].Description = %q, want %q", subtasks[1].Description, "child 2")
+	if subtasks[1].Title != "child 2" {
+		t.Errorf("subtasks[1].Title = %q, want %q", subtasks[1].Title, "child 2")
 	}
 }
 
@@ -489,8 +489,8 @@ func TestSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal("schema_version table missing:", err)
 	}
-	if version < 5 {
-		t.Errorf("schema version = %d, want >= 5", version)
+	if version < 6 {
+		t.Errorf("schema version = %d, want >= 6", version)
 	}
 }
 
@@ -886,7 +886,7 @@ func TestTaskNullableBranch(t *testing.T) {
 	defer db.Close()
 
 	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, description, branch, worktree_path, state, created_at, updated_at)
+		`INSERT INTO tasks (id, title, branch, worktree_path, state, created_at, updated_at)
 		 VALUES ('task-001', 'test', NULL, NULL, 'PLANNED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 	)
 	if err != nil {
@@ -894,7 +894,7 @@ func TestTaskNullableBranch(t *testing.T) {
 	}
 
 	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, description, branch, worktree_path, state, created_at, updated_at)
+		`INSERT INTO tasks (id, title, branch, worktree_path, state, created_at, updated_at)
 		 VALUES ('task-002', 'test2', NULL, NULL, 'PLANNED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 	)
 	if err != nil {

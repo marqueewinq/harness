@@ -14,7 +14,7 @@ func (a *App) CmdDepAdd(fromTaskID, toTaskID, depType string) error {
 	}
 	fromTask, _ := a.DB.GetTask(fromTaskID)
 	toTask, _ := a.DB.GetTask(toTaskID)
-	fmt.Printf("%s %q %s %s %q\n", fromTaskID, fromTask.Description, depType, toTaskID, toTask.Description)
+	fmt.Printf("%s %q %s %s %q\n", fromTaskID, fromTask.Title, depType, toTaskID, toTask.Title)
 	return nil
 }
 

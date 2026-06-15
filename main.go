@@ -320,7 +320,8 @@ func taskEditCmd() *cobra.Command {
 		return app.CmdTaskEdit(args[0], editTitle, editDesc, editEpic,
 			c.Flags().Changed("title"),
 			c.Flags().Changed("description"),
-			c.Flags().Changed("epic"))
+			c.Flags().Changed("epic"),
+		)
 	})
 	return cmd
 }

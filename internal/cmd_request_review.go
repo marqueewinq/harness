@@ -12,7 +12,7 @@ func (a *App) composeReviewPrompt(task *Task, diff, prevComments string) string 
 	prompt := a.Config.Review.Prompt
 	prompt = strings.ReplaceAll(prompt, "{{diff}}", diff)
 	prompt = strings.ReplaceAll(prompt, "{{previous_comments}}", prevComments)
-	prompt = strings.ReplaceAll(prompt, "{{task_description}}", task.Description)
+	prompt = strings.ReplaceAll(prompt, "{{task_description}}", task.Title)
 	return prompt
 }
 

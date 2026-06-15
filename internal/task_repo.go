@@ -7,10 +7,10 @@ import (
 )
 
 type Task struct {
-	ID           string
-	Description  string
-	Notes        string
-	Branch       string
+	ID          string
+	Title       string
+	Description string
+	Branch      string
 	WorktreePath string
 	State        TaskState
 	BaseBranch   string
@@ -24,12 +24,12 @@ type rowScanner interface {
 	Scan(dest ...interface{}) error
 }
 
-const taskColumns = `id, description, notes, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at`
+const taskColumns = `id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at`
 
 func scanTask(s rowScanner) (*Task, error) {
 	t := &Task{}
 	var parentID, epicID, branch, worktreePath sql.NullString
-	err := s.Scan(&t.ID, &t.Description, &t.Notes, &branch, &worktreePath,
+	err := s.Scan(&t.ID, &t.Title, &t.Description, &branch, &worktreePath,
 		&t.State, &t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func scanTask(s rowScanner) (*Task, error) {
 	return t, nil
 }
 
-func (db *DB) CreateTask(description, notes, branch, worktreePath, baseBranch, parentTaskID, epicID string) (*Task, error) {
+func (db *DB) CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID string) (*Task, error) {
 	id, err := db.nextID("tasks", "task", 3)
 	if err != nil {
 		return nil, err
@@ -57,16 +57,16 @@ func (db *DB) CreateTask(description, notes, branch, worktreePath, baseBranch, p
 		epicVal = epicID
 	}
 	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, description, notes, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at)
+		`INSERT INTO tasks (id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, description, notes, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, epicVal, now, now,
+		id, title, description, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, epicVal, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating task: %w", err)
 	}
 
 	task := &Task{
-		ID: id, Description: description, Notes: notes, Branch: branch,
+		ID: id, Title: title, Description: description, Branch: branch,
 		WorktreePath: worktreePath, State: StateInProgress,
 		BaseBranch: baseBranch, ParentTaskID: parentTaskID, EpicID: epicID,
 		CreatedAt: now, UpdatedAt: now,
@@ -174,7 +174,7 @@ func (db *DB) UpdateTaskState(id string, state TaskState) error {
 	})
 }
 
-func (db *DB) CreatePlannedTask(description, notes, epicID string) (*Task, error) {
+func (db *DB) CreatePlannedTask(title, description, epicID string) (*Task, error) {
 	id, err := db.nextID("tasks", "task", 3)
 	if err != nil {
 		return nil, err
@@ -185,15 +185,15 @@ func (db *DB) CreatePlannedTask(description, notes, epicID string) (*Task, error
 		epicVal = epicID
 	}
 	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, description, notes, branch, worktree_path, state, epic_id, created_at, updated_at)
+		`INSERT INTO tasks (id, title, description, branch, worktree_path, state, epic_id, created_at, updated_at)
 		 VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
-		id, description, notes, string(StatePlanned), epicVal, now, now,
+		id, title, description, string(StatePlanned), epicVal, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating planned task: %w", err)
 	}
 	task := &Task{
-		ID: id, Description: description, Notes: notes,
+		ID: id, Title: title, Description: description,
 		State: StatePlanned, EpicID: epicID,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -201,7 +201,7 @@ func (db *DB) CreatePlannedTask(description, notes, epicID string) (*Task, error
 	return task, nil
 }
 
-func (db *DB) UpdatePlannedTask(id, description, notes, epicID string) error {
+func (db *DB) UpdatePlannedTask(id, title, description, epicID string) error {
 	// Only allow editing PLANNED tasks
 	task, err := db.GetTask(id)
 	if err != nil {
@@ -216,8 +216,8 @@ func (db *DB) UpdatePlannedTask(id, description, notes, epicID string) error {
 		epicVal = epicID
 	}
 	_, err = db.conn.Exec(
-		`UPDATE tasks SET description = ?, notes = ?, epic_id = ?, updated_at = ? WHERE id = ?`,
-		description, notes, epicVal, time.Now(), id,
+		`UPDATE tasks SET title = ?, description = ?, epic_id = ?, updated_at = ? WHERE id = ?`,
+		title, description, epicVal, time.Now(), id,
 	)
 	return err
 }

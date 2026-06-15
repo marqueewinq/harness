@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-func (a *App) CmdNew(description, baseBranch, epicID, notes string) error {
+func (a *App) CmdNew(title, baseBranch, epicID, description string) error {
 	if baseBranch == "" && epicID != "" {
 		// Resolve base branch from epic
 		if epic, err := a.DB.GetEpic(epicID); err == nil && epic.Branch != "" {
@@ -22,7 +22,7 @@ func (a *App) CmdNew(description, baseBranch, epicID, notes string) error {
 		parentTaskID = parentTask.ID
 	}
 
-	branch := Slugify(description)
+	branch := Slugify(title)
 	worktreePath := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, branch)
 
 	if err := a.Git.CreateBranch(branch, baseBranch); err != nil {
@@ -34,14 +34,14 @@ func (a *App) CmdNew(description, baseBranch, epicID, notes string) error {
 		return fmt.Errorf("creating worktree: %w", err)
 	}
 
-	task, err := a.DB.CreateTask(description, notes, branch, worktreePath, baseBranch, parentTaskID, epicID)
+	task, err := a.DB.CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID)
 	if err != nil {
 		a.Git.RemoveWorktree(worktreePath)
 		a.Git.DeleteBranch(branch)
 		return fmt.Errorf("creating task: %w", err)
 	}
 
-	fmt.Printf("Created %s: %q\n", task.ID, description)
+	fmt.Printf("Created %s: %q\n", task.ID, title)
 	fmt.Printf("Branch: %s\n", branch)
 	baseInfo := baseBranch
 	if parentTaskID != "" {

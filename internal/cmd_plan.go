@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func (a *App) CmdTaskNew(description, notes, epicID string) error {
+func (a *App) CmdTaskNew(title, description, epicID string) error {
 	if epicID != "" {
 		e, err := a.DB.GetEpic(epicID)
 		if err != nil {
@@ -15,7 +15,7 @@ func (a *App) CmdTaskNew(description, notes, epicID string) error {
 			fmt.Printf("Warning: epic %s is closed\n", epicID)
 		}
 	}
-	task, err := a.DB.CreatePlannedTask(description, notes, epicID)
+	task, err := a.DB.CreatePlannedTask(title, description, epicID)
 	if err != nil {
 		return err
 	}
@@ -23,15 +23,15 @@ func (a *App) CmdTaskNew(description, notes, epicID string) error {
 	if epicID != "" {
 		epicInfo = fmt.Sprintf(", %s", epicID)
 	}
-	fmt.Printf("Created %s: %q (PLANNED%s)\n", task.ID, description, epicInfo)
-	if notes != "" {
-		fmt.Printf("Description: %s\n", notes)
+	fmt.Printf("Created %s: %q (PLANNED%s)\n", task.ID, title, epicInfo)
+	if description != "" {
+		fmt.Printf("Description: %s\n", description)
 	}
 	fmt.Printf("\nNext: harness start %s\n", task.ID)
 	return nil
 }
 
-func (a *App) CmdTaskEdit(taskID, description, notes, epicID string, setDescription, setNotes, setEpic bool) error {
+func (a *App) CmdTaskEdit(taskID, title, description, epicID string, setTitle, setDescription, setEpic bool) error {
 	task, err := a.DB.GetTask(taskID)
 	if err != nil {
 		return err
@@ -41,13 +41,13 @@ func (a *App) CmdTaskEdit(taskID, description, notes, epicID string, setDescript
 	}
 
 	// Apply only the fields that were explicitly set
+	newTitle := task.Title
+	if setTitle {
+		newTitle = title
+	}
 	newDesc := task.Description
 	if setDescription {
 		newDesc = description
-	}
-	newNotes := task.Notes
-	if setNotes {
-		newNotes = notes
 	}
 	newEpic := task.EpicID
 	if setEpic {
@@ -60,10 +60,10 @@ func (a *App) CmdTaskEdit(taskID, description, notes, epicID string, setDescript
 		}
 	}
 
-	if err := a.DB.UpdatePlannedTask(taskID, newDesc, newNotes, newEpic); err != nil {
+	if err := a.DB.UpdatePlannedTask(taskID, newTitle, newDesc, newEpic); err != nil {
 		return err
 	}
-	fmt.Printf("Updated %s: %q\n", taskID, newDesc)
+	fmt.Printf("Updated %s: %q\n", taskID, newTitle)
 	return nil
 }
 
@@ -75,7 +75,7 @@ func (a *App) CmdTaskDelete(taskID string) error {
 	if err := a.DB.DeletePlannedTask(taskID); err != nil {
 		return err
 	}
-	fmt.Printf("Deleted %s: %q\n", task.ID, task.Description)
+	fmt.Printf("Deleted %s: %q\n", task.ID, task.Title)
 	return nil
 }
 
@@ -85,9 +85,9 @@ func (a *App) CmdTaskView(taskID string) error {
 		return err
 	}
 
-	fmt.Printf("Task: %s %q\n", task.ID, task.Description)
-	if task.Notes != "" {
-		fmt.Printf("Description: %s\n", task.Notes)
+	fmt.Printf("Task: %s %q\n", task.ID, task.Title)
+	if task.Description != "" {
+		fmt.Printf("Description: %s\n", task.Description)
 	}
 	fmt.Printf("State: %s\n", task.State)
 	if task.EpicID != "" {
@@ -105,16 +105,16 @@ func (a *App) CmdTaskView(taskID string) error {
 		fmt.Println("\nDependencies:")
 		for _, d := range deps {
 			if d.FromTaskID == task.ID {
-				dt, _ := a.DB.GetTask(d.ToTaskID)
-				if dt != nil {
-					fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Description)
-				}
-			} else {
-				dt, _ := a.DB.GetTask(d.FromTaskID)
-				if dt != nil {
-					fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Description)
-				}
+			dt, _ := a.DB.GetTask(d.ToTaskID)
+			if dt != nil {
+				fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Title)
 			}
+		} else {
+			dt, _ := a.DB.GetTask(d.FromTaskID)
+			if dt != nil {
+				fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Title)
+			}
+		}
 		}
 	}
 
@@ -193,7 +193,7 @@ func (a *App) CmdTaskList(filterEpic, filterProject, filterStatus string, readyO
 		}
 	}
 
-	fmt.Printf("%-10s %-20s %-10s %-10s %s\n", "ID", "State", "Project", "Epic", "Description")
+	fmt.Printf("%-10s %-20s %-10s %-10s %s\n", "ID", "State", "Project", "Epic", "Title")
 	for _, t := range filtered {
 		projInfo := ""
 		epicInfo := ""
@@ -201,7 +201,7 @@ func (a *App) CmdTaskList(filterEpic, filterProject, filterStatus string, readyO
 			epicInfo = t.EpicID
 			projInfo = projectByEpic[t.EpicID]
 		}
-		fmt.Printf("%-10s %-20s %-10s %-10s %s\n", t.ID, t.State, projInfo, epicInfo, t.Description)
+		fmt.Printf("%-10s %-20s %-10s %-10s %s\n", t.ID, t.State, projInfo, epicInfo, t.Title)
 	}
 	return nil
 }

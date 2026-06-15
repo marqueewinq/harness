@@ -139,7 +139,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	}
 	// Render commit message through template
 	epicID, projID := a.resolveTaskHierarchy(task)
-	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Description)
+	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Title)
 
 	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, mergeMessage); err != nil {
 		a.DB.DequeueTask(id)

@@ -31,7 +31,7 @@ func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 			continue
 		}
 		if blocker.State != StateMerged && blocker.State != StateClosed {
-			fmt.Printf("Warning: blocked by %s %q (%s)\n", blocker.ID, blocker.Description, blocker.State)
+			fmt.Printf("Warning: blocked by %s %q (%s)\n", blocker.ID, blocker.Title, blocker.State)
 		}
 	}
 
@@ -41,7 +41,7 @@ func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 		parentTaskID = parentTask.ID
 	}
 
-	branch := Slugify(task.Description)
+	branch := Slugify(task.Title)
 	worktreePath := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, branch)
 
 	if err := a.Git.CreateBranch(branch, baseBranch); err != nil {
@@ -57,7 +57,7 @@ func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 		return fmt.Errorf("updating task: %w", err)
 	}
 
-	fmt.Printf("Started %s: %q\n", taskID, task.Description)
+	fmt.Printf("Started %s: %q\n", taskID, task.Title)
 	fmt.Printf("Branch: %s\n", branch)
 	baseInfo := baseBranch
 	if parentTaskID != "" {

@@ -94,6 +94,11 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v5: %w", err)
 		}
 	}
+	if version < 6 {
+		if err := migrateV6(conn); err != nil {
+			return fmt.Errorf("migration v6: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -245,6 +250,34 @@ func migrateV4(conn *sql.DB) error {
 		return err
 	}
 	return setVersion(conn, 4)
+}
+
+func migrateV6(conn *sql.DB) error {
+	rebuild := `
+	CREATE TABLE IF NOT EXISTS tasks_new (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		branch TEXT UNIQUE,
+		worktree_path TEXT,
+		state TEXT NOT NULL,
+		base_branch TEXT NOT NULL DEFAULT '',
+		parent_task_id TEXT DEFAULT NULL,
+		epic_id TEXT DEFAULT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	INSERT OR IGNORE INTO tasks_new
+		SELECT id, description, notes, branch, worktree_path, state, base_branch,
+		       parent_task_id, epic_id, created_at, updated_at
+		FROM tasks;
+	DROP TABLE tasks;
+	ALTER TABLE tasks_new RENAME TO tasks;
+	`
+	if _, err := conn.Exec(rebuild); err != nil {
+		return err
+	}
+	return setVersion(conn, 6)
 }
 
 func migrateV5(conn *sql.DB) error {

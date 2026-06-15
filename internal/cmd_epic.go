@@ -111,7 +111,7 @@ func (a *App) CmdEpicView(epicID string) error {
 	}
 	fmt.Println("\nTasks:")
 	for _, t := range tasks {
-		fmt.Printf("  %-10s %-20s %s\n", t.ID, t.State, t.Description)
+		fmt.Printf("  %-10s %-20s %s\n", t.ID, t.State, t.Title)
 	}
 	return nil
 }

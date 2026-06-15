@@ -15,9 +15,9 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		return err
 	}
 
-	fmt.Printf("Task: %s %q\n", task.ID, task.Description)
-	if task.Notes != "" {
-		fmt.Printf("Description: %s\n", task.Notes)
+	fmt.Printf("Task: %s %q\n", task.ID, task.Title)
+	if task.Description != "" {
+		fmt.Printf("Description: %s\n", task.Description)
 	}
 	fmt.Printf("Branch: %s\n", task.Branch)
 	fmt.Printf("Worktree: %s\n", task.WorktreePath)
@@ -26,7 +26,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	fmt.Printf("Base: %s\n", task.BaseBranch)
 	if task.ParentTaskID != "" {
 		if parent, err := a.DB.GetTask(task.ParentTaskID); err == nil {
-			fmt.Printf("Parent: %s %q\n", parent.ID, parent.Description)
+			fmt.Printf("Parent: %s %q\n", parent.ID, parent.Title)
 		}
 	}
 
@@ -45,17 +45,17 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	if len(deps) > 0 {
 		fmt.Println("\nDependencies:")
 		for _, d := range deps {
-			if d.FromTaskID == task.ID {
-				dt, _ := a.DB.GetTask(d.ToTaskID)
-				if dt != nil {
-					fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Description)
-				}
-			} else {
-				dt, _ := a.DB.GetTask(d.FromTaskID)
-				if dt != nil {
-					fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Description)
-				}
+		if d.FromTaskID == task.ID {
+			dt, _ := a.DB.GetTask(d.ToTaskID)
+			if dt != nil {
+				fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Title)
 			}
+		} else {
+			dt, _ := a.DB.GetTask(d.FromTaskID)
+			if dt != nil {
+				fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Title)
+			}
+		}
 		}
 	}
 
@@ -185,7 +185,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	if len(subtasks) > 0 {
 		fmt.Println("\nSubtasks:")
 		for _, st := range subtasks {
-			fmt.Printf("  %-10s %-20s %s\n", st.ID, st.State, st.Description)
+			fmt.Printf("  %-10s %-20s %s\n", st.ID, st.State, st.Title)
 		}
 	}
 	return nil
