@@ -7,6 +7,23 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+type dbExecer interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+}
+
+func (db *DB) WithTx(fn func(tx *sql.Tx) error) error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
 type DB struct {
 	conn *sql.DB
 }

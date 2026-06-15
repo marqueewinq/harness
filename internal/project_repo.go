@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 )
@@ -62,15 +63,17 @@ func (db *DB) ListProjects() ([]Project, error) {
 }
 
 func (db *DB) UpdateProjectStatus(id, status string) error {
-	var current string
-	if err := db.conn.QueryRow(`SELECT status FROM projects WHERE id = ?`, id).Scan(&current); err != nil {
-		return fmt.Errorf("reading current status for project %s: %w", id, err)
-	}
-	_, err := db.conn.Exec(`UPDATE projects SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
-	if err != nil {
-		return err
-	}
-	return db.RecordProjectTransition(id, current, status)
+	return db.WithTx(func(tx *sql.Tx) error {
+		var current string
+		if err := tx.QueryRow(`SELECT status FROM projects WHERE id = ?`, id).Scan(&current); err != nil {
+			return fmt.Errorf("reading current status for project %s: %w", id, err)
+		}
+		_, err := tx.Exec(`UPDATE projects SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
+		if err != nil {
+			return err
+		}
+		return recordTransition(tx, "project_state_transitions", "project_id", id, current, status)
+	})
 }
 
 func (db *DB) UpdateProject(id, title, description string) error {

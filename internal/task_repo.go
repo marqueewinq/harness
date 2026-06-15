@@ -155,18 +155,23 @@ func (db *DB) ListTasksByEpic(epicID string) ([]Task, error) {
 }
 
 func (db *DB) UpdateTaskState(id string, state TaskState) error {
-	var current string
-	if err := db.conn.QueryRow(`SELECT state FROM tasks WHERE id = ?`, id).Scan(&current); err != nil {
-		return fmt.Errorf("reading current state for %s: %w", id, err)
-	}
-	_, err := db.conn.Exec(
-		`UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?`,
-		string(state), time.Now(), id,
-	)
-	if err != nil {
-		return err
-	}
-	return db.RecordTaskTransition(id, current, string(state))
+	return db.WithTx(func(tx *sql.Tx) error {
+		var current string
+		if err := tx.QueryRow(`SELECT state FROM tasks WHERE id = ?`, id).Scan(&current); err != nil {
+			return fmt.Errorf("reading current state for %s: %w", id, err)
+		}
+		if !ValidTransition(TaskState(current), state) {
+			return fmt.Errorf("invalid transition %s -> %s for task %s", current, state, id)
+		}
+		_, err := tx.Exec(
+			`UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?`,
+			string(state), time.Now(), id,
+		)
+		if err != nil {
+			return err
+		}
+		return recordTransition(tx, "task_state_transitions", "task_id", id, current, string(state))
+	})
 }
 
 func (db *DB) CreatePlannedTask(description, notes, epicID string) (*Task, error) {
@@ -226,16 +231,18 @@ func (db *DB) DeletePlannedTask(id string) error {
 		return fmt.Errorf("can only delete PLANNED tasks (task %s is %s)", id, task.State)
 	}
 
-	// Remove dependencies first
-	_, err = db.conn.Exec(`DELETE FROM task_dependencies WHERE from_task_id = ? OR to_task_id = ?`, id, id)
-	if err != nil {
-		return fmt.Errorf("removing dependencies: %w", err)
-	}
-	_, err = db.conn.Exec(`DELETE FROM tasks WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("deleting task: %w", err)
-	}
-	return nil
+	return db.WithTx(func(tx *sql.Tx) error {
+		// Remove dependencies first
+		_, err := tx.Exec(`DELETE FROM task_dependencies WHERE from_task_id = ? OR to_task_id = ?`, id, id)
+		if err != nil {
+			return fmt.Errorf("removing dependencies: %w", err)
+		}
+		_, err = tx.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+		if err != nil {
+			return fmt.Errorf("deleting task: %w", err)
+		}
+		return nil
+	})
 }
 
 func (db *DB) StartTask(id, branch, worktreePath, baseBranch, parentTaskID string) error {

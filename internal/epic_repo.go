@@ -103,15 +103,17 @@ func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 }
 
 func (db *DB) UpdateEpicStatus(id, status string) error {
-	var current string
-	if err := db.conn.QueryRow(`SELECT status FROM epics WHERE id = ?`, id).Scan(&current); err != nil {
-		return fmt.Errorf("reading current status for epic %s: %w", id, err)
-	}
-	_, err := db.conn.Exec(`UPDATE epics SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
-	if err != nil {
-		return err
-	}
-	return db.RecordEpicTransition(id, current, status)
+	return db.WithTx(func(tx *sql.Tx) error {
+		var current string
+		if err := tx.QueryRow(`SELECT status FROM epics WHERE id = ?`, id).Scan(&current); err != nil {
+			return fmt.Errorf("reading current status for epic %s: %w", id, err)
+		}
+		_, err := tx.Exec(`UPDATE epics SET status = ?, updated_at = ? WHERE id = ?`, status, time.Now(), id)
+		if err != nil {
+			return err
+		}
+		return recordTransition(tx, "epic_state_transitions", "epic_id", id, current, status)
+	})
 }
 
 func (db *DB) UpdateEpic(id, title, description, projectID string) error {

@@ -29,17 +29,17 @@ type ProjectStateTransition struct {
 	CreatedAt time.Time
 }
 
-func (db *DB) recordTransition(table, idCol, id, from, to string) error {
+func recordTransition(ex dbExecer, table, idCol, id, from, to string) error {
 	query := fmt.Sprintf(
 		`INSERT INTO %s (%s, from_state, to_state, created_at) VALUES (?, ?, ?, ?)`,
 		table, idCol,
 	)
-	_, err := db.conn.Exec(query, id, from, to, time.Now())
+	_, err := ex.Exec(query, id, from, to, time.Now())
 	return err
 }
 
 func (db *DB) RecordTaskTransition(taskID, fromState, toState string) error {
-	return db.recordTransition("task_state_transitions", "task_id", taskID, fromState, toState)
+	return recordTransition(db.conn, "task_state_transitions", "task_id", taskID, fromState, toState)
 }
 
 func (db *DB) GetTaskTransitions(taskID string) ([]TaskStateTransition, error) {
@@ -64,7 +64,7 @@ func (db *DB) GetTaskTransitions(taskID string) ([]TaskStateTransition, error) {
 }
 
 func (db *DB) RecordEpicTransition(epicID, fromState, toState string) error {
-	return db.recordTransition("epic_state_transitions", "epic_id", epicID, fromState, toState)
+	return recordTransition(db.conn, "epic_state_transitions", "epic_id", epicID, fromState, toState)
 }
 
 func (db *DB) GetEpicTransitions(epicID string) ([]EpicStateTransition, error) {
@@ -89,7 +89,7 @@ func (db *DB) GetEpicTransitions(epicID string) ([]EpicStateTransition, error) {
 }
 
 func (db *DB) RecordProjectTransition(projectID, fromState, toState string) error {
-	return db.recordTransition("project_state_transitions", "project_id", projectID, fromState, toState)
+	return recordTransition(db.conn, "project_state_transitions", "project_id", projectID, fromState, toState)
 }
 
 func (db *DB) GetProjectTransitions(projectID string) ([]ProjectStateTransition, error) {
