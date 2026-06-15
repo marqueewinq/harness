@@ -36,25 +36,34 @@ func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, e
 	if _, err := db.GetProject(projectID); err != nil {
 		return nil, fmt.Errorf("project %q not found", projectID)
 	}
-	id, err := db.nextID("epics", "epic", 3)
+	var epic *Epic
+	err := db.WithTx(func(tx *sql.Tx) error {
+		id, err := nextID(tx, "epics", "epic", 3)
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		var branchVal interface{}
+		if branch != "" {
+			branchVal = branch
+		}
+		_, err = tx.Exec(
+			`INSERT INTO epics (id, project_id, title, description, status, branch, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, 'open', ?, ?, ?)`,
+			id, projectID, title, description, branchVal, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("creating epic: %w", err)
+		}
+		if err := recordTransition(tx, "epic_state_transitions", "epic_id", id, "", string(EpicStatusOpen)); err != nil {
+			return err
+		}
+		epic = &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: EpicStatusOpen, Branch: branch, CreatedAt: now, UpdatedAt: now}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	var branchVal interface{}
-	if branch != "" {
-		branchVal = branch
-	}
-	_, err = db.conn.Exec(
-		`INSERT INTO epics (id, project_id, title, description, status, branch, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, 'open', ?, ?, ?)`,
-		id, projectID, title, description, branchVal, now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating epic: %w", err)
-	}
-	epic := &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: EpicStatusOpen, Branch: branch, CreatedAt: now, UpdatedAt: now}
-	db.RecordEpicTransition(id, "", string(EpicStatusOpen))
 	return epic, nil
 }
 

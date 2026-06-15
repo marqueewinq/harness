@@ -42,36 +42,43 @@ func scanTask(s rowScanner) (*Task, error) {
 }
 
 func (db *DB) CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID string) (*Task, error) {
-	id, err := db.nextID("tasks", "task", 3)
+	var task *Task
+	err := db.WithTx(func(tx *sql.Tx) error {
+		id, err := nextID(tx, "tasks", "task", 3)
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		var parentVal interface{}
+		if parentTaskID != "" {
+			parentVal = parentTaskID
+		}
+		var epicVal interface{}
+		if epicID != "" {
+			epicVal = epicID
+		}
+		_, err = tx.Exec(
+			`INSERT INTO tasks (id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, title, description, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, epicVal, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("creating task: %w", err)
+		}
+		if err := recordTransition(tx, "task_state_transitions", "task_id", id, "", string(StateInProgress)); err != nil {
+			return err
+		}
+		task = &Task{
+			ID: id, Title: title, Description: description, Branch: branch,
+			WorktreePath: worktreePath, State: StateInProgress,
+			BaseBranch: baseBranch, ParentTaskID: parentTaskID, EpicID: epicID,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	now := time.Now()
-	var parentVal interface{}
-	if parentTaskID != "" {
-		parentVal = parentTaskID
-	}
-	var epicVal interface{}
-	if epicID != "" {
-		epicVal = epicID
-	}
-	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, title, description, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, epicVal, now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating task: %w", err)
-	}
-
-	task := &Task{
-		ID: id, Title: title, Description: description, Branch: branch,
-		WorktreePath: worktreePath, State: StateInProgress,
-		BaseBranch: baseBranch, ParentTaskID: parentTaskID, EpicID: epicID,
-		CreatedAt: now, UpdatedAt: now,
-	}
-	db.RecordTaskTransition(id, "", string(StateInProgress))
 	return task, nil
 }
 
@@ -175,29 +182,38 @@ func (db *DB) UpdateTaskState(id string, state TaskState) error {
 }
 
 func (db *DB) CreatePlannedTask(title, description, epicID string) (*Task, error) {
-	id, err := db.nextID("tasks", "task", 3)
+	var task *Task
+	err := db.WithTx(func(tx *sql.Tx) error {
+		id, err := nextID(tx, "tasks", "task", 3)
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		var epicVal interface{}
+		if epicID != "" {
+			epicVal = epicID
+		}
+		_, err = tx.Exec(
+			`INSERT INTO tasks (id, title, description, branch, worktree_path, state, epic_id, created_at, updated_at)
+			 VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+			id, title, description, string(StatePlanned), epicVal, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("creating planned task: %w", err)
+		}
+		if err := recordTransition(tx, "task_state_transitions", "task_id", id, "", string(StatePlanned)); err != nil {
+			return err
+		}
+		task = &Task{
+			ID: id, Title: title, Description: description,
+			State: StatePlanned, EpicID: epicID,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	var epicVal interface{}
-	if epicID != "" {
-		epicVal = epicID
-	}
-	_, err = db.conn.Exec(
-		`INSERT INTO tasks (id, title, description, branch, worktree_path, state, epic_id, created_at, updated_at)
-		 VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
-		id, title, description, string(StatePlanned), epicVal, now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating planned task: %w", err)
-	}
-	task := &Task{
-		ID: id, Title: title, Description: description,
-		State: StatePlanned, EpicID: epicID,
-		CreatedAt: now, UpdatedAt: now,
-	}
-	db.RecordTaskTransition(id, "", string(StatePlanned))
 	return task, nil
 }
 

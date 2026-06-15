@@ -29,21 +29,30 @@ func scanProject(s rowScanner) (*Project, error) {
 }
 
 func (db *DB) CreateProject(title, description string) (*Project, error) {
-	id, err := db.nextID("projects", "proj", 3)
+	var proj *Project
+	err := db.WithTx(func(tx *sql.Tx) error {
+		id, err := nextID(tx, "projects", "proj", 3)
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		_, err = tx.Exec(
+			`INSERT INTO projects (id, title, description, status, created_at, updated_at)
+			 VALUES (?, ?, ?, 'open', ?, ?)`,
+			id, title, description, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("creating project: %w", err)
+		}
+		if err := recordTransition(tx, "project_state_transitions", "project_id", id, "", string(ProjectStatusOpen)); err != nil {
+			return err
+		}
+		proj = &Project{ID: id, Title: title, Description: description, Status: ProjectStatusOpen, CreatedAt: now, UpdatedAt: now}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	_, err = db.conn.Exec(
-		`INSERT INTO projects (id, title, description, status, created_at, updated_at)
-		 VALUES (?, ?, ?, 'open', ?, ?)`,
-		id, title, description, now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating project: %w", err)
-	}
-	proj := &Project{ID: id, Title: title, Description: description, Status: ProjectStatusOpen, CreatedAt: now, UpdatedAt: now}
-	db.RecordProjectTransition(id, "", string(ProjectStatusOpen))
 	return proj, nil
 }
 

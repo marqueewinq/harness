@@ -46,9 +46,9 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
-func (db *DB) nextID(table, prefix string, width int) (string, error) {
+func nextID(ex dbExecer, table, prefix string, width int) (string, error) {
 	var maxID sql.NullString
-	err := db.conn.QueryRow(fmt.Sprintf(`SELECT MAX(id) FROM %s`, table)).Scan(&maxID)
+	err := ex.QueryRow(fmt.Sprintf(`SELECT MAX(id) FROM %s`, table)).Scan(&maxID)
 	if err != nil || !maxID.Valid {
 		return fmt.Sprintf("%s-%0*d", prefix, width, 1), nil
 	}
