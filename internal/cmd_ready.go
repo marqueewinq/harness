@@ -52,5 +52,3 @@ func (a *App) ComputeReadyFiltered(filterEpic, filterProject string) (ready []Ta
 	}
 	return ready, blocked, nil
 }
-
-

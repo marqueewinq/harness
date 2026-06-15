@@ -15,7 +15,7 @@ Use when decomposing work into projects, epics, and tasks.
 2. `harness project new "title"` — create project
 3. `harness epic new "title" --project <id>` — create epics
 4. `harness task new "description" --epic <id>` — create planned tasks
-5. `harness dep add <from> <to>` — add blockers between tasks
+5. `harness task dep add <from> <to>` — add blockers between tasks
 6. `harness task list --ready` — see what is unblocked and ready to start
 
 ## Rules
@@ -42,5 +42,5 @@ Use when decomposing work into projects, epics, and tasks.
 | `harness task new "desc" [--epic <id>]` | Create planned task |
 | `harness task start <task-id> [--base <branch>]` | Start a planned task |
 | `harness task list --ready` | List unblocked planned tasks |
-| `harness dep add <from> <to>` | Add blocker dependency |
-| `harness dep rm <from> <to>` | Remove dependency |
+| `harness task dep add <from> <to>` | Add blocker dependency |
+| `harness task dep rm <from> <to>` | Remove dependency |

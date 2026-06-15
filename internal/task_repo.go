@@ -7,10 +7,10 @@ import (
 )
 
 type Task struct {
-	ID          string
-	Title       string
-	Description string
-	Branch      string
+	ID           string
+	Title        string
+	Description  string
+	Branch       string
 	WorktreePath string
 	State        TaskState
 	BaseBranch   string
@@ -246,19 +246,28 @@ func (db *DB) DeletePlannedTask(id string) error {
 }
 
 func (db *DB) StartTask(id, branch, worktreePath, baseBranch, parentTaskID string) error {
-	var parentVal interface{}
-	if parentTaskID != "" {
-		parentVal = parentTaskID
-	}
-	_, err := db.conn.Exec(
-		`UPDATE tasks SET branch = ?, worktree_path = ?, state = ?, base_branch = ?,
-		        parent_task_id = ?, updated_at = ?
-		 WHERE id = ? AND state = ?`,
-		branch, worktreePath, string(StateInProgress), baseBranch,
-		parentVal, time.Now(), id, string(StatePlanned),
-	)
-	if err != nil {
-		return err
-	}
-	return db.RecordTaskTransition(id, string(StatePlanned), string(StateInProgress))
+	return db.WithTx(func(tx *sql.Tx) error {
+		var current TaskState
+		if err := tx.QueryRow(`SELECT state FROM tasks WHERE id = ?`, id).Scan(&current); err != nil {
+			return fmt.Errorf("reading current state for %s: %w", id, err)
+		}
+		if !ValidTransition(current, StateInProgress) {
+			return fmt.Errorf("invalid transition %s -> %s for task %s", current, StateInProgress, id)
+		}
+		var parentVal interface{}
+		if parentTaskID != "" {
+			parentVal = parentTaskID
+		}
+		_, err := tx.Exec(
+			`UPDATE tasks SET branch = ?, worktree_path = ?, state = ?, base_branch = ?,
+			        parent_task_id = ?, updated_at = ?
+			 WHERE id = ?`,
+			branch, worktreePath, string(StateInProgress), baseBranch,
+			parentVal, time.Now(), id,
+		)
+		if err != nil {
+			return err
+		}
+		return recordTransition(tx, "task_state_transitions", "task_id", id, string(current), string(StateInProgress))
+	})
 }

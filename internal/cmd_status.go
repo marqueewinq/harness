@@ -45,17 +45,17 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	if len(deps) > 0 {
 		fmt.Println("\nDependencies:")
 		for _, d := range deps {
-		if d.FromTaskID == task.ID {
-			dt, _ := a.DB.GetTask(d.ToTaskID)
-			if dt != nil {
-				fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Title)
+			if d.FromTaskID == task.ID {
+				dt, _ := a.DB.GetTask(d.ToTaskID)
+				if dt != nil {
+					fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Title)
+				}
+			} else {
+				dt, _ := a.DB.GetTask(d.FromTaskID)
+				if dt != nil {
+					fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Title)
+				}
 			}
-		} else {
-			dt, _ := a.DB.GetTask(d.FromTaskID)
-			if dt != nil {
-				fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Title)
-			}
-		}
 		}
 	}
 

@@ -21,7 +21,7 @@ func main() {
 	rootCmd.AddCommand(taskCmd())
 	rootCmd.AddCommand(projectCmd())
 	rootCmd.AddCommand(epicCmd())
-	rootCmd.AddCommand(depCmd())
+	// dep is a subcommand of task (harness task dep)
 	rootCmd.AddCommand(setupCmd())
 
 	// Top-level aliases (hidden)
@@ -288,6 +288,7 @@ func taskCmd() *cobra.Command {
 	cmd.AddCommand(taskViewCmd())
 	cmd.AddCommand(taskListCmd())
 	cmd.AddCommand(taskStartCmd())
+	cmd.AddCommand(depCmd())
 	return cmd
 }
 

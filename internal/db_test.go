@@ -901,3 +901,70 @@ func TestTaskNullableBranch(t *testing.T) {
 		t.Fatal("second NULL branch should be allowed:", err)
 	}
 }
+
+func TestUpdateTaskStateRejectsInvalidTransition(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Task starts as IN_PROGRESS. Trying to go directly to MERGED should fail.
+	err = db.UpdateTaskState(task.ID, StateMerged)
+	if err == nil {
+		t.Fatal("expected error for invalid transition IN_PROGRESS -> MERGED")
+	}
+	// Verify state is unchanged
+	got, _ := db.GetTask(task.ID)
+	if got.State != StateInProgress {
+		t.Errorf("state should still be IN_PROGRESS, got %s", got.State)
+	}
+}
+
+func TestUpdateTaskStateAcceptsValidTransition(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// IN_PROGRESS -> CHECKS_RUNNING should succeed
+	err = db.UpdateTaskState(task.ID, StateChecksRunning)
+	if err != nil {
+		t.Fatalf("expected valid transition to succeed: %v", err)
+	}
+	got, _ := db.GetTask(task.ID)
+	if got.State != StateChecksRunning {
+		t.Errorf("state = %s, want CHECKS_RUNNING", got.State)
+	}
+}
+
+func TestStartTaskRejectsNonPlannedState(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "harness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create an IN_PROGRESS task (not PLANNED)
+	task, err := db.CreateTask("active task", "", "branch", "/tmp/wt", "main", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// StartTask should fail because task is IN_PROGRESS, not PLANNED
+	err = db.StartTask(task.ID, "new-branch", "/tmp/wt2", "main", "")
+	if err == nil {
+		t.Fatal("expected error starting non-PLANNED task")
+	}
+}

@@ -15,19 +15,19 @@ var harnessWorkflowSkill string
 var harnessPlanningSkill string
 
 type opencodePermissionBash struct {
-	Wildcard     string `json:"*"`
-	GitStatus    string `json:"git status*"`
-	GitLog       string `json:"git log*"`
-	GitDiff      string `json:"git diff*"`
-	GitBranch    string `json:"git branch*"`
-	GitAdd       string `json:"git add*"`
-	GitCommit    string `json:"git commit*"`
-	GitPush      string `json:"git push*"`
-	GitMerge     string `json:"git merge*"`
-	GitRebase    string `json:"git rebase*"`
-	GitCheckout  string `json:"git checkout*"`
-	GitStash     string `json:"git stash*"`
-	HarnessAll   string `json:"harness *"`
+	Wildcard    string `json:"*"`
+	GitStatus   string `json:"git status*"`
+	GitLog      string `json:"git log*"`
+	GitDiff     string `json:"git diff*"`
+	GitBranch   string `json:"git branch*"`
+	GitAdd      string `json:"git add*"`
+	GitCommit   string `json:"git commit*"`
+	GitPush     string `json:"git push*"`
+	GitMerge    string `json:"git merge*"`
+	GitRebase   string `json:"git rebase*"`
+	GitCheckout string `json:"git checkout*"`
+	GitStash    string `json:"git stash*"`
+	HarnessAll  string `json:"harness *"`
 }
 
 type opencodePermission struct {
