@@ -40,7 +40,13 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	}
 	fmt.Printf("Queued for merge (position #%d).\n", pos)
 
+	deadline := time.Now().Add(time.Duration(a.Config.Merge.QueueTimeout) * time.Second)
 	for {
+		if time.Now().After(deadline) {
+			a.DB.DequeueTask(id)
+			a.DB.UpdateTaskState(id, StateMergeFailed)
+			return fmt.Errorf("merge queue timeout after %ds", a.Config.Merge.QueueTimeout)
+		}
 		first, err := a.DB.PeekQueue()
 		if err != nil {
 			return fmt.Errorf("peek queue: %w", err)

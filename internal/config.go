@@ -18,9 +18,10 @@ type MergeRequire struct {
 }
 
 type MergeConfig struct {
-	Require     MergeRequire `yaml:"require"`
-	Strategy    string       `yaml:"strategy"`
-	RerunChecks bool         `yaml:"rerun_checks"`
+	Require      MergeRequire `yaml:"require"`
+	Strategy     string       `yaml:"strategy"`
+	RerunChecks  bool         `yaml:"rerun_checks"`
+	QueueTimeout int          `yaml:"queue_timeout"` // seconds, 0 = default 300
 }
 
 type ReviewConfig struct {
@@ -71,6 +72,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Commit.Message == "" {
 		cfg.Commit.Message = "{{message}}"
+	}
+	if cfg.Merge.QueueTimeout == 0 {
+		cfg.Merge.QueueTimeout = 300
 	}
 
 	return cfg, nil
