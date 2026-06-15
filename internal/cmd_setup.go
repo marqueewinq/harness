@@ -114,52 +114,66 @@ description: >
 
 # Harness Workflow
 
-All git-mutating operations go through the ` + "`harness`" + ` CLI. Direct git commands
-(commit, push, merge, checkout, add) are denied by permission rules.
+All workflow operations go through the ` + "`harness`" + ` CLI. Direct git push, merge,
+rebase, and checkout are denied by permission rules. Git add and commit are
+allowed (you need them to commit work in the worktree).
 
 ## At Session Start
 
-Run ` + "`harness status`" + ` or ` + "`harness task list --status=all`" + ` to see current tasks.
+Run ` + "`harness work status`" + ` or ` + "`harness task list --status=all`" + ` to see current tasks.
 If told to work on a specific task, run ` + "`harness task start <task-id>`" + ` to begin.
 If the task is already IN_PROGRESS, continue in its worktree.
 
 ## Workflow
 
 1. ` + "`harness new \"title\"`" + ` — creates branch + worktree + task
-2. Implement changes in the worktree (the path is printed by harness new)
-3. ` + "`harness check`" + ` — runs configured checks (tests, build, lint)
-4. ` + "`harness review request`" + ` — if review.cmd is configured, launches the
-   reviewer automatically and waits for verdict. Otherwise prints diff + context.
-5. If changes requested: fix, then go to step 3
-6. ` + "`harness work merge`" + ` — rebases, re-runs checks, merges to main, cleans up
+2. Implement changes in the worktree (path printed by harness new)
+3. Use git add + git commit freely inside the worktree
+4. ` + "`harness work check`" + ` — runs configured checks (tests, build, lint as a DAG)
+5. ` + "`harness review request`" + ` — outputs diff + review context
+6. Spawn a reviewer subagent; reviewer calls ` + "`harness review approve`" + `
+   or ` + "`harness review reject --comment \"...\"`" + `
+7. If changes requested: fix, commit, go to step 4
+8. ` + "`harness work merge`" + ` — enters merge queue, rebases, re-runs checks, merges, cleans up
+
+## Status and History
+
+` + "`harness work status`" + ` shows:
+- Task state, branch, worktree, base branch
+- Latest check results with the commit SHA they ran against
+- Latest review decision
+- Full state transition history with timestamps (e.g. IN_PROGRESS -> CHECKS_RUNNING -> CHECKS_PASSED)
+- Merge requirements checklist
+- Subtask progress
 
 ## Rules
 
-- NEVER use git commit, git push, git merge, git add, git checkout directly
-- Use ` + "`harness work commit -m \"message\"`" + ` to commit (applies configured message template)
-- ALWAYS work in the worktree created by harness new
-- ALWAYS run harness check before requesting review
-- ALWAYS request and pass review before merging
-- If harness status shows an existing task, continue it instead of creating a new one
+- NEVER use git push, git merge, git rebase, or git checkout directly
 - Use git add and git commit freely inside the worktree
-- Commit changes in the worktree using git (inside the worktree directory)
+- ALWAYS run ` + "`harness work check`" + ` before requesting review
+- ALWAYS request and pass review before merging
+- Follow ` + "`harness work status`" + ` output — it tells you the next action
+- If a task exists for your work, continue it instead of creating a new one
 
 ## Commands Reference
 
 | Command | Purpose |
 |---|---|
 | ` + "`harness task list --status=all`" + ` | List all tasks |
-| ` + "`harness status [task-id]`" + ` | Show task state and next action |
+| ` + "`harness work status [task-id]`" + ` | Task state, checks, reviews, history, next action |
 | ` + "`harness new \"title\"`" + ` | Create task + branch + worktree |
-| ` + "`harness check [task-id]`" + ` | Run checks |
-| ` + "`harness diff [task-id]`" + ` | Show diff vs main |
-| ` + "`harness review request [task-id]`" + ` | Request review |
+| ` + "`harness work check [task-id]`" + ` | Run checks (DAG-ordered, parallel) |
+| ` + "`harness work diff [task-id]`" + ` | Show diff vs base branch |
+| ` + "`harness work commit -m \"msg\"`" + ` | Commit with message template |
+| ` + "`harness review request [task-id]`" + ` | Request review (outputs diff + context) |
 | ` + "`harness review approve [task-id]`" + ` | Record approval |
 | ` + "`harness review reject --comment \"...\" [task-id]`" + ` | Record rejection |
 | ` + "`harness review history [task-id]`" + ` | Show past reviews |
-| ` + "`harness work merge [task-id]`" + ` | Merge to main |
-| ` + "`harness work commit -m \"msg\"`" + ` | Commit with message template |
+| ` + "`harness work merge [task-id]`" + ` | Merge queue -> rebase -> checks -> merge |
+| ` + "`harness work close [task-id]`" + ` | Close task without merging |
 | ` + "`harness task start <task-id>`" + ` | Start a planned task (creates branch + worktree) |
+
+Task ID is optional when you are inside a task's worktree.
 `
 
 	if runtime.GOOS == "windows" {
