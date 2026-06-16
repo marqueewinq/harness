@@ -3,6 +3,7 @@ package internal
 import "testing"
 
 func TestValidTransitions(t *testing.T) {
+	t.Parallel()
 	valid := []struct {
 		from, to TaskState
 	}{
@@ -30,6 +31,7 @@ func TestValidTransitions(t *testing.T) {
 }
 
 func TestInvalidTransitions(t *testing.T) {
+	t.Parallel()
 	invalid := []struct {
 		from, to TaskState
 	}{
@@ -48,6 +50,7 @@ func TestInvalidTransitions(t *testing.T) {
 }
 
 func TestCloseTransitions(t *testing.T) {
+	t.Parallel()
 	closeable := []TaskState{
 		StatePlanned, StateInProgress, StateChecksPassed, StateChecksFailed,
 		StateReviewRequested, StateApproved, StateRequestChanges,
@@ -70,6 +73,7 @@ func TestCloseTransitions(t *testing.T) {
 }
 
 func TestClosedIsTerminal(t *testing.T) {
+	t.Parallel()
 	targets, ok := validTransitions[StateClosed]
 	if !ok {
 		t.Fatal("StateClosed not in validTransitions map")
@@ -80,12 +84,14 @@ func TestClosedIsTerminal(t *testing.T) {
 }
 
 func TestApprovedToInProgress(t *testing.T) {
+	t.Parallel()
 	if !ValidTransition(StateApproved, StateInProgress) {
 		t.Error("expected APPROVED -> IN_PROGRESS to be valid")
 	}
 }
 
 func TestPlannedTransitions(t *testing.T) {
+	t.Parallel()
 	if !ValidTransition(StatePlanned, StateInProgress) {
 		t.Error("PLANNED -> IN_PROGRESS should be valid")
 	}
@@ -98,6 +104,7 @@ func TestPlannedTransitions(t *testing.T) {
 }
 
 func TestCheckableStates(t *testing.T) {
+	t.Parallel()
 	checkable := []TaskState{
 		StateInProgress, StateChecksRunning, StateChecksFailed, StateRequestChanges, StateReviewRequested, StateMergeFailed,
 	}

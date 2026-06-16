@@ -3,6 +3,7 @@ package internal
 import "testing"
 
 func TestCountDone(t *testing.T) {
+	t.Parallel()
 	tasks := []Task{
 		{State: StateMerged},
 		{State: StateClosed},
@@ -20,6 +21,7 @@ func TestCountDone(t *testing.T) {
 }
 
 func TestCountDoneEmpty(t *testing.T) {
+	t.Parallel()
 	done, total := CountDone(nil)
 	if done != 0 || total != 0 {
 		t.Errorf("CountDone(nil) = %d, %d, want 0, 0", done, total)
@@ -27,6 +29,7 @@ func TestCountDoneEmpty(t *testing.T) {
 }
 
 func TestFormatPreviousComments(t *testing.T) {
+	t.Parallel()
 	reviews := []Review{
 		{Decision: "approve", Comment: "looks good"},
 		{Decision: "request_changes", Comment: "fix tests"},
@@ -39,6 +42,7 @@ func TestFormatPreviousComments(t *testing.T) {
 }
 
 func TestFormatPreviousCommentsEmpty(t *testing.T) {
+	t.Parallel()
 	got := FormatPreviousComments(nil)
 	if got != "(none)" {
 		t.Errorf("FormatPreviousComments(nil) = %q, want %q", got, "(none)")
@@ -46,6 +50,7 @@ func TestFormatPreviousCommentsEmpty(t *testing.T) {
 }
 
 func TestFormatPreviousCommentsNoComments(t *testing.T) {
+	t.Parallel()
 	reviews := []Review{
 		{Decision: "approve", Comment: ""},
 	}

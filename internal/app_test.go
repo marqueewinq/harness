@@ -3,6 +3,7 @@ package internal
 import "testing"
 
 func TestSlugify(t *testing.T) {
+	t.Parallel()
 	got := Slugify("Hello World")
 	want := "hello-world"
 	if got != want {
@@ -11,6 +12,7 @@ func TestSlugify(t *testing.T) {
 }
 
 func TestSlugifyEmpty(t *testing.T) {
+	t.Parallel()
 	got := Slugify("")
 	if got != "" {
 		t.Errorf("Slugify(%q) = %q, want %q", "", got, "")
@@ -18,6 +20,7 @@ func TestSlugifyEmpty(t *testing.T) {
 }
 
 func TestSlugifySpecialChars(t *testing.T) {
+	t.Parallel()
 	got := Slugify("Hello, World! #1")
 	want := "hello-world-1"
 	if got != want {
@@ -26,6 +29,7 @@ func TestSlugifySpecialChars(t *testing.T) {
 }
 
 func TestSlugifyLong(t *testing.T) {
+	t.Parallel()
 	input := "this is a very long string that should definitely be truncated because it exceeds sixty characters in length"
 	got := Slugify(input)
 	if len(got) > 60 {
@@ -34,6 +38,7 @@ func TestSlugifyLong(t *testing.T) {
 }
 
 func TestSlugifyUnicode(t *testing.T) {
+	t.Parallel()
 	got := Slugify("café résumé")
 	// non-ascii stripped, only a-z0-9 kept; accented chars become separator
 	// "café résumé" -> "caf-r-sum"
@@ -48,6 +53,7 @@ func TestSlugifyUnicode(t *testing.T) {
 }
 
 func TestSlugifyAlreadySlugged(t *testing.T) {
+	t.Parallel()
 	got := Slugify("already-slugged")
 	want := "already-slugged"
 	if got != want {
@@ -56,6 +62,7 @@ func TestSlugifyAlreadySlugged(t *testing.T) {
 }
 
 func TestSlugifyLeadingTrailingSpecial(t *testing.T) {
+	t.Parallel()
 	got := Slugify("---hello---")
 	want := "hello"
 	if got != want {
@@ -64,6 +71,7 @@ func TestSlugifyLeadingTrailingSpecial(t *testing.T) {
 }
 
 func TestBuildCommitMessage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		template string

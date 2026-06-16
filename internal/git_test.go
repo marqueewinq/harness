@@ -9,40 +9,65 @@ import (
 	"testing"
 )
 
-// testRepoTemplate is a path to a pre-initialized git repo created once in
-// TestMain. Each test clones from it instead of running git init from scratch.
+// testRepoTemplate is a bare git repo (main branch, one empty commit).
+// testAppRepoTemplate is a harness-initialized repo (Makefile + .harness.yaml committed, no DB).
+// Both created once in TestMain, copied per-test via initTestRepo / setupApp.
 var testRepoTemplate string
+var testAppRepoTemplate string
 
 func TestMain(m *testing.M) {
+	env := append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
+	)
+	gitRun := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "git %s failed: %v\n%s", strings.Join(args, " "), err, out)
+			os.Exit(1)
+		}
+	}
+
+	// Template 1: bare git repo
 	dir, err := os.MkdirTemp("", "harness-test-template-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "creating template dir: %v\n", err)
 		os.Exit(1)
 	}
-
-	env := append(os.Environ(),
-		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
-	)
-	for _, args := range [][]string{
-		{"git", "init"},
-		{"git", "checkout", "-b", "main"},
-		{"git", "commit", "--allow-empty", "-m", "init"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		cmd.Env = env
-		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "%v failed: %v\n%s", args, err, out)
-			os.RemoveAll(dir)
-			os.Exit(1)
-		}
-	}
+	gitRun(dir, "init")
+	gitRun(dir, "checkout", "-b", "main")
+	gitRun(dir, "commit", "--allow-empty", "-m", "init")
 	testRepoTemplate = dir
+
+	// Template 2: harness-initialized repo (Makefile + config, no DB)
+	appDir, err := os.MkdirTemp("", "harness-test-app-template-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "creating app template dir: %v\n", err)
+		os.Exit(1)
+	}
+	if err := copyDir(dir, appDir); err != nil {
+		fmt.Fprintf(os.Stderr, "copying base template: %v\n", err)
+		os.Exit(1)
+	}
+	os.WriteFile(filepath.Join(appDir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
+	gitRun(appDir, "add", "Makefile")
+	gitRun(appDir, "commit", "-m", "add makefile")
+	if err := RunInit(appDir); err != nil {
+		fmt.Fprintf(os.Stderr, "RunInit: %v\n", err)
+		os.Exit(1)
+	}
+	gitRun(appDir, "add", ".harness.yaml", ".gitignore")
+	gitRun(appDir, "commit", "-m", "add harness config")
+	// Remove .harness/ (contains DB) so each test gets a fresh one via LoadApp
+	os.RemoveAll(filepath.Join(appDir, ".harness"))
+	testAppRepoTemplate = appDir
 
 	code := m.Run()
 
 	os.RemoveAll(dir)
+	os.RemoveAll(appDir)
 	os.Exit(code)
 }
 
@@ -85,6 +110,7 @@ func copyDir(src, dst string) error {
 }
 
 func TestCreateBranch(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -103,6 +129,7 @@ func TestCreateBranch(t *testing.T) {
 }
 
 func TestCreateWorktree(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -122,6 +149,7 @@ func TestCreateWorktree(t *testing.T) {
 }
 
 func TestRemoveWorktree(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -139,6 +167,7 @@ func TestRemoveWorktree(t *testing.T) {
 }
 
 func TestDiff(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -161,6 +190,7 @@ func TestDiff(t *testing.T) {
 }
 
 func TestCurrentBranch(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -174,6 +204,7 @@ func TestCurrentBranch(t *testing.T) {
 }
 
 func TestMergeFastForward(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -197,6 +228,7 @@ func TestMergeFastForward(t *testing.T) {
 }
 
 func TestDeleteBranch(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -220,6 +252,7 @@ func TestDeleteBranch(t *testing.T) {
 }
 
 func TestCheckout(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -239,6 +272,7 @@ func TestCheckout(t *testing.T) {
 }
 
 func TestRevParse(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -252,6 +286,7 @@ func TestRevParse(t *testing.T) {
 }
 
 func TestRevParseShort(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -265,6 +300,7 @@ func TestRevParseShort(t *testing.T) {
 }
 
 func TestDefaultBranch(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -278,6 +314,7 @@ func TestDefaultBranch(t *testing.T) {
 }
 
 func TestMergeSquash(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -320,6 +357,7 @@ func TestMergeSquash(t *testing.T) {
 }
 
 func TestRebase(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -361,6 +399,7 @@ func TestRebase(t *testing.T) {
 }
 
 func TestCommit(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -382,6 +421,7 @@ func TestCommit(t *testing.T) {
 }
 
 func TestDiffEmpty(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 

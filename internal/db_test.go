@@ -7,6 +7,7 @@ import (
 )
 
 func TestOpenDB(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -16,6 +17,7 @@ func TestOpenDB(t *testing.T) {
 }
 
 func TestTaskCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -69,6 +71,7 @@ func TestTaskCRUD(t *testing.T) {
 }
 
 func TestGetTaskByBranch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -87,6 +90,7 @@ func TestGetTaskByBranch(t *testing.T) {
 }
 
 func TestCheckRunCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -115,6 +119,7 @@ func TestCheckRunCRUD(t *testing.T) {
 }
 
 func TestReviewCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -146,6 +151,7 @@ func TestReviewCRUD(t *testing.T) {
 }
 
 func TestMergeQueue(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -191,6 +197,7 @@ func TestMergeQueue(t *testing.T) {
 }
 
 func TestGetTaskNotFound(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -205,6 +212,7 @@ func TestGetTaskNotFound(t *testing.T) {
 }
 
 func TestGetTaskByBranchNotFound(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -219,6 +227,7 @@ func TestGetTaskByBranchNotFound(t *testing.T) {
 }
 
 func TestGetSubtasks(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -258,6 +267,7 @@ func TestGetSubtasks(t *testing.T) {
 }
 
 func TestGetSubtasksNone(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -280,6 +290,7 @@ func TestGetSubtasksNone(t *testing.T) {
 }
 
 func TestNextRunGroup(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -312,6 +323,7 @@ func TestNextRunGroup(t *testing.T) {
 }
 
 func TestGetLatestCheckRunsEmpty(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -331,6 +343,7 @@ func TestGetLatestCheckRunsEmpty(t *testing.T) {
 }
 
 func TestPeekQueueEmpty(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -345,6 +358,7 @@ func TestPeekQueueEmpty(t *testing.T) {
 }
 
 func TestGetQueuePositionMultiple(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -385,6 +399,7 @@ func TestGetQueuePositionMultiple(t *testing.T) {
 }
 
 func TestRecordReviewWithCommitSHA(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -413,6 +428,7 @@ func TestRecordReviewWithCommitSHA(t *testing.T) {
 }
 
 func TestGetLatestApproval(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -443,6 +459,7 @@ func TestGetLatestApproval(t *testing.T) {
 }
 
 func TestGetLatestApprovalNone(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -462,6 +479,7 @@ func TestGetLatestApprovalNone(t *testing.T) {
 }
 
 func TestDequeueNonexistent(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -477,6 +495,7 @@ func TestDequeueNonexistent(t *testing.T) {
 }
 
 func TestSchemaVersion(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -495,6 +514,7 @@ func TestSchemaVersion(t *testing.T) {
 }
 
 func TestPlanningTablesExist(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -515,6 +535,7 @@ func TestPlanningTablesExist(t *testing.T) {
 }
 
 func TestProjectCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -558,6 +579,7 @@ func TestProjectCRUD(t *testing.T) {
 }
 
 func TestEpicCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -605,6 +627,7 @@ func TestEpicCRUD(t *testing.T) {
 }
 
 func TestEpicRequiresProject(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -619,6 +642,7 @@ func TestEpicRequiresProject(t *testing.T) {
 }
 
 func TestEpicBranchCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -665,6 +689,7 @@ func TestEpicBranchCRUD(t *testing.T) {
 }
 
 func TestEpicReviewCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -717,6 +742,7 @@ func TestEpicReviewCRUD(t *testing.T) {
 }
 
 func TestTaskStateTransitions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -751,6 +777,7 @@ func TestTaskStateTransitions(t *testing.T) {
 }
 
 func TestPlannedTaskTransitions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -778,6 +805,7 @@ func TestPlannedTaskTransitions(t *testing.T) {
 }
 
 func TestEpicStateTransitions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -807,6 +835,7 @@ func TestEpicStateTransitions(t *testing.T) {
 }
 
 func TestProjectStateTransitions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -834,6 +863,7 @@ func TestProjectStateTransitions(t *testing.T) {
 }
 
 func TestCheckRunCommitSHA(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -858,6 +888,7 @@ func TestCheckRunCommitSHA(t *testing.T) {
 }
 
 func TestTransitionTablesExist(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -878,6 +909,7 @@ func TestTransitionTablesExist(t *testing.T) {
 }
 
 func TestTaskNullableBranch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -903,6 +935,7 @@ func TestTaskNullableBranch(t *testing.T) {
 }
 
 func TestUpdateTaskStateRejectsInvalidTransition(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -927,6 +960,7 @@ func TestUpdateTaskStateRejectsInvalidTransition(t *testing.T) {
 }
 
 func TestUpdateTaskStateAcceptsValidTransition(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {
@@ -950,6 +984,7 @@ func TestUpdateTaskStateAcceptsValidTransition(t *testing.T) {
 }
 
 func TestStartTaskRejectsNonPlannedState(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "harness.db"))
 	if err != nil {

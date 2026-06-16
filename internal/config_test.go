@@ -7,6 +7,7 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	yaml := `
 main_branch: main
@@ -60,6 +61,7 @@ review:
 }
 
 func TestLoadConfigDefaults(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	yaml := `
 checks:
@@ -85,6 +87,7 @@ checks:
 }
 
 func TestLoadConfigMissing(t *testing.T) {
+	t.Parallel()
 	_, err := LoadConfig("/nonexistent/.harness.yaml")
 	if err == nil {
 		t.Error("expected error for missing config")
@@ -92,6 +95,7 @@ func TestLoadConfigMissing(t *testing.T) {
 }
 
 func TestLoadConfigInvalidYAML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, ".harness.yaml"), []byte("{{invalid yaml::"), 0644)
 
@@ -102,6 +106,7 @@ func TestLoadConfigInvalidYAML(t *testing.T) {
 }
 
 func TestLoadConfigEmptyChecks(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	yaml := `
 main_branch: main
@@ -118,6 +123,7 @@ main_branch: main
 }
 
 func TestLoadConfigReviewType(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	yaml := `
 checks:
@@ -142,6 +148,7 @@ review:
 }
 
 func TestLoadConfigReviewCmd(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	yaml := `
 checks:
@@ -170,6 +177,7 @@ review:
 }
 
 func TestLoadConfigCommitMessage(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	yaml := `
 main_branch: main
@@ -191,6 +199,7 @@ checks:
 }
 
 func TestLoadConfigCommitMessageDefault(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	yaml := `
 main_branch: main

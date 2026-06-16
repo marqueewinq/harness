@@ -5,6 +5,7 @@ import (
 )
 
 func TestRunnerAllPass(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"step1": {Run: "echo hello"},
 		"step2": {Run: "echo world", Needs: []string{"step1"}},
@@ -25,6 +26,7 @@ func TestRunnerAllPass(t *testing.T) {
 }
 
 func TestRunnerFailure(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"pass": {Run: "echo ok"},
 		"fail": {Run: "exit 1", Needs: []string{"pass"}},
@@ -53,6 +55,7 @@ func TestRunnerFailure(t *testing.T) {
 }
 
 func TestRunnerParallel(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"a": {Run: "echo a"},
 		"b": {Run: "echo b"},
@@ -73,6 +76,7 @@ func TestRunnerParallel(t *testing.T) {
 }
 
 func TestRunnerEmpty(t *testing.T) {
+	t.Parallel()
 	runner := NewCheckRunner(map[string]CheckConfig{}, t.TempDir())
 	results, err := runner.RunAll()
 	if err != nil {
@@ -84,6 +88,7 @@ func TestRunnerEmpty(t *testing.T) {
 }
 
 func TestRunnerSingleFail(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"bad": {Run: "exit 42"},
 	}
@@ -101,6 +106,7 @@ func TestRunnerSingleFail(t *testing.T) {
 }
 
 func TestRunnerDiamond(t *testing.T) {
+	t.Parallel()
 	// Diamond DAG: a -> b,c -> d
 	checks := map[string]CheckConfig{
 		"a": {Run: "echo a"},
@@ -124,6 +130,7 @@ func TestRunnerDiamond(t *testing.T) {
 }
 
 func TestRunnerStderrCapture(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"noisy": {Run: "echo error-output >&2"},
 	}

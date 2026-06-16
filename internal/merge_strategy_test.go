@@ -7,6 +7,7 @@ import (
 )
 
 func TestNewMergeStrategyMerge(t *testing.T) {
+	t.Parallel()
 	s, err := NewMergeStrategy("merge")
 	if err != nil {
 		t.Fatal(err)
@@ -17,6 +18,7 @@ func TestNewMergeStrategyMerge(t *testing.T) {
 }
 
 func TestNewMergeStrategyEmpty(t *testing.T) {
+	t.Parallel()
 	s, err := NewMergeStrategy("")
 	if err != nil {
 		t.Fatal(err)
@@ -27,6 +29,7 @@ func TestNewMergeStrategyEmpty(t *testing.T) {
 }
 
 func TestNewMergeStrategySquash(t *testing.T) {
+	t.Parallel()
 	s, err := NewMergeStrategy("squash")
 	if err != nil {
 		t.Fatal(err)
@@ -37,6 +40,7 @@ func TestNewMergeStrategySquash(t *testing.T) {
 }
 
 func TestNewMergeStrategyUnknown(t *testing.T) {
+	t.Parallel()
 	_, err := NewMergeStrategy("unknown")
 	if err == nil {
 		t.Error("expected error for unknown strategy")
@@ -44,6 +48,7 @@ func TestNewMergeStrategyUnknown(t *testing.T) {
 }
 
 func TestSquashMerge(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 
@@ -102,6 +107,7 @@ func TestSquashMerge(t *testing.T) {
 }
 
 func TestRebasePrepare(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	git := NewGitClient(dir)
 

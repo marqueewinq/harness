@@ -6,6 +6,7 @@ import (
 )
 
 func TestDepCRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -40,6 +41,7 @@ func TestDepCRUD(t *testing.T) {
 }
 
 func TestDepSelfDependency(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -55,6 +57,7 @@ func TestDepSelfDependency(t *testing.T) {
 }
 
 func TestDepCycleDetection(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -82,6 +85,7 @@ func TestDepCycleDetection(t *testing.T) {
 }
 
 func TestDepIdempotent(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {

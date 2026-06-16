@@ -6,6 +6,7 @@ import (
 )
 
 func TestTopoSort(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"install": {Run: "npm install"},
 		"lint":    {Run: "npm run lint", Needs: []string{"install"}},
@@ -38,6 +39,7 @@ func TestTopoSort(t *testing.T) {
 }
 
 func TestTopoSortCycle(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"a": {Run: "a", Needs: []string{"b"}},
 		"b": {Run: "b", Needs: []string{"a"}},
@@ -49,6 +51,7 @@ func TestTopoSortCycle(t *testing.T) {
 }
 
 func TestTopoSortUnknownDep(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"test": {Run: "test", Needs: []string{"nonexistent"}},
 	}
@@ -59,6 +62,7 @@ func TestTopoSortUnknownDep(t *testing.T) {
 }
 
 func TestTopoSortSingle(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"test": {Run: "make test"},
 	}
@@ -72,6 +76,7 @@ func TestTopoSortSingle(t *testing.T) {
 }
 
 func TestReadyChecks(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"install": {Run: "npm install"},
 		"lint":    {Run: "lint", Needs: []string{"install"}},
@@ -96,6 +101,7 @@ func TestReadyChecks(t *testing.T) {
 }
 
 func TestTopoSortEmpty(t *testing.T) {
+	t.Parallel()
 	order, err := TopoSort(map[string]CheckConfig{})
 	if err != nil {
 		t.Fatal(err)
@@ -106,6 +112,7 @@ func TestTopoSortEmpty(t *testing.T) {
 }
 
 func TestTopoSortSelfRef(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"a": {Run: "a", Needs: []string{"a"}},
 	}
@@ -116,6 +123,7 @@ func TestTopoSortSelfRef(t *testing.T) {
 }
 
 func TestTopoSortDeepChain(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"a": {Run: "a"},
 		"b": {Run: "b", Needs: []string{"a"}},
@@ -132,6 +140,7 @@ func TestTopoSortDeepChain(t *testing.T) {
 }
 
 func TestReadyChecksAllDone(t *testing.T) {
+	t.Parallel()
 	checks := map[string]CheckConfig{
 		"a": {Run: "a"},
 		"b": {Run: "b", Needs: []string{"a"}},
@@ -144,6 +153,7 @@ func TestReadyChecksAllDone(t *testing.T) {
 }
 
 func TestReadyChecksEmpty(t *testing.T) {
+	t.Parallel()
 	ready := ReadyChecks(map[string]CheckConfig{}, map[string]bool{})
 	if len(ready) != 0 {
 		t.Errorf("ReadyChecks (empty) = %v, want empty", ready)

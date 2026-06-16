@@ -28,6 +28,7 @@ func gitEnv() []string {
 }
 
 func TestE2EWorkflow(t *testing.T) {
+	t.Parallel()
 	// Create a temp git repo with a passing test command
 	dir := initTestRepo(t)
 
@@ -149,6 +150,7 @@ func gitRun(t *testing.T, dir string, args ...string) {
 }
 
 func TestCmdCloseWithoutCleanup(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
@@ -195,6 +197,7 @@ func TestCmdCloseWithoutCleanup(t *testing.T) {
 }
 
 func TestCmdCloseWithCleanup(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
@@ -252,6 +255,7 @@ func TestCmdCloseWithCleanup(t *testing.T) {
 }
 
 func TestE2EFeatureBranch(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
@@ -334,17 +338,14 @@ func TestE2EFeatureBranch(t *testing.T) {
 
 // --- Command Error Path Tests ---
 
-// setupApp creates temp repo with passing Makefile, inits harness, returns app.
+// setupApp copies the pre-built app repo template and opens a fresh DB.
 // Caller must defer app.Close().
 func setupApp(t *testing.T) (*App, string) {
 	t.Helper()
-	dir := initTestRepo(t)
-	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
-	gitRun(t, dir, "add", "Makefile")
-	gitRun(t, dir, "commit", "-m", "add makefile")
-	RunInit(dir)
-	gitRun(t, dir, "add", ".harness.yaml", ".gitignore")
-	gitRun(t, dir, "commit", "-m", "add harness config")
+	dir := t.TempDir()
+	if err := copyDir(testAppRepoTemplate, dir); err != nil {
+		t.Fatalf("copying app template: %v", err)
+	}
 	app, err := LoadApp(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -368,6 +369,7 @@ func setupTask(t *testing.T) (*App, string, *Task) {
 }
 
 func TestCmdCheckWrongState(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -405,6 +407,7 @@ func TestCmdCheckWrongState(t *testing.T) {
 }
 
 func TestCmdRequestReviewWrongState(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -435,6 +438,7 @@ func TestCmdRequestReviewWrongState(t *testing.T) {
 }
 
 func TestCmdRecordReviewWrongState(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -449,6 +453,7 @@ func TestCmdRecordReviewWrongState(t *testing.T) {
 }
 
 func TestCmdRecordReviewMissingComment(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -471,6 +476,7 @@ func TestCmdRecordReviewMissingComment(t *testing.T) {
 }
 
 func TestCmdMergeWrongState(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -485,6 +491,7 @@ func TestCmdMergeWrongState(t *testing.T) {
 }
 
 func TestCmdInitAlreadyInitialized(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
 	gitRun(t, dir, "add", "Makefile")
@@ -507,6 +514,7 @@ func TestCmdInitAlreadyInitialized(t *testing.T) {
 }
 
 func TestCmdCloseWrongState(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -535,6 +543,7 @@ func TestCmdCloseWrongState(t *testing.T) {
 // --- E2E Workflow Tests ---
 
 func TestE2ERejectionCycle(t *testing.T) {
+	t.Parallel()
 	app, dir, task := setupTask(t)
 	defer app.Close()
 
@@ -596,6 +605,7 @@ func TestE2ERejectionCycle(t *testing.T) {
 }
 
 func TestE2ECheckFailFix(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 
 	// Start with FAILING Makefile
@@ -666,6 +676,7 @@ func TestE2ECheckFailFix(t *testing.T) {
 }
 
 func TestE2ESquashMerge(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
@@ -753,6 +764,7 @@ func TestE2ESquashMerge(t *testing.T) {
 }
 
 func TestE2EStaleReviewBlocksMerge(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -806,6 +818,7 @@ func TestE2EStaleReviewBlocksMerge(t *testing.T) {
 }
 
 func TestE2EMergeWithUnchangedReview(t *testing.T) {
+	t.Parallel()
 	app, _, task := setupTask(t)
 	defer app.Close()
 
@@ -829,6 +842,7 @@ func TestE2EMergeWithUnchangedReview(t *testing.T) {
 }
 
 func TestE2ECustomReviewType(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
@@ -891,6 +905,7 @@ func TestE2ECustomReviewType(t *testing.T) {
 // --- Planning E2E Tests ---
 
 func TestE2EPlanningWorkflow(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1020,6 +1035,7 @@ func TestE2EPlanningWorkflow(t *testing.T) {
 }
 
 func TestE2EClosePlannedTask(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1064,6 +1080,7 @@ func TestE2EClosePlannedTask(t *testing.T) {
 }
 
 func TestE2EStartBlockedTask(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1097,6 +1114,7 @@ func TestE2EStartBlockedTask(t *testing.T) {
 }
 
 func TestE2EOrphanPlannedTask(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1150,6 +1168,7 @@ func TestE2EOrphanPlannedTask(t *testing.T) {
 }
 
 func TestE2EMixedWorkflow(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1207,6 +1226,7 @@ func taskIDs(tasks []Task) []string {
 // --- Epic Feature Branch Tests ---
 
 func TestE2EEpicFeatureBranch(t *testing.T) {
+	t.Parallel()
 	app, dir := setupApp(t)
 	defer app.Close()
 
@@ -1299,6 +1319,7 @@ func TestE2EEpicFeatureBranch(t *testing.T) {
 }
 
 func TestE2EEpicBranchFlag(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1329,6 +1350,7 @@ func TestE2EEpicBranchFlag(t *testing.T) {
 }
 
 func TestE2EEpicDisabledFeatureBranches(t *testing.T) {
+	t.Parallel()
 	dir := initTestRepo(t)
 
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
@@ -1383,6 +1405,7 @@ func TestE2EEpicDisabledFeatureBranches(t *testing.T) {
 }
 
 func TestE2EEpicReviewHistory(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1435,6 +1458,7 @@ func TestE2EEpicReviewHistory(t *testing.T) {
 }
 
 func TestE2EEpicMergeNoApproval(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1456,6 +1480,7 @@ func TestE2EEpicMergeNoApproval(t *testing.T) {
 }
 
 func TestE2EEpicMergeNoBranch(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1478,6 +1503,7 @@ func TestE2EEpicMergeNoBranch(t *testing.T) {
 }
 
 func TestE2EEpicNewWithCmdNew(t *testing.T) {
+	t.Parallel()
 	// Test that CmdNew (harness new) resolves epic branch
 	app, _ := setupApp(t)
 	defer app.Close()
@@ -1505,6 +1531,7 @@ func TestE2EEpicNewWithCmdNew(t *testing.T) {
 }
 
 func TestE2EEpicDiff(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1522,6 +1549,7 @@ func TestE2EEpicDiff(t *testing.T) {
 }
 
 func TestE2EEpicBranchWithExistingBranch(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1546,6 +1574,7 @@ func TestE2EEpicBranchWithExistingBranch(t *testing.T) {
 }
 
 func TestE2EEpicBranchNonexistent(t *testing.T) {
+	t.Parallel()
 	app, _ := setupApp(t)
 	defer app.Close()
 
@@ -1619,6 +1648,7 @@ review:
 }
 
 func TestE2EAutomatedReviewerApprove(t *testing.T) {
+	t.Parallel()
 	bin := buildHarnessBinary(t)
 
 	// The reviewer cmd reads the prompt file and then approves
@@ -1664,6 +1694,7 @@ func TestE2EAutomatedReviewerApprove(t *testing.T) {
 }
 
 func TestE2EAutomatedReviewerReject(t *testing.T) {
+	t.Parallel()
 	bin := buildHarnessBinary(t)
 
 	reviewCmd := fmt.Sprintf(
@@ -1706,6 +1737,7 @@ func TestE2EAutomatedReviewerReject(t *testing.T) {
 }
 
 func TestE2EAutomatedReviewerNoVerdict(t *testing.T) {
+	t.Parallel()
 	// Reviewer cmd exits without calling harness
 	app, _ := setupAppWithReviewCmd(t, "echo noop")
 	defer app.Close()
@@ -1736,6 +1768,7 @@ func TestE2EAutomatedReviewerNoVerdict(t *testing.T) {
 }
 
 func TestE2EAutomatedReviewerPromptFile(t *testing.T) {
+	t.Parallel()
 	// Verify the prompt file contains the expected template-substituted content
 	outputFile := filepath.Join(t.TempDir(), "prompt-output.txt")
 	reviewCmd := fmt.Sprintf(`cp {{prompt_file}} %s`, outputFile)
@@ -1783,6 +1816,7 @@ func TestE2EAutomatedReviewerPromptFile(t *testing.T) {
 }
 
 func TestE2EFallbackNoCmd(t *testing.T) {
+	t.Parallel()
 	// When review.cmd is empty, should fall back to printing instructions
 	app, _, task := setupTask(t)
 	defer app.Close()
