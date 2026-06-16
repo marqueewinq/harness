@@ -312,9 +312,7 @@ func setupTask(t *testing.T) (*App, string, *Task) {
 	}
 	task, _ := app.DB.GetTask("task-001")
 	// Add a commit so checks can run
-	os.WriteFile(filepath.Join(task.WorktreePath, "feature.txt"), []byte("feature\n"), 0644)
-	gitRun(t, task.WorktreePath, "add", "feature.txt")
-	gitRun(t, task.WorktreePath, "commit", "-m", "add feature")
+	gitCommitFile(t, task.WorktreePath, "feature.txt", "feature\n", "add feature")
 	return app, dir, task
 }
 

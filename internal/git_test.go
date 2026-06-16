@@ -109,6 +109,21 @@ func openTestDB(t *testing.T) *DB {
 	return db
 }
 
+// gitCommitFile is a shortcut: writes file, stages, commits in one subprocess.
+func gitCommitFile(t *testing.T, dir, filename, content, message string) {
+	t.Helper()
+	os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644)
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("git add %s && git commit -m %q", filename, message))
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("gitCommitFile(%s): %v\n%s", filename, err, out)
+	}
+}
+
 func initTestRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -213,10 +228,7 @@ func TestDiff(t *testing.T) {
 	git.CreateBranch("feature-x", "main")
 	git.CreateWorktree("feature-x", wtPath)
 
-	os.WriteFile(filepath.Join(wtPath, "hello.txt"), []byte("hello\n"), 0644)
-	wtGit := NewGitClient(wtPath)
-	wtGit.run("add", "hello.txt")
-	wtGit.run("commit", "-m", "add hello")
+	gitCommitFile(t, wtPath, "hello.txt", "hello\n", "add hello")
 
 	diff, err := git.Diff("main", "feature-x")
 	if err != nil {
@@ -250,10 +262,7 @@ func TestMergeFastForward(t *testing.T) {
 	git.CreateBranch("feature-x", "main")
 	git.CreateWorktree("feature-x", wtPath)
 
-	os.WriteFile(filepath.Join(wtPath, "hello.txt"), []byte("hello\n"), 0644)
-	wtGit := NewGitClient(wtPath)
-	wtGit.run("add", "hello.txt")
-	wtGit.run("commit", "-m", "add hello")
+	gitCommitFile(t, wtPath, "hello.txt", "hello\n", "add hello")
 
 	err := git.MergeFF("feature-x")
 	if err != nil {
@@ -360,16 +369,9 @@ func TestMergeSquash(t *testing.T) {
 	git.CreateBranch("squash-test", "main")
 	git.CreateWorktree("squash-test", wtPath)
 
-	wtGit := NewGitClient(wtPath)
-
 	// Two commits on feature branch
-	os.WriteFile(filepath.Join(wtPath, "x.txt"), []byte("x\n"), 0644)
-	wtGit.run("add", "x.txt")
-	wtGit.run("commit", "-m", "add x")
-
-	os.WriteFile(filepath.Join(wtPath, "y.txt"), []byte("y\n"), 0644)
-	wtGit.run("add", "y.txt")
-	wtGit.run("commit", "-m", "add y")
+	gitCommitFile(t, wtPath, "x.txt", "x\n", "add x")
+	gitCommitFile(t, wtPath, "y.txt", "y\n", "add y")
 
 	err := git.MergeSquash("squash-test", "squashed commit")
 	if err != nil {
@@ -404,15 +406,11 @@ func TestRebase(t *testing.T) {
 	git.CreateWorktree("rebase-test", wtPath)
 
 	// Diverge: commit on main
-	os.WriteFile(filepath.Join(dir, "main-only.txt"), []byte("main\n"), 0644)
-	git.run("add", "main-only.txt")
-	git.run("commit", "-m", "main diverge")
+	gitCommitFile(t, dir, "main-only.txt", "main\n", "main diverge")
 
 	// Commit on feature branch
 	wtGit := NewGitClient(wtPath)
-	os.WriteFile(filepath.Join(wtPath, "feature-only.txt"), []byte("feat\n"), 0644)
-	wtGit.run("add", "feature-only.txt")
-	wtGit.run("commit", "-m", "feature commit")
+	gitCommitFile(t, wtPath, "feature-only.txt", "feat\n", "feature commit")
 
 	// Rebase feature onto main
 	err := wtGit.Rebase("main")

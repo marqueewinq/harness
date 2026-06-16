@@ -66,13 +66,8 @@ func TestSquashMerge(t *testing.T) {
 	wtGit := NewGitClient(wtPath)
 
 	// Make 2 commits on feature branch
-	os.WriteFile(filepath.Join(wtPath, "a.txt"), []byte("a\n"), 0644)
-	wtGit.run("add", "a.txt")
-	wtGit.run("commit", "-m", "add a")
-
-	os.WriteFile(filepath.Join(wtPath, "b.txt"), []byte("b\n"), 0644)
-	wtGit.run("add", "b.txt")
-	wtGit.run("commit", "-m", "add b")
+	gitCommitFile(t, wtPath, "a.txt", "a\n", "add a")
+	gitCommitFile(t, wtPath, "b.txt", "b\n", "add b")
 
 	strategy := &SquashMergeStrategy{}
 
@@ -123,15 +118,11 @@ func TestRebasePrepare(t *testing.T) {
 	}
 
 	// Make a commit on main (so branches diverge)
-	os.WriteFile(filepath.Join(dir, "main-file.txt"), []byte("main\n"), 0644)
-	git.run("add", "main-file.txt")
-	git.run("commit", "-m", "main commit")
+	gitCommitFile(t, dir, "main-file.txt", "main\n", "main commit")
 
 	// Make a commit on feature branch
 	wtGit := NewGitClient(wtPath)
-	os.WriteFile(filepath.Join(wtPath, "feature-file.txt"), []byte("feature\n"), 0644)
-	wtGit.run("add", "feature-file.txt")
-	wtGit.run("commit", "-m", "feature commit")
+	gitCommitFile(t, wtPath, "feature-file.txt", "feature\n", "feature commit")
 
 	strategy := &RebaseMergeStrategy{}
 
