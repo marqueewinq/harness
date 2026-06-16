@@ -151,36 +151,10 @@ func gitRun(t *testing.T, dir string, args ...string) {
 
 func TestCmdCloseWithoutCleanup(t *testing.T) {
 	t.Parallel()
-	dir := initTestRepo(t)
-
-	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
-	gitRun(t, dir, "add", "Makefile")
-	gitRun(t, dir, "commit", "-m", "add makefile")
-
-	RunInit(dir)
-	gitRun(t, dir, "add", ".harness.yaml", ".gitignore")
-	gitRun(t, dir, "commit", "-m", "add harness config")
-
-	app, err := LoadApp(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	app, _, task := setupTask(t)
 	defer app.Close()
 
-	err = app.CmdNew("feature to close", "", "", "")
-	if err != nil {
-		t.Fatal("new:", err)
-	}
-
-	task, _ := app.DB.GetTask("task-001")
-
-	// Make a commit so branch diverges
-	os.WriteFile(filepath.Join(task.WorktreePath, "wip.txt"), []byte("wip\n"), 0644)
-	gitRun(t, task.WorktreePath, "add", "wip.txt")
-	gitRun(t, task.WorktreePath, "commit", "-m", "wip")
-
-	// Close without cleanup
-	err = app.CmdWorkClose(task.ID, false)
+	err := app.CmdWorkClose(task.ID, false)
 	if err != nil {
 		t.Fatal("close:", err)
 	}
@@ -198,38 +172,14 @@ func TestCmdCloseWithoutCleanup(t *testing.T) {
 
 func TestCmdCloseWithCleanup(t *testing.T) {
 	t.Parallel()
-	dir := initTestRepo(t)
-
-	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
-	gitRun(t, dir, "add", "Makefile")
-	gitRun(t, dir, "commit", "-m", "add makefile")
-
-	RunInit(dir)
-	gitRun(t, dir, "add", ".harness.yaml", ".gitignore")
-	gitRun(t, dir, "commit", "-m", "add harness config")
-
-	app, err := LoadApp(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	app, dir, task := setupTask(t)
 	defer app.Close()
 
-	err = app.CmdNew("feature to close with cleanup", "", "", "")
-	if err != nil {
-		t.Fatal("new:", err)
-	}
-
-	task, _ := app.DB.GetTask("task-001")
 	wtPath := task.WorktreePath
 	branch := task.Branch
 
-	// Make a commit
-	os.WriteFile(filepath.Join(wtPath, "wip.txt"), []byte("wip\n"), 0644)
-	gitRun(t, wtPath, "add", "wip.txt")
-	gitRun(t, wtPath, "commit", "-m", "wip")
-
 	// Close with cleanup
-	err = app.CmdWorkClose(task.ID, true)
+	err := app.CmdWorkClose(task.ID, true)
 	if err != nil {
 		t.Fatal("close:", err)
 	}
@@ -368,81 +318,65 @@ func setupTask(t *testing.T) (*App, string, *Task) {
 	return app, dir, task
 }
 
+// setupTaskInState creates a DB-only task in the given state, with a minimal
+// App that has no real git worktree. For tests that only check error messages
+// on wrong-state commands (no actual git/check execution needed).
+func setupTaskInState(t *testing.T, state TaskState) (*App, *Task) {
+	t.Helper()
+	db := openTestDB(t)
+	task, err := db.CreateTask("test task", "", "fake-branch", "/tmp/fake-wt", "main", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state != StateInProgress {
+		// Force state directly (bypass ValidTransition for test setup)
+		db.conn.Exec(`UPDATE tasks SET state = ? WHERE id = ?`, string(state), task.ID)
+		task.State = state
+	}
+	app := &App{
+		Config:   &Config{MainBranch: "main", Merge: MergeConfig{Require: MergeRequire{Review: "approved"}}},
+		DB:       db,
+		Git:      NewGitClient(t.TempDir()),
+		RepoRoot: t.TempDir(),
+	}
+	return app, task
+}
+
 func TestCmdCheckWrongState(t *testing.T) {
 	t.Parallel()
-	app, _, task := setupTask(t)
-	defer app.Close()
-
-	// Move to CHECKS_PASSED
-	if err := app.CmdWorkCheck(task.ID); err != nil {
-		t.Fatal("first check:", err)
-	}
-	task, _ = app.DB.GetTask(task.ID)
-	if task.State != StateChecksPassed {
-		t.Fatalf("expected CHECKS_PASSED, got %s", task.State)
-	}
-
-	// CmdCheck in CHECKS_PASSED -> error
-	err := app.CmdWorkCheck(task.ID)
-	if err == nil {
-		t.Error("expected error running check in CHECKS_PASSED state")
-	}
-
-	// Move to APPROVED
-	app.CmdReviewRequest(task.ID)
-	app.CmdReviewApprove(task.ID, "")
-	task, _ = app.DB.GetTask(task.ID)
-	if task.State != StateApproved {
-		t.Fatalf("expected APPROVED, got %s", task.State)
-	}
-
-	// CmdCheck in APPROVED -> error
-	err = app.CmdWorkCheck(task.ID)
-	if err == nil {
-		t.Error("expected error running check in APPROVED state")
-	}
-	if err != nil && !strings.Contains(err.Error(), "cannot run checks") {
-		t.Errorf("unexpected error message: %s", err)
+	for _, state := range []TaskState{StateChecksPassed, StateApproved, StateQueued} {
+		app, task := setupTaskInState(t, state)
+		err := app.CmdWorkCheck(task.ID)
+		if err == nil {
+			t.Errorf("expected error running check in %s state", state)
+		}
+		if err != nil && !strings.Contains(err.Error(), "cannot run checks") {
+			t.Errorf("state %s: unexpected error message: %s", state, err)
+		}
+		app.Close()
 	}
 }
 
 func TestCmdRequestReviewWrongState(t *testing.T) {
 	t.Parallel()
-	app, _, task := setupTask(t)
-	defer app.Close()
-
-	// Task is IN_PROGRESS -> CmdRequestReview should fail
-	err := app.CmdReviewRequest(task.ID)
-	if err == nil {
-		t.Error("expected error requesting review in IN_PROGRESS state")
-	}
-	if err != nil && !strings.Contains(err.Error(), "cannot request review") {
-		t.Errorf("unexpected error message: %s", err)
-	}
-
-	// Move to CHECKS_FAILED: write failing Makefile in worktree, then check
-	os.WriteFile(filepath.Join(task.WorktreePath, "Makefile"), []byte("test:\n\t@exit 1\n"), 0644)
-	gitRun(t, task.WorktreePath, "add", "Makefile")
-	gitRun(t, task.WorktreePath, "commit", "-m", "break tests")
-	app.CmdWorkCheck(task.ID)
-	task, _ = app.DB.GetTask(task.ID)
-	if task.State != StateChecksFailed {
-		t.Fatalf("expected CHECKS_FAILED, got %s", task.State)
-	}
-
-	// CHECKS_FAILED -> CmdRequestReview should fail
-	err = app.CmdReviewRequest(task.ID)
-	if err == nil {
-		t.Error("expected error requesting review in CHECKS_FAILED state")
+	for _, state := range []TaskState{StateInProgress, StateChecksFailed} {
+		app, task := setupTaskInState(t, state)
+		err := app.CmdReviewRequest(task.ID)
+		if err == nil {
+			t.Errorf("expected error requesting review in %s state", state)
+		}
+		if err != nil && !strings.Contains(err.Error(), "cannot request review") {
+			t.Errorf("state %s: unexpected error message: %s", state, err)
+		}
+		app.Close()
 	}
 }
 
 func TestCmdRecordReviewWrongState(t *testing.T) {
 	t.Parallel()
-	app, _, task := setupTask(t)
+	app, task := setupTaskInState(t, StateInProgress)
 	defer app.Close()
 
-	// Task is IN_PROGRESS -> CmdReviewApprove should fail
 	err := app.CmdReviewApprove(task.ID, "")
 	if err == nil {
 		t.Error("expected error recording review in IN_PROGRESS state")
@@ -454,18 +388,9 @@ func TestCmdRecordReviewWrongState(t *testing.T) {
 
 func TestCmdRecordReviewMissingComment(t *testing.T) {
 	t.Parallel()
-	app, _, task := setupTask(t)
+	app, task := setupTaskInState(t, StateReviewRequested)
 	defer app.Close()
 
-	// Move to REVIEW_REQUESTED
-	app.CmdWorkCheck(task.ID)
-	app.CmdReviewRequest(task.ID)
-	task, _ = app.DB.GetTask(task.ID)
-	if task.State != StateReviewRequested {
-		t.Fatalf("expected REVIEW_REQUESTED, got %s", task.State)
-	}
-
-	// reject without comment -> error
 	err := app.CmdReviewReject(task.ID, "")
 	if err == nil {
 		t.Error("expected error for reject without comment")
@@ -477,10 +402,9 @@ func TestCmdRecordReviewMissingComment(t *testing.T) {
 
 func TestCmdMergeWrongState(t *testing.T) {
 	t.Parallel()
-	app, _, task := setupTask(t)
+	app, task := setupTaskInState(t, StateInProgress)
 	defer app.Close()
 
-	// Task is IN_PROGRESS -> CmdMerge should fail
 	err := app.CmdWorkMerge(task.ID)
 	if err == nil {
 		t.Error("expected error merging in IN_PROGRESS state")
@@ -515,22 +439,9 @@ func TestCmdInitAlreadyInitialized(t *testing.T) {
 
 func TestCmdCloseWrongState(t *testing.T) {
 	t.Parallel()
-	app, _, task := setupTask(t)
+	app, task := setupTaskInState(t, StateMerged)
 	defer app.Close()
 
-	// Full workflow to MERGED
-	app.CmdWorkCheck(task.ID)
-	app.CmdReviewRequest(task.ID)
-	app.CmdReviewApprove(task.ID, "")
-	if err := app.CmdWorkMerge(task.ID); err != nil {
-		t.Fatal("merge:", err)
-	}
-	task, _ = app.DB.GetTask(task.ID)
-	if task.State != StateMerged {
-		t.Fatalf("expected MERGED, got %s", task.State)
-	}
-
-	// CmdClose on MERGED task -> error (terminal state, no transitions)
 	err := app.CmdWorkClose(task.ID, false)
 	if err == nil {
 		t.Error("expected error closing already-merged task")

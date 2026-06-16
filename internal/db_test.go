@@ -18,11 +18,7 @@ func TestOpenDB(t *testing.T) {
 
 func TestTaskCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	task, err := db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "")
@@ -72,11 +68,7 @@ func TestTaskCRUD(t *testing.T) {
 
 func TestGetTaskByBranch(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "")
@@ -91,16 +83,12 @@ func TestGetTaskByBranch(t *testing.T) {
 
 func TestCheckRunCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
 
-	err = db.RecordCheckRun("task-001", "test", 0, "ok\n", "", 1, time.Now(), time.Now(), "abc123")
+	err := db.RecordCheckRun("task-001", "test", 0, "ok\n", "", 1, time.Now(), time.Now(), "abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,16 +108,12 @@ func TestCheckRunCRUD(t *testing.T) {
 
 func TestReviewCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
 
-	err = db.RecordReview("task-001", "request_changes", "fix the edge case", "")
+	err := db.RecordReview("task-001", "request_changes", "fix the edge case", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,11 +136,7 @@ func TestReviewCRUD(t *testing.T) {
 
 func TestMergeQueue(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("task A", "", "branch-a", ".worktrees/a", "main", "", "")
@@ -198,14 +178,10 @@ func TestMergeQueue(t *testing.T) {
 
 func TestGetTaskNotFound(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
-	_, err = db.GetTask("nonexistent")
+	_, err := db.GetTask("nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent task")
 	}
@@ -213,14 +189,10 @@ func TestGetTaskNotFound(t *testing.T) {
 
 func TestGetTaskByBranchNotFound(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
-	_, err = db.GetTaskByBranch("nope")
+	_, err := db.GetTaskByBranch("nope")
 	if err == nil {
 		t.Error("expected error for nonexistent branch")
 	}
@@ -228,11 +200,7 @@ func TestGetTaskByBranchNotFound(t *testing.T) {
 
 func TestGetSubtasks(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	// Create parent
@@ -268,11 +236,7 @@ func TestGetSubtasks(t *testing.T) {
 
 func TestGetSubtasksNone(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	parent, err := db.CreateTask("parent", "", "parent-branch", ".worktrees/parent", "main", "", "")
@@ -291,11 +255,7 @@ func TestGetSubtasksNone(t *testing.T) {
 
 func TestNextRunGroup(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
@@ -324,11 +284,7 @@ func TestNextRunGroup(t *testing.T) {
 
 func TestGetLatestCheckRunsEmpty(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
@@ -344,14 +300,10 @@ func TestGetLatestCheckRunsEmpty(t *testing.T) {
 
 func TestPeekQueueEmpty(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
-	_, err = db.PeekQueue()
+	_, err := db.PeekQueue()
 	if err == nil {
 		t.Error("expected error for empty queue")
 	}
@@ -359,11 +311,7 @@ func TestPeekQueueEmpty(t *testing.T) {
 
 func TestGetQueuePositionMultiple(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("task A", "", "branch-a", ".worktrees/a", "main", "", "")
@@ -400,17 +348,13 @@ func TestGetQueuePositionMultiple(t *testing.T) {
 
 func TestRecordReviewWithCommitSHA(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
 
 	sha := "abc123def456abc123def456abc123def456abc1"
-	err = db.RecordReview("task-001", "approve", "", sha)
+	err := db.RecordReview("task-001", "approve", "", sha)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,11 +373,7 @@ func TestRecordReviewWithCommitSHA(t *testing.T) {
 
 func TestGetLatestApproval(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
@@ -460,11 +400,7 @@ func TestGetLatestApproval(t *testing.T) {
 
 func TestGetLatestApprovalNone(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
@@ -480,15 +416,11 @@ func TestGetLatestApprovalNone(t *testing.T) {
 
 func TestDequeueNonexistent(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	// DELETE is idempotent - should not error
-	err = db.DequeueTask("nonexistent-task")
+	err := db.DequeueTask("nonexistent-task")
 	if err != nil {
 		t.Errorf("DequeueTask nonexistent should not error, got: %v", err)
 	}
@@ -496,15 +428,11 @@ func TestDequeueNonexistent(t *testing.T) {
 
 func TestSchemaVersion(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	var version int
-	err = db.conn.QueryRow("SELECT version FROM schema_version").Scan(&version)
+	err := db.conn.QueryRow("SELECT version FROM schema_version").Scan(&version)
 	if err != nil {
 		t.Fatal("schema_version table missing:", err)
 	}
@@ -515,11 +443,7 @@ func TestSchemaVersion(t *testing.T) {
 
 func TestPlanningTablesExist(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	tables := []string{"projects", "epics", "task_dependencies"}
@@ -536,11 +460,7 @@ func TestPlanningTablesExist(t *testing.T) {
 
 func TestProjectCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	p, err := db.CreateProject("Auth redesign", "Redesign the auth system")
@@ -580,11 +500,7 @@ func TestProjectCRUD(t *testing.T) {
 
 func TestEpicCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	proj, _ := db.CreateProject("Test project", "")
@@ -628,14 +544,10 @@ func TestEpicCRUD(t *testing.T) {
 
 func TestEpicRequiresProject(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
-	_, err = db.CreateEpic("Orphan epic", "", "proj-999", "")
+	_, err := db.CreateEpic("Orphan epic", "", "proj-999", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent project")
 	}
@@ -643,11 +555,7 @@ func TestEpicRequiresProject(t *testing.T) {
 
 func TestEpicBranchCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	proj, _ := db.CreateProject("Test project", "")
@@ -690,17 +598,13 @@ func TestEpicBranchCRUD(t *testing.T) {
 
 func TestEpicReviewCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	proj, _ := db.CreateProject("Test project", "")
 	db.CreateEpic("Test epic", "", proj.ID, "")
 
-	err = db.RecordEpicReview("epic-001", "request_changes", "fix it", "")
+	err := db.RecordEpicReview("epic-001", "request_changes", "fix it", "")
 	if err != nil {
 		t.Fatal("record:", err)
 	}
@@ -743,11 +647,7 @@ func TestEpicReviewCRUD(t *testing.T) {
 
 func TestTaskStateTransitions(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "")
@@ -778,11 +678,7 @@ func TestTaskStateTransitions(t *testing.T) {
 
 func TestPlannedTaskTransitions(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreatePlannedTask("plan it", "", "")
@@ -806,11 +702,7 @@ func TestPlannedTaskTransitions(t *testing.T) {
 
 func TestEpicStateTransitions(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateProject("proj", "")
@@ -836,11 +728,7 @@ func TestEpicStateTransitions(t *testing.T) {
 
 func TestProjectStateTransitions(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateProject("proj", "")
@@ -864,11 +752,7 @@ func TestProjectStateTransitions(t *testing.T) {
 
 func TestCheckRunCommitSHA(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
@@ -889,11 +773,7 @@ func TestCheckRunCommitSHA(t *testing.T) {
 
 func TestTransitionTablesExist(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	tables := []string{"task_state_transitions", "epic_state_transitions", "project_state_transitions"}
@@ -910,14 +790,10 @@ func TestTransitionTablesExist(t *testing.T) {
 
 func TestTaskNullableBranch(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
-	_, err = db.conn.Exec(
+	_, err := db.conn.Exec(
 		`INSERT INTO tasks (id, title, branch, worktree_path, state, created_at, updated_at)
 		 VALUES ('task-001', 'test', NULL, NULL, 'PLANNED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 	)
@@ -936,11 +812,7 @@ func TestTaskNullableBranch(t *testing.T) {
 
 func TestUpdateTaskStateRejectsInvalidTransition(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "")
@@ -961,11 +833,7 @@ func TestUpdateTaskStateRejectsInvalidTransition(t *testing.T) {
 
 func TestUpdateTaskStateAcceptsValidTransition(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "")
@@ -985,11 +853,7 @@ func TestUpdateTaskStateAcceptsValidTransition(t *testing.T) {
 
 func TestStartTaskRejectsNonPlannedState(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "harness.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	// Create an IN_PROGRESS task (not PLANNED)

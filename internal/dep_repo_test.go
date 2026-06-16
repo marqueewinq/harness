@@ -1,23 +1,18 @@
 package internal
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func TestDepCRUD(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	t1, _ := db.CreatePlannedTask("task one", "", "")
 	t2, _ := db.CreatePlannedTask("task two", "", "")
 
-	err = db.AddDependency(t1.ID, t2.ID, "blocks")
+	err := db.AddDependency(t1.ID, t2.ID, "blocks")
 	if err != nil {
 		t.Fatal("add:", err)
 	}
@@ -42,15 +37,11 @@ func TestDepCRUD(t *testing.T) {
 
 func TestDepSelfDependency(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	t1, _ := db.CreatePlannedTask("task one", "", "")
-	err = db.AddDependency(t1.ID, t1.ID, "blocks")
+	err := db.AddDependency(t1.ID, t1.ID, "blocks")
 	if err == nil {
 		t.Fatal("expected error for self-dependency")
 	}
@@ -58,11 +49,7 @@ func TestDepSelfDependency(t *testing.T) {
 
 func TestDepCycleDetection(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	t1, _ := db.CreatePlannedTask("task one", "", "")
@@ -72,7 +59,7 @@ func TestDepCycleDetection(t *testing.T) {
 	db.AddDependency(t1.ID, t2.ID, "blocks")
 	db.AddDependency(t2.ID, t3.ID, "blocks")
 
-	err = db.AddDependency(t3.ID, t1.ID, "blocks")
+	err := db.AddDependency(t3.ID, t1.ID, "blocks")
 	if err == nil {
 		t.Fatal("expected cycle detection error")
 	}
@@ -86,17 +73,13 @@ func TestDepCycleDetection(t *testing.T) {
 
 func TestDepIdempotent(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := openTestDB(t)
 	defer db.Close()
 
 	t1, _ := db.CreatePlannedTask("task one", "", "")
 	t2, _ := db.CreatePlannedTask("task two", "", "")
 
-	err = db.AddDependency(t1.ID, t2.ID, "blocks")
+	err := db.AddDependency(t1.ID, t2.ID, "blocks")
 	if err != nil {
 		t.Fatal(err)
 	}

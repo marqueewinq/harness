@@ -11,9 +11,11 @@ import (
 
 // testRepoTemplate is a bare git repo (main branch, one empty commit).
 // testAppRepoTemplate is a harness-initialized repo (Makefile + .harness.yaml committed, no DB).
-// Both created once in TestMain, copied per-test via initTestRepo / setupApp.
+// testDBTemplate is a pre-migrated empty harness.db file.
+// All created once in TestMain, copied per-test.
 var testRepoTemplate string
 var testAppRepoTemplate string
+var testDBTemplate string
 
 func TestMain(m *testing.M) {
 	env := append(os.Environ(),
@@ -64,11 +66,47 @@ func TestMain(m *testing.M) {
 	os.RemoveAll(filepath.Join(appDir, ".harness"))
 	testAppRepoTemplate = appDir
 
+	// Template 3: pre-migrated empty DB file
+	dbDir, err := os.MkdirTemp("", "harness-test-db-template-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "creating db template dir: %v\n", err)
+		os.Exit(1)
+	}
+	dbPath := filepath.Join(dbDir, "harness.db")
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "creating template DB: %v\n", err)
+		os.Exit(1)
+	}
+	db.Close()
+	testDBTemplate = dbPath
+
 	code := m.Run()
 
 	os.RemoveAll(dir)
 	os.RemoveAll(appDir)
+	os.RemoveAll(dbDir)
 	os.Exit(code)
+}
+
+// openTestDB copies the pre-migrated template DB to a temp dir and opens it.
+// Skips all 6 migrations since the schema is already up to date.
+func openTestDB(t *testing.T) *DB {
+	t.Helper()
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "harness.db")
+	data, err := os.ReadFile(testDBTemplate)
+	if err != nil {
+		t.Fatalf("reading DB template: %v", err)
+	}
+	if err := os.WriteFile(dst, data, 0644); err != nil {
+		t.Fatalf("writing DB copy: %v", err)
+	}
+	db, err := OpenDB(dst)
+	if err != nil {
+		t.Fatalf("opening DB: %v", err)
+	}
+	return db
 }
 
 func initTestRepo(t *testing.T) string {
