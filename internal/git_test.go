@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,25 +9,79 @@ import (
 	"testing"
 )
 
-func initTestRepo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
+// testRepoTemplate is a path to a pre-initialized git repo created once in
+// TestMain. Each test clones from it instead of running git init from scratch.
+var testRepoTemplate string
 
-	cmds := [][]string{
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "harness-test-template-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "creating template dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	env := append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
+	)
+	for _, args := range [][]string{
 		{"git", "init"},
 		{"git", "checkout", "-b", "main"},
 		{"git", "commit", "--allow-empty", "-m", "init"},
-	}
-	for _, args := range cmds {
+	} {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("%v failed: %s\n%s", args, err, out)
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "%v failed: %v\n%s", args, err, out)
+			os.RemoveAll(dir)
+			os.Exit(1)
 		}
 	}
+	testRepoTemplate = dir
+
+	code := m.Run()
+
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+func initTestRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := copyDir(testRepoTemplate, dir); err != nil {
+		t.Fatalf("copying template repo: %v", err)
+	}
 	return dir
+}
+
+// copyDir recursively copies src to dst (which must already exist).
+func copyDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		srcPath := filepath.Join(src, e.Name())
+		dstPath := filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := os.MkdirAll(dstPath, 0755); err != nil {
+				return err
+			}
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(dstPath, data, 0644); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func TestCreateBranch(t *testing.T) {
