@@ -1,0 +1,14 @@
+harness · main @ 39829b9 · 16:42:07
+warning: reading committed review config: boom
+── task-027 Sync epic branch ───────────────────────────────────────────────────
+ State: MERGE_FAILED for 1h · branch sync-epic · base epic/planning
+ Worktree: /repo/.worktrees/sync-epic
+ History:
+   10-26 15:40:00  (created) → IN_PROGRESS
+   10-26 15:42:07  QUEUED → MERGE_FAILED
+ Checks (commit 81742677):
+   lint         PASS  1.2s
+   test         PASS  31.9s
+ Review request #3 at 81742677 · 1h ago · closed: verdict
+ Latest verdict: approved at 81742677 by terminal:me
+ approve  reject  diff  enter details  refresh  quit  ↑↓ select

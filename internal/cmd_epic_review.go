@@ -79,7 +79,7 @@ func (a *App) cmdEpicReviewHistory(epicID string) error {
 	return nil
 }
 
-func formatReviewerRun(r *ReviewRequest, now time.Time) (line, status string) {
+func FormatReviewerRun(r *ReviewRequest, now time.Time) (line, status string) {
 	status = r.RunStatus(now)
 	s := fmt.Sprintf("%s (request #%d, commit %s, pid %d", status, r.ID, shortSHA(r.CommitSHA), r.ReviewerPID)
 	if !r.ReviewerStarted.IsZero() {
@@ -104,7 +104,7 @@ func printReviewerRuns(runs []ReviewRequest) {
 	now := time.Now()
 	fmt.Println("Reviewer runs:")
 	for i := range runs {
-		line, _ := formatReviewerRun(&runs[i], now)
+		line, _ := FormatReviewerRun(&runs[i], now)
 		fmt.Printf("  %s\n", line)
 	}
 }

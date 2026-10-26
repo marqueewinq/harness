@@ -40,10 +40,7 @@ Other useful commands:
   conflict, resolve the files, `git add` them, and run `--continue`. The task
   goes back to `IN_PROGRESS`, so you need to run the checks again.
 - `harness review approve|reject [task|epic] --comment "..."`, `harness review history [task|epic]`
-- `harness dashboard --once [--all]` prints one snapshot: open reviews, in-flight
-  tasks grouped by epic, the merge queue, and tasks merged or closed in the last
-  24h. Rows that need a human get a `!`. Colour is off when stdout is not a
-  terminal or `NO_COLOR` is set. `--all` adds PLANNED tasks and older finished ones.
+- `harness dashboard`: see [Dashboard](#dashboard).
 
 If you run a command from inside a task's worktree, you can leave out the task ID.
 
@@ -120,6 +117,33 @@ is dead or whose heartbeat is more than 60s old, and the abandoned task moves to
 harness queue list                 # entries, owner PID, heartbeat age, live/stale
 harness queue clear <task> [--force]   # remove a stale entry (--force for a live one)
 ```
+
+## Dashboard
+
+```sh
+harness dashboard [--interval 2s] [--all]   # full-screen view, refreshed every --interval
+harness dashboard --once [--all]            # print one plain snapshot and exit
+```
+
+The dashboard shows open review requests (tasks and epics), in-flight tasks
+grouped by project and epic, the merge queue with lease status, and tasks
+merged or closed in the last 24h. A red `!` marks rows that need a human:
+failed checks or merge, a failed/timed-out/orphaned reviewer, a stale queue
+lease, an unfinished rebase in the worktree, or a review waiting for a human.
+`--all` adds PLANNED tasks and older finished ones.
+
+| key | action |
+|---|---|
+| `↑`/`↓`, `j`/`k` | select a row (`g`/`G` first/last) |
+| `enter`, `tab` | toggle the detail pane: state history, checks, review request and reviewer run, queue lease, live check log |
+| `f` | refresh now |
+| `q`, `Ctrl-C` | quit |
+| `a`, `r`, `d` | approve, reject, diff (shown dimmed; not available yet) |
+
+The interactive view needs a terminal; from scripts and agents use `--once`,
+whose output has no colour when stdout is not a terminal. `NO_COLOR` turns
+colour off in both. If a refresh fails, the last good snapshot stays on screen
+with a `stale:` note in the header.
 
 All mergers have to run on one host, because PID liveness is checked locally.
 

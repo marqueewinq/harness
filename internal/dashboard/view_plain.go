@@ -31,6 +31,9 @@ func NewStyles(color bool) Styles {
 	r := lipgloss.NewRenderer(io.Discard)
 	if color {
 		r.SetColorProfile(termenv.ANSI256)
+		// The default renderer's answer is cached (Bubble Tea queries it at
+		// init); this renderer writes to io.Discard and cannot ask.
+		r.SetHasDarkBackground(lipgloss.HasDarkBackground())
 	} else {
 		r.SetColorProfile(termenv.Ascii)
 	}
@@ -56,8 +59,44 @@ func UseColor(isTerminal bool, noColor string) bool {
 // RenderPlain is the `harness dashboard --once` output. width <= 0 disables truncation.
 func RenderPlain(s Snapshot, width int, color bool) string {
 	st := NewStyles(color)
-	var lines []string
-	add := func(l string) { lines = append(lines, l) }
+	lines := append([]string{st.Header.Render(headerText(s))}, warningLines(st, s)...)
+	list, _ := listLines(st, s)
+	for _, l := range list {
+		lines = append(lines, l.text)
+	}
+	if width > 0 {
+		for i, l := range lines {
+			lines[i] = ansi.Truncate(l, width, "…")
+		}
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func headerText(s Snapshot) string {
+	return fmt.Sprintf("%s · %s @ %s · %s", s.Repo, s.MainBranch, orDash(s.MainHead), s.Now.Format("15:04:05"))
+}
+
+func warningLines(st Styles, s Snapshot) []string {
+	var out []string
+	for _, w := range s.Warnings {
+		out = append(out, st.Running.Render("warning: "+w))
+	}
+	return out
+}
+
+// listLine.row indexes the Row the line shows, or is -1.
+type listLine struct {
+	text string
+	row  int
+}
+
+// listLines lays out the sections; rows lists the selectable rows in display order.
+func listLines(st Styles, s Snapshot) (lines []listLine, rows []Row) {
+	add := func(text string) { lines = append(lines, listLine{text: text, row: -1}) }
+	addRow := func(text string, r Row) {
+		lines = append(lines, listLine{text: text, row: len(rows)})
+		rows = append(rows, r)
+	}
 	section := func(title string, empty bool) bool {
 		if empty {
 			add(st.Dim.Render(title + " · none"))
@@ -67,21 +106,18 @@ func RenderPlain(s Snapshot, width int, color bool) string {
 		return true
 	}
 
-	add(st.Header.Render(fmt.Sprintf("%s · %s @ %s · %s", s.Repo, s.MainBranch, orDash(s.MainHead), s.Now.Format("15:04:05"))))
-	for _, w := range s.Warnings {
-		add(st.Running.Render("warning: " + w))
-	}
-
 	if section("AWAITING REVIEW", len(s.Reviews) == 0) {
-		for _, r := range s.Reviews {
-			add(reviewLine(st, r))
+		for i := range s.Reviews {
+			r := &s.Reviews[i]
+			addRow(reviewLine(st, *r), Row{Kind: RowReview, ID: r.SubjectID, IsEpic: r.IsEpic, Review: r})
 		}
 	}
 	if section("IN FLIGHT", len(s.Groups) == 0) {
 		for _, g := range s.Groups {
 			add(groupHeader(st, g))
-			for _, t := range g.Tasks {
-				add(taskLine(st, t))
+			for i := range g.Tasks {
+				t := &g.Tasks[i]
+				addRow(taskLine(st, *t), Row{Kind: RowTask, ID: t.ID, Task: t})
 			}
 		}
 	}
@@ -97,18 +133,13 @@ func RenderPlain(s Snapshot, width int, color bool) string {
 	if section(recentTitle, len(s.Recent) == 0) {
 		for _, g := range s.Recent {
 			add(groupHeader(st, g))
-			for _, t := range g.Tasks {
-				add(recentLine(st, t))
+			for i := range g.Tasks {
+				t := &g.Tasks[i]
+				addRow(recentLine(st, *t), Row{Kind: RowTask, ID: t.ID, Task: t})
 			}
 		}
 	}
-
-	if width > 0 {
-		for i, l := range lines {
-			lines[i] = ansi.Truncate(l, width, "…")
-		}
-	}
-	return strings.Join(lines, "\n") + "\n"
+	return lines, rows
 }
 
 func gutter(st Styles, attn string) string {

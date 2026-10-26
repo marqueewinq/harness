@@ -58,7 +58,7 @@ func TestE2EDashboardOnce(t *testing.T) {
 	}
 
 	out, err = runHarness(t, bin, dir, "dashboard")
-	if err == nil || !strings.Contains(out, "use --once") {
-		t.Errorf("interactive dashboard: err=%v out=%s, want non-zero exit pointing at --once", err, out)
+	if err == nil || !strings.Contains(out, "needs a terminal") || !strings.Contains(out, "use --once") {
+		t.Errorf("non-TTY interactive dashboard: err=%v out=%s, want non-zero exit pointing at --once", err, out)
 	}
 }

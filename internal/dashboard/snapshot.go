@@ -146,11 +146,16 @@ var gitOpNames = map[string]string{
 }
 
 type builder struct {
-	app   *internal.App
-	now   time.Time
-	human bool
-	queue map[string]QueueRow
-	snap  *Snapshot
+	app           *internal.App
+	now           time.Time
+	human         bool
+	queue         map[string]QueueRow
+	snap          *Snapshot
+	entered       map[string]time.Time
+	checkRuns     map[string][]internal.CheckRun
+	taskDecisions map[string]string
+	epicDecisions map[string]string
+	latestReqs    map[string]internal.ReviewRequest
 }
 
 func (b *builder) warn(format string, args ...interface{}) {
@@ -189,6 +194,18 @@ func BuildSnapshot(app *internal.App, now time.Time, all bool) (Snapshot, error)
 	}
 	open, err := app.DB.ListOpenReviewRequests()
 	if err != nil {
+		return Snapshot{}, err
+	}
+	if b.entered, err = app.DB.StateEnteredAt(); err != nil {
+		return Snapshot{}, err
+	}
+	if b.checkRuns, err = app.DB.LatestCheckRunsByTask(); err != nil {
+		return Snapshot{}, err
+	}
+	if b.taskDecisions, b.epicDecisions, err = app.DB.LatestReviewDecisions(); err != nil {
+		return Snapshot{}, err
+	}
+	if b.latestReqs, err = app.DB.LatestTaskReviewRequests(); err != nil {
 		return Snapshot{}, err
 	}
 
@@ -288,11 +305,7 @@ func (b *builder) epicReview(epicID string, open *internal.ReviewRequest) string
 	if open != nil {
 		return "review requested"
 	}
-	reviews, err := b.app.DB.GetEpicReviews(epicID)
-	if err != nil || len(reviews) == 0 {
-		return ""
-	}
-	return verdictLabel(reviews[len(reviews)-1].Decision)
+	return verdictLabel(b.epicDecisions[epicID])
 }
 
 func verdictLabel(decision string) string {
@@ -308,13 +321,8 @@ func verdictLabel(decision string) string {
 // stateSince is when the task entered its current state; UpdatedAt covers
 // rows whose transition history is missing.
 func (b *builder) stateSince(t *internal.Task) time.Time {
-	trs, err := b.app.DB.GetTaskTransitions(t.ID)
-	if err == nil {
-		for i := len(trs) - 1; i >= 0; i-- {
-			if trs[i].ToState == string(t.State) {
-				return trs[i].CreatedAt
-			}
-		}
+	if at, ok := b.entered[t.ID]; ok {
+		return at
 	}
 	return t.UpdatedAt
 }
@@ -325,21 +333,19 @@ func (b *builder) taskRow(t *internal.Task) TaskRow {
 
 	if t.State == internal.StateChecksRunning {
 		row.Checks = b.runningChecks(t.ID, since)
-	} else if runs, err := b.app.DB.GetLatestCheckRuns(t.ID); err == nil {
-		for _, r := range runs {
+	} else {
+		for _, r := range b.checkRuns[t.ID] {
 			row.Checks = append(row.Checks, CheckStatus{Name: r.CheckName, Result: checkResult(r.ExitCode)})
 		}
 	}
 
 	if t.State == internal.StateReviewRequested {
-		if req, err := b.app.DB.GetLatestReviewRequest(t.ID, ""); err == nil && req != nil {
-			row.Review = req
-			row.Reviewer = reviewerStatus(req, b.now, b.human)
+		if req, ok := b.latestReqs[t.ID]; ok {
+			row.Review = &req
+			row.Reviewer = reviewerStatus(&req, b.now, b.human)
 		}
 	}
-	if reviews, err := b.app.DB.GetReviews(t.ID); err == nil && len(reviews) > 0 {
-		row.Verdict = verdictLabel(reviews[len(reviews)-1].Decision)
-	}
+	row.Verdict = verdictLabel(b.taskDecisions[t.ID])
 	if q, ok := b.queue[t.ID]; ok {
 		row.QueuePos, row.QueueStale = q.Position, q.Stale
 	}

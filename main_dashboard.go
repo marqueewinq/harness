@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marqueewinq/harness/internal"
 	"github.com/marqueewinq/harness/internal/dashboard"
 	"github.com/spf13/cobra"
@@ -18,21 +19,34 @@ func dashboardCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dashboard",
 		Short: "Show in-flight tasks, reviews and the merge queue at a glance",
-		Args:  cobra.NoArgs,
+		Long: `Full-screen view of open reviews, in-flight tasks grouped by epic, the merge
+queue and recently finished tasks, refreshed every --interval.
+
+Keys: ↑/↓ or j/k select, enter/tab details, f refresh, q quit.
+--once prints one plain snapshot and exits (for scripts and agents).`,
+		Args: cobra.NoArgs,
 	}
 	cmd.Flags().BoolVar(&once, "once", false, "Print one snapshot and exit")
 	cmd.Flags().BoolVar(&all, "all", false, "Include PLANNED tasks and all MERGED/CLOSED tasks")
 	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Refresh interval of the interactive view")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
+		fd := int(os.Stdout.Fd())
+		tty := term.IsTerminal(fd)
 		if !once {
-			return errors.New("interactive dashboard not implemented yet; use --once")
+			if !tty || !term.IsTerminal(int(os.Stdin.Fd())) {
+				return errors.New("the interactive dashboard needs a terminal; use --once for plain output")
+			}
+			if interval <= 0 {
+				return fmt.Errorf("--interval must be positive, got %s", interval)
+			}
+			m := dashboard.NewModel(dashboard.AppLoader(app, all), interval, dashboard.UseColor(tty, os.Getenv("NO_COLOR")))
+			_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+			return err
 		}
 		s, err := dashboard.BuildSnapshot(app, time.Now(), all)
 		if err != nil {
 			return err
 		}
-		fd := int(os.Stdout.Fd())
-		tty := term.IsTerminal(fd)
 		width := 0
 		if tty {
 			if w, _, err := term.GetSize(fd); err == nil {
