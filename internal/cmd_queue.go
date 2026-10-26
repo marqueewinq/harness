@@ -26,7 +26,7 @@ func pidAlive(pid int) bool {
 
 // PIDs are checked on this machine, so all mergers must share one host (the
 // DB lives in the local checkout). A live PID that stopped renewing is hung.
-func leaseStale(e QueueEntry, now time.Time) bool {
+func LeaseStale(e QueueEntry, now time.Time) bool {
 	if e.PID == os.Getpid() {
 		return false
 	}
@@ -64,7 +64,7 @@ func (a *App) reclaimStaleEntries() error {
 	}
 	now := time.Now()
 	for _, e := range entries {
-		if !leaseStale(e, now) {
+		if !LeaseStale(e, now) {
 			continue
 		}
 		removed, err := a.DB.RemoveQueueEntryIfUnchanged(e)
@@ -106,7 +106,7 @@ func (a *App) recoverAbandonedMerge(id string) error {
 		if e.TaskID != id {
 			continue
 		}
-		if !leaseStale(e, now) {
+		if !LeaseStale(e, now) {
 			return fmt.Errorf("%s is already being merged by process %d", id, e.PID)
 		}
 		removed, err := a.DB.RemoveQueueEntryIfUnchanged(e)
@@ -134,7 +134,7 @@ func (a *App) CmdQueueList() error {
 	fmt.Printf("%-4s %-10s %-8s %-10s %s\n", "#", "Task", "PID", "Heartbeat", "Status")
 	for i, e := range entries {
 		status := "live"
-		if leaseStale(e, now) {
+		if LeaseStale(e, now) {
 			status = "stale"
 		}
 		fmt.Printf("%-4d %-10s %-8d %-10s %s\n", i+1, e.TaskID, e.PID, now.Sub(e.Heartbeat).Truncate(time.Second).String()+" ago", status)
@@ -157,7 +157,7 @@ func (a *App) CmdQueueClear(taskID string, force bool) error {
 		if e.TaskID != taskID {
 			continue
 		}
-		if !leaseStale(e, time.Now()) && !force {
+		if !LeaseStale(e, time.Now()) && !force {
 			return fmt.Errorf("%s is held by live process %d; pass --force to remove it anyway", taskID, e.PID)
 		}
 		if err := a.DB.DequeueTask(taskID); err != nil {

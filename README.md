@@ -40,6 +40,10 @@ Other useful commands:
   conflict, resolve the files, `git add` them, and run `--continue`. The task
   goes back to `IN_PROGRESS`, so you need to run the checks again.
 - `harness review approve|reject [task|epic] --comment "..."`, `harness review history [task|epic]`
+- `harness dashboard --once [--all]` prints one snapshot: open reviews, in-flight
+  tasks grouped by epic, the merge queue, and tasks merged or closed in the last
+  24h. Rows that need a human get a `!`. Colour is off when stdout is not a
+  terminal or `NO_COLOR` is set. `--all` adds PLANNED tasks and older finished ones.
 
 If you run a command from inside a task's worktree, you can leave out the task ID.
 

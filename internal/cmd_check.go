@@ -5,6 +5,11 @@ import (
 	"path/filepath"
 )
 
+// CheckLogDir holds each check's live log, <check>.log, for taskID.
+func CheckLogDir(repoRoot, taskID string) string {
+	return filepath.Join(repoRoot, ".harness", "logs", taskID)
+}
+
 func (a *App) CmdWorkCheck(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
@@ -31,7 +36,7 @@ func (a *App) CmdWorkCheck(taskID string) error {
 	commitSHA, _ := worktreeGit.RevParse("HEAD")
 
 	runner := NewCheckRunner(a.Config.Checks, task.WorktreePath)
-	runner.LogDir = filepath.Join(a.RepoRoot, ".harness", "logs", id)
+	runner.LogDir = CheckLogDir(a.RepoRoot, id)
 	fmt.Printf("Running checks... (live logs: %s)\n", runner.LogDir)
 	results, err := runner.RunAll()
 	if err != nil {

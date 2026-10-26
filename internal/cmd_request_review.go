@@ -28,6 +28,22 @@ func composeReviewPrompt(review ReviewConfig, subjectID, title, diff, prevCommen
 // The ref is fully qualified because a local tag named like the main branch
 // would otherwise win ref resolution.
 func (a *App) trustedReviewConfig() (ReviewConfig, error) {
+	review, err := a.CommittedReviewConfig()
+	if err != nil {
+		return ReviewConfig{}, err
+	}
+	if review != a.Config.Review {
+		fmt.Printf("Note: using review config committed on %s; local edits to review: are ignored.\n", a.Config.MainBranch)
+	}
+	if review.Type == "agent" && review.Cmd == "" {
+		return ReviewConfig{}, fmt.Errorf("review.type is agent but review.cmd is empty on %s: harness hands the approval token only to a reviewer it launches", a.Config.MainBranch)
+	}
+	return review, nil
+}
+
+// CommittedReviewConfig is the review section committed on the main branch,
+// which decides how `harness review request` delivers a review.
+func (a *App) CommittedReviewConfig() (ReviewConfig, error) {
 	data, err := a.Git.ShowCommitted("refs/heads/"+a.Config.MainBranch, ".harness.yaml")
 	if err != nil {
 		return ReviewConfig{}, fmt.Errorf("reading committed .harness.yaml from %s: %w", a.Config.MainBranch, err)
@@ -35,12 +51,6 @@ func (a *App) trustedReviewConfig() (ReviewConfig, error) {
 	cfg, err := ParseConfig([]byte(data))
 	if err != nil {
 		return ReviewConfig{}, fmt.Errorf("committed .harness.yaml on %s: %w", a.Config.MainBranch, err)
-	}
-	if cfg.Review != a.Config.Review {
-		fmt.Printf("Note: using review config committed on %s; local edits to review: are ignored.\n", a.Config.MainBranch)
-	}
-	if cfg.Review.Type == "agent" && cfg.Review.Cmd == "" {
-		return ReviewConfig{}, fmt.Errorf("review.type is agent but review.cmd is empty on %s: harness hands the approval token only to a reviewer it launches", a.Config.MainBranch)
 	}
 	return cfg.Review, nil
 }

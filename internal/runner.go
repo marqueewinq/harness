@@ -194,9 +194,16 @@ func (cr *CheckRunner) runOne(parent context.Context, name string) CheckResult {
 	}
 }
 
+// createLog makes a fresh file rather than truncating, so the log's birth
+// time is this run's start: the dashboard derives a running check's elapsed
+// time from it.
 func createLog(dir, check string) (*os.File, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
-	return os.Create(filepath.Join(dir, check+".log"))
+	path := filepath.Join(dir, check+".log")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return os.Create(path)
 }

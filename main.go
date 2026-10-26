@@ -25,6 +25,7 @@ func main() {
 	// dep is a subcommand of task (harness task dep)
 	rootCmd.AddCommand(setupCmd())
 	rootCmd.AddCommand(queueCmd())
+	rootCmd.AddCommand(dashboardCmd())
 
 	// Top-level aliases (hidden)
 	rootCmd.AddCommand(aliasCheckCmd())

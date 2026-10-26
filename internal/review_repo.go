@@ -234,13 +234,14 @@ func (db *DB) GetLatestReviewRequest(taskID, epicID string) (*ReviewRequest, err
 	)))
 }
 
-// ListReviewerRuns returns the subject's requests that launched a reviewer, oldest first.
-func (db *DB) ListReviewerRuns(taskID, epicID string) ([]ReviewRequest, error) {
-	col, id := reviewSubject(taskID, epicID)
-	rows, err := db.conn.Query(
-		`SELECT `+reviewRequestColumns+` FROM review_requests
-		 WHERE `+col+` = ? AND reviewer_outcome != '' ORDER BY id ASC`, id,
-	)
+// ListOpenReviewRequests returns every unresolved request, tasks and epics, oldest first.
+func (db *DB) ListOpenReviewRequests() ([]ReviewRequest, error) {
+	return db.queryReviewRequests(`SELECT ` + reviewRequestColumns + ` FROM review_requests
+		 WHERE resolved_at IS NULL ORDER BY id ASC`)
+}
+
+func (db *DB) queryReviewRequests(query string, args ...interface{}) ([]ReviewRequest, error) {
+	rows, err := db.conn.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -254,6 +255,15 @@ func (db *DB) ListReviewerRuns(taskID, epicID string) ([]ReviewRequest, error) {
 		out = append(out, *r)
 	}
 	return out, rows.Err()
+}
+
+// ListReviewerRuns returns the subject's requests that launched a reviewer, oldest first.
+func (db *DB) ListReviewerRuns(taskID, epicID string) ([]ReviewRequest, error) {
+	col, id := reviewSubject(taskID, epicID)
+	return db.queryReviewRequests(
+		`SELECT `+reviewRequestColumns+` FROM review_requests
+		 WHERE `+col+` = ? AND reviewer_outcome != '' ORDER BY id ASC`, id,
+	)
 }
 
 func nilIfNoRows(r *ReviewRequest, err error) (*ReviewRequest, error) {
