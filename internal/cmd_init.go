@@ -36,8 +36,11 @@ merge:
   rerun_checks: true
 
 review:
+  # human: approve/reject from an interactive terminal.
+  # agent: review request launches cmd with a one-time token in its env;
+  #        only that process can record the verdict.
   type: human
-  # cmd: 'claude -p "$(cat {{prompt_file}})" --allowedTools "Bash(harness review*)"'
+  # cmd: 'claude -p --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |
     Review this diff for correctness, test coverage, and project conventions.
 

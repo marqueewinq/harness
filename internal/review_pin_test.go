@@ -69,14 +69,14 @@ func TestApproveIsSingleUsePerRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.OpenReviewRequest(task.ID, "", "abc"); err != nil {
+	if _, err := db.OpenReviewRequest(task.ID, "", "abc"); err != nil {
 		t.Fatal(err)
 	}
 	req, _ := db.GetOpenReviewRequest(task.ID, "")
-	if err := db.ResolveReviewRequest(req, "approve", ""); err != nil {
+	if err := db.ResolveReviewRequest(req, "approve", "", "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.ResolveReviewRequest(req, "approve", ""); err == nil {
+	if err := db.ResolveReviewRequest(req, "approve", "", "test"); err == nil {
 		t.Error("second verdict on same request should fail")
 	}
 	if open, _ := db.GetOpenReviewRequest(task.ID, ""); open != nil {

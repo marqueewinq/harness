@@ -24,9 +24,12 @@ If the task is already IN_PROGRESS, continue in its worktree.
 2. Implement changes in the worktree (path printed by harness new)
 3. Use git add + git commit freely inside the worktree
 4. `harness work check` — runs configured checks (tests, build, lint as a DAG)
-5. `harness review request` — outputs diff + review context
-6. Spawn a reviewer subagent; reviewer calls `harness review approve`
-   or `harness review reject --comment "..."`
+5. `harness review request` — pins the reviewed commit and launches the
+   configured reviewer (`review.cmd`), which records the verdict. With
+   `review.type: human`, a person records it from an interactive terminal.
+6. You cannot approve or reject your own task: verdicts need the one-time
+   token harness gives only to the reviewer it launches. If the reviewer
+   exits without a verdict, run `harness work check` and request again.
 7. If changes requested: fix, commit, go to step 4
 8. `harness work merge` — enters merge queue, rebases, re-runs checks, merges, cleans up
 
@@ -59,9 +62,9 @@ If the task is already IN_PROGRESS, continue in its worktree.
 | `harness work check [task-id]` | Run checks (DAG-ordered, parallel) |
 | `harness work diff [task-id]` | Show diff vs base branch |
 | `harness work commit -m "msg"` | Commit with message template |
-| `harness review request [task-id]` | Request review (outputs diff + context) |
-| `harness review approve [task-id]` | Record approval |
-| `harness review reject --comment "..." [task-id]` | Record rejection |
+| `harness review request [task-id]` | Request review; launches the reviewer |
+| `harness review approve [task-id]` | Record approval (reviewer or human terminal only) |
+| `harness review reject --comment "..." [task-id]` | Record rejection (reviewer or human terminal only) |
 | `harness review history [task-id]` | Show past reviews |
 | `harness work merge [task-id]` | Merge queue -> rebase -> checks -> merge |
 | `harness work close [task-id]` | Close task without merging |

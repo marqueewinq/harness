@@ -109,6 +109,11 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v7: %w", err)
 		}
 	}
+	if version < 8 {
+		if err := migrateV8(conn); err != nil {
+			return fmt.Errorf("migration v8: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -336,4 +341,16 @@ func migrateV7(conn *sql.DB) error {
 		return err
 	}
 	return setVersion(conn, 7)
+}
+
+func migrateV8(conn *sql.DB) error {
+	for _, stmt := range []string{
+		`ALTER TABLE review_requests ADD COLUMN token_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE reviews ADD COLUMN reviewer TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := conn.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return setVersion(conn, 8)
 }

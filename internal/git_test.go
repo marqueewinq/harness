@@ -22,6 +22,10 @@ func TestMain(m *testing.M) {
 	// into test repos.
 	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	// In-process tests act as the human at a terminal; token enforcement is
+	// exercised through the real binary in review_token_test.go.
+	os.Unsetenv(ReviewTokenEnv)
+	confirmVerdict = func(string, string) bool { return true }
 	env := append(os.Environ(),
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",

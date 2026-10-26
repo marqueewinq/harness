@@ -1,9 +1,6 @@
 package internal
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 func (a *App) cmdEpicReviewRequest(epicID string) error {
 	e, err := a.DB.GetEpic(epicID)
@@ -13,12 +10,16 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	if e.Branch == "" {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}
+	if err := a.agentReviewNeedsCmd(); err != nil {
+		return err
+	}
 
 	head, err := a.Git.RevParse(e.Branch)
 	if err != nil {
 		return fmt.Errorf("resolving %s: %w", e.Branch, err)
 	}
-	if err := a.DB.OpenReviewRequest("", epicID, head); err != nil {
+	token, err := a.DB.OpenReviewRequest("", epicID, head)
+	if err != nil {
 		return err
 	}
 
@@ -26,28 +27,8 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	reviews, _ := a.DB.GetEpicReviews(epicID)
 	prevComments := FormatPreviousComments(reviews)
 
-	fmt.Printf("Review requested for epic %s.\n\n", epicID)
-	fmt.Printf("Diff (%s..%s):\n%s\n\n", a.Config.MainBranch, e.Branch, diff)
-	fmt.Printf("Epic title: %s\n\n", e.Title)
-	fmt.Printf("Previous review comments:\n  %s\n\n", prevComments)
-
-	if a.Config.Review.Prompt != "" {
-		prompt := a.Config.Review.Prompt
-		prompt = strings.ReplaceAll(prompt, "{{previous_comments}}", prevComments)
-		prompt = strings.ReplaceAll(prompt, "{{task_description}}", e.Title)
-		fmt.Printf("Review prompt:\n%s\n", prompt)
-	}
-
-	fmt.Println("---")
-	if a.Config.Review.Type == "agent" {
-		fmt.Println("For agent review: spawn a reviewer subagent with the above context.")
-		fmt.Printf("  The reviewer must call: harness review approve %s\n", epicID)
-		fmt.Printf("  or: harness review reject --comment \"...\" %s\n", epicID)
-	} else {
-		fmt.Println("For human review, in another terminal run:")
-		fmt.Printf("  harness review approve %s\n", epicID)
-	}
-	return nil
+	fmt.Printf("Review requested for epic %s (%s).\n\n", epicID, shortSHA(head))
+	return a.deliverReview(epicID, e.Title, diff, prevComments, token)
 }
 
 func (a *App) cmdEpicReviewApprove(epicID, comment string) error {
@@ -59,11 +40,8 @@ func (a *App) cmdEpicReviewApprove(epicID, comment string) error {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}
 
-	req, err := a.openReviewRequestFor("", epicID, e.Branch, true)
+	req, err := a.recordVerdict("", epicID, e.Branch, "approve", comment)
 	if err != nil {
-		return err
-	}
-	if err := a.DB.ResolveReviewRequest(req, "approve", comment); err != nil {
 		return err
 	}
 	fmt.Printf("Review recorded: APPROVE for epic %s (%s)\n", epicID, shortSHA(req.CommitSHA))
@@ -72,14 +50,7 @@ func (a *App) cmdEpicReviewApprove(epicID, comment string) error {
 }
 
 func (a *App) cmdEpicReviewReject(epicID, comment string) error {
-	if comment == "" {
-		return fmt.Errorf("--comment is required for reject")
-	}
-	req, err := a.openReviewRequestFor("", epicID, "", false)
-	if err != nil {
-		return err
-	}
-	if err := a.DB.ResolveReviewRequest(req, "request_changes", comment); err != nil {
+	if _, err := a.recordVerdict("", epicID, "", "request_changes", comment); err != nil {
 		return err
 	}
 	fmt.Printf("Review recorded: REQUEST_CHANGES for epic %s\n", epicID)
@@ -92,17 +63,27 @@ func (a *App) cmdEpicReviewHistory(epicID string) error {
 	if err != nil {
 		return err
 	}
+	printReviews(reviews)
+	return nil
+}
+
+func printReviews(reviews []Review) {
 	if len(reviews) == 0 {
 		fmt.Println("No reviews yet.")
-		return nil
+		return
 	}
 	for i, r := range reviews {
 		fmt.Printf("Review #%d (%s):\n", i+1, r.CreatedAt.Format("2006-01-02 15:04"))
 		fmt.Printf("  Decision: %s\n", r.Decision)
+		if r.CommitSHA != "" {
+			fmt.Printf("  Commit: %s\n", shortSHA(r.CommitSHA))
+		}
+		if r.Reviewer != "" {
+			fmt.Printf("  Reviewer: %s\n", r.Reviewer)
+		}
 		if r.Comment != "" {
 			fmt.Printf("  Comment: %s\n", r.Comment)
 		}
 		fmt.Println()
 	}
-	return nil
 }

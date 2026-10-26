@@ -783,7 +783,6 @@ func TestE2ECustomReviewType(t *testing.T) {
 		t.Errorf("review type = %q, want %q", app.Config.Review.Type, "agent")
 	}
 
-	// Full workflow should still work with agent review type
 	if err := app.CmdNew("agent reviewed feature", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
@@ -796,18 +795,14 @@ func TestE2ECustomReviewType(t *testing.T) {
 	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdReviewRequest(task.ID); err != nil {
-		t.Fatal("request-review:", err)
-	}
-	if err := app.CmdReviewApprove(task.ID, ""); err != nil {
-		t.Fatal("approve:", err)
-	}
-	if err := app.CmdWorkMerge(task.ID); err != nil {
-		t.Fatal("merge:", err)
+	// Agent review without review.cmd can never produce an authorized verdict.
+	err = app.CmdReviewRequest(task.ID)
+	if err == nil || !strings.Contains(err.Error(), "review.cmd is empty") {
+		t.Fatalf("request-review: err = %v, want review.cmd is empty", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
-	if task.State != StateMerged {
-		t.Errorf("state = %s, want MERGED", task.State)
+	if task.State != StateChecksPassed {
+		t.Errorf("state = %s, want CHECKS_PASSED", task.State)
 	}
 }
 

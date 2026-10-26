@@ -181,13 +181,21 @@ func TestReviewCRUD(t *testing.T) {
 
 	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
 
-	err := db.RecordReview("task-001", "request_changes", "fix the edge case", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = db.RecordReview("task-001", "approve", "", "")
-	if err != nil {
-		t.Fatal(err)
+	for _, decision := range []string{"request_changes", "approve"} {
+		token, err := db.OpenReviewRequest("task-001", "", "abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := db.GetOpenReviewRequest("task-001", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !req.TokenMatches(token) || req.TokenMatches("wrong") || req.TokenMatches("") {
+			t.Fatal("token must match only its own request")
+		}
+		if err := db.ResolveReviewRequest(req, decision, "c", "review.cmd"); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	reviews, err := db.GetReviews("task-001")
@@ -195,10 +203,26 @@ func TestReviewCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(reviews) != 2 {
-		t.Errorf("len(reviews) = %d, want 2", len(reviews))
+		t.Fatalf("len(reviews) = %d, want 2", len(reviews))
 	}
-	if reviews[0].Decision != "request_changes" {
-		t.Errorf("reviews[0].Decision = %q", reviews[0].Decision)
+	if reviews[0].Decision != "request_changes" || reviews[1].Reviewer != "review.cmd" || reviews[1].CommitSHA != "abc" {
+		t.Errorf("reviews = %+v", reviews)
+	}
+}
+
+func TestReviewTokenNotStoredInPlaintext(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	defer db.Close()
+
+	token, err := db.OpenReviewRequest("task-001", "", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	db.conn.QueryRow(`SELECT COUNT(*) FROM review_requests WHERE token_hash = ?`, token).Scan(&n)
+	if n != 0 {
+		t.Error("raw token must not be stored")
 	}
 }
 

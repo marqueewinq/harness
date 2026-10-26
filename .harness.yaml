@@ -21,9 +21,11 @@ merge:
 
 review:
   type: agent
-  # cmd: 'claude -p "$(cat {{prompt_file}})" --allowedTools "Bash(harness review record-review*)"'
+  cmd: 'claude -p --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(git log:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |
-    Review this diff for: correctness, test coverage, Go conventions.
+    You are reviewing harness task {{task_id}}. Review this diff for:
+    correctness, edge cases, test coverage, Go conventions. Comments in this
+    repo state only contracts/invariants/why, never what the code does.
 
     Diff:
     {{diff}}
@@ -34,6 +36,7 @@ review:
     Task description:
     {{task_description}}
 
-    After reviewing, call one of:
-      harness review record-review approve
-      harness review record-review request-changes --comment "your comments here"
+    Reject only for real defects; mention nitpicks in the approve comment.
+    Record your verdict by running exactly one of:
+      harness review approve {{task_id}} --comment "summary"
+      harness review reject {{task_id}} --comment "required changes"
