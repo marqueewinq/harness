@@ -67,9 +67,9 @@ func (a *App) runReviewer(review ReviewConfig, reqID int, subjectID, prompt, tok
 	cmdStr = strings.ReplaceAll(cmdStr, "{{task_id}}", subjectID)
 	fmt.Printf("Running reviewer: %s\n", cmdStr)
 
-	// The reviewer runs in its own process group, so a terminal Ctrl-C no
-	// longer reaches it; forward it by cancelling.
-	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// The reviewer runs in its own process group, so terminal Ctrl-C or hangup
+	// no longer reaches it; forward them by cancelling.
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	timeout := review.TimeoutDuration()
 	ctx, cancel := context.WithTimeout(sigCtx, timeout)
@@ -80,7 +80,9 @@ func (a *App) runReviewer(review ReviewConfig, reqID int, subjectID, prompt, tok
 	cmd.Env = append(os.Environ(), ReviewTokenEnv+"="+token)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	// Stdin stays nil (/dev/null): in its own process group the reviewer would
+	// be stopped by SIGTTIN reading a terminal. The prompt is {{prompt_file}}.
+	cmd.Stdin = nil
 	// Agents spawn helpers that may hold the token; kill the whole group.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
@@ -117,7 +119,8 @@ func (a *App) runReviewer(review ReviewConfig, reqID int, subjectID, prompt, tok
 	}
 	if outcome != ReviewerInterrupted && outcome != ReviewerTimeout {
 		// Background children may outlive a reviewer that exited; they must
-		// not keep running with the token.
+		// not keep running with the token. Safe after Wait: the group id can't
+		// be reused while any member lives, and with none left this is ESRCH.
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 	stored, ferr := a.DB.FinishReviewerRun(reqID, outcome, exitCode)

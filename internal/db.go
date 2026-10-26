@@ -130,7 +130,7 @@ func createSchema(conn *sql.DB) error {
 }
 
 // resolution tells a verdict apart from a superseded or failed-closed request;
-// pre-existing rows keep ” and an empty reviewer_outcome (no recorded run).
+// pre-existing rows keep an empty resolution and reviewer_outcome (no recorded run).
 func migrateV10(conn *sql.DB) error {
 	tx, err := conn.Begin()
 	if err != nil {

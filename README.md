@@ -71,7 +71,9 @@ task back to `IN_PROGRESS` from `CHECKS_FAILED`, `CHECKS_PASSED`,
   in the command's environment only. The token is never printed. The reviewer
   records its verdict with `harness review approve|reject`.
 - The reviewer runs in its own process group under `review.timeout` (Go
-  duration, default `30m`). On timeout, Ctrl-C or SIGTERM, harness kills the
+  duration, default `30m`), with stdin at `/dev/null`: it gets no terminal, so
+  it must read the prompt from `{{prompt_file}}` and can't be interactive. On
+  timeout, Ctrl-C, SIGTERM or SIGHUP (terminal closed), harness kills the
   whole group. Each run is recorded on its request (pid, start, heartbeat,
   exit code, outcome: `verdict`, `no_verdict`, `failed`, `timeout`,
   `interrupted`). `harness work status` and `harness review history` show it; a

@@ -76,10 +76,8 @@ func (a *App) cmdEpicReviewHistory(epicID string) error {
 	return nil
 }
 
-// formatReviewerRun is one line: outcome (or orphaned), pid, start, duration
-// or heartbeat age, and exit code once finished.
-func formatReviewerRun(r *ReviewRequest, now time.Time) string {
-	status := r.RunStatus(now)
+func formatReviewerRun(r *ReviewRequest, now time.Time) (line, status string) {
+	status = r.RunStatus(now)
 	s := fmt.Sprintf("%s (request #%d, commit %s, pid %d", status, r.ID, shortSHA(r.CommitSHA), r.ReviewerPID)
 	if !r.ReviewerStarted.IsZero() {
 		s += ", started " + r.ReviewerStarted.Format("2006-01-02 15:04:05")
@@ -93,7 +91,7 @@ func formatReviewerRun(r *ReviewRequest, now time.Time) string {
 	case !r.ReviewerHeartbeat.IsZero():
 		s += ", last heartbeat " + now.Sub(r.ReviewerHeartbeat).Truncate(time.Second).String() + " ago"
 	}
-	return s + ")"
+	return s + ")", status
 }
 
 func printReviewerRuns(runs []ReviewRequest) {
@@ -103,7 +101,8 @@ func printReviewerRuns(runs []ReviewRequest) {
 	now := time.Now()
 	fmt.Println("Reviewer runs:")
 	for i := range runs {
-		fmt.Printf("  %s\n", formatReviewerRun(&runs[i], now))
+		line, _ := formatReviewerRun(&runs[i], now)
+		fmt.Printf("  %s\n", line)
 	}
 }
 

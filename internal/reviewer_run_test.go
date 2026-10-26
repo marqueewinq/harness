@@ -2,11 +2,13 @@ package internal
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -67,9 +69,14 @@ func TestReviewerTimeoutKillsProcessGroup(t *testing.T) {
 		t.Errorf("reviewer pid not recorded: %+v", run)
 	}
 
-	data, rerr := os.ReadFile(pidFile)
-	if rerr != nil {
-		t.Fatal("grandchild never started:", rerr)
+	assertPIDFileDead(t, pidFile)
+}
+
+func assertPIDFileDead(t *testing.T, pidFile string) {
+	t.Helper()
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal("grandchild never started:", err)
 	}
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
 	deadline := time.Now().Add(5 * time.Second)
@@ -78,7 +85,7 @@ func TestReviewerTimeoutKillsProcessGroup(t *testing.T) {
 	}
 	if pidAlive(pid) {
 		syscall.Kill(pid, syscall.SIGKILL)
-		t.Errorf("grandchild %d survived the reviewer timeout", pid)
+		t.Errorf("grandchild %d survived; reviewer process group not killed", pid)
 	}
 }
 
@@ -131,13 +138,18 @@ func TestEpicReviewerNoVerdictReturnsError(t *testing.T) {
 	}
 }
 
-func TestReviewerInterruptedBySignal(t *testing.T) {
-	t.Parallel()
+// startRequestSubprocess prepares a CHECKS_PASSED task whose review.cmd is
+// reviewCmd (%s = harness binary) and starts `harness review request` as a
+// real process with the given stdin.
+func startRequestSubprocess(t *testing.T, reviewCmd, extraReview string, stdin io.Reader) (*App, *Task, *exec.Cmd, *syncBuffer) {
+	t.Helper()
 	bin := buildHarnessBinary(t)
-	marker := filepath.Join(t.TempDir(), "started")
-	app, dir := setupAppWithReviewCmd(t, fmt.Sprintf("touch %s; sleep 30", marker))
-	defer app.Close()
-	if err := app.CmdNew("interrupted", "", "", ""); err != nil {
+	if strings.Contains(reviewCmd, "%s") {
+		reviewCmd = fmt.Sprintf(reviewCmd, bin)
+	}
+	app, dir := setupAppWithReviewConfig(t, reviewCmd, extraReview)
+	t.Cleanup(func() { app.Close() })
+	if err := app.CmdNew("subprocess", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -145,46 +157,108 @@ func TestReviewerInterruptedBySignal(t *testing.T) {
 	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal(err)
 	}
-
 	cmd := exec.Command(bin, "review", "request", task.ID)
 	cmd.Dir = dir
-	out := &strings.Builder{}
+	cmd.Stdin = stdin
+	out := &syncBuffer{}
 	cmd.Stdout, cmd.Stderr = out, out
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		if _, err := os.Stat(marker); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			cmd.Process.Kill()
-			t.Fatalf("reviewer never started; output:\n%s", out)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	cmd.Process.Signal(syscall.SIGINT)
+	t.Cleanup(func() { cmd.Process.Kill() })
+	return app, task, cmd, out
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func waitExit(t *testing.T, cmd *exec.Cmd, out *syncBuffer, within time.Duration) error {
+	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
 	case err := <-done:
-		if err == nil {
-			t.Errorf("review request exited 0 after interrupt; output:\n%s", out)
-		}
-	case <-time.After(15 * time.Second):
+		return err
+	case <-time.After(within):
 		cmd.Process.Kill()
-		t.Fatalf("review request did not exit after SIGINT; output:\n%s", out)
+		t.Fatalf("review request still running after %s; output:\n%s", within, out)
+		return nil
 	}
-	if !strings.Contains(out.String(), "outcome: interrupted") {
-		t.Errorf("output lacks interrupted outcome:\n%s", out)
+}
+
+func TestReviewerKilledOnSignal(t *testing.T) {
+	t.Parallel()
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP} {
+		t.Run(sig.String(), func(t *testing.T) {
+			t.Parallel()
+			tmp := t.TempDir()
+			marker := filepath.Join(tmp, "started")
+			pidFile := filepath.Join(tmp, "grandchild.pid")
+			reviewCmd := fmt.Sprintf(`sh -c "echo \$\$ > %s; sleep 30" & touch %s; sleep 30`, pidFile, marker)
+			app, task, cmd, out := startRequestSubprocess(t, reviewCmd, "", nil)
+
+			deadline := time.Now().Add(20 * time.Second)
+			for {
+				_, errM := os.Stat(marker)
+				_, errP := os.Stat(pidFile)
+				if errM == nil && errP == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("reviewer never started; output:\n%s", out)
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			cmd.Process.Signal(sig)
+			if err := waitExit(t, cmd, out, 15*time.Second); err == nil {
+				t.Errorf("review request exited 0 after %s; output:\n%s", sig, out)
+			}
+			if !strings.Contains(out.String(), "outcome: interrupted") {
+				t.Errorf("output lacks interrupted outcome:\n%s", out)
+			}
+			if run := latestRun(t, app, task.ID); run.ReviewerOutcome != ReviewerInterrupted {
+				t.Errorf("outcome = %q, want interrupted", run.ReviewerOutcome)
+			}
+			if open, _ := app.DB.GetOpenReviewRequest(task.ID, ""); open != nil {
+				t.Errorf("request still open after %s: %+v", sig, open)
+			}
+			assertPIDFileDead(t, pidFile)
+		})
 	}
-	run := latestRun(t, app, task.ID)
-	if run.ReviewerOutcome != ReviewerInterrupted {
-		t.Errorf("outcome = %q, want interrupted", run.ReviewerOutcome)
+}
+
+// The reviewer must not inherit harness's stdin: from a terminal it would be
+// stopped by SIGTTIN (own process group); from a pipe it could block forever.
+func TestReviewerDoesNotInheritStdin(t *testing.T) {
+	t.Parallel()
+	// The write end stays open, so a reviewer reading this stdin never gets EOF.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if open, _ := app.DB.GetOpenReviewRequest(task.ID, ""); open != nil {
-		t.Errorf("request still open after interrupt: %+v", open)
+	defer pr.Close()
+	defer pw.Close()
+	app, task, cmd, out := startRequestSubprocess(t, `cat > /dev/null; %s review approve {{task_id}}`, "  timeout: 60s\n", pr)
+	if err := waitExit(t, cmd, out, 30*time.Second); err != nil {
+		t.Fatalf("review request: %v; output:\n%s", err, out)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateApproved {
+		t.Errorf("state = %s, want APPROVED; output:\n%s", task.State, out)
 	}
 }
 

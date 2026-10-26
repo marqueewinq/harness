@@ -234,12 +234,6 @@ func (db *DB) GetLatestReviewRequest(taskID, epicID string) (*ReviewRequest, err
 	)))
 }
 
-func (db *DB) GetReviewRequest(reqID int) (*ReviewRequest, error) {
-	return scanReviewRequest(db.conn.QueryRow(
-		`SELECT `+reviewRequestColumns+` FROM review_requests WHERE id = ?`, reqID,
-	))
-}
-
 // ListReviewerRuns returns the subject's requests that launched a reviewer, oldest first.
 func (db *DB) ListReviewerRuns(taskID, epicID string) ([]ReviewRequest, error) {
 	col, id := reviewSubject(taskID, epicID)

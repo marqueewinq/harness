@@ -101,8 +101,8 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		fmt.Println("\nReview: not requested")
 	}
 	if req, err := a.DB.GetLatestReviewRequest(task.ID, ""); err == nil && req != nil && req.ReviewerOutcome != "" {
-		status := req.RunStatus(time.Now())
-		fmt.Printf("Reviewer run: %s\n", formatReviewerRun(req, time.Now()))
+		line, status := formatReviewerRun(req, time.Now())
+		fmt.Printf("Reviewer run: %s\n", line)
 		switch status {
 		case ReviewerOrphaned:
 			fmt.Println("  The harness review request that launched it is gone (killed or crashed).")

@@ -28,7 +28,8 @@ If the task is already IN_PROGRESS, continue in its worktree.
    configured reviewer (`review.cmd`), which records the verdict. With
    `review.type: human`, a person records it from an interactive terminal.
 6. You cannot approve or reject your own task: verdicts need the one-time
-   token harness gives only to the reviewer it launches. The reviewer is
+   token harness gives only to the reviewer it launches. The reviewer gets
+   no terminal (stdin is /dev/null; the prompt is in `{{prompt_file}}`) and is
    killed after `review.timeout` (default 30m). If it exits without a verdict
    (failed, timeout, interrupted, no verdict), `harness review request` fails,
    the request is closed, and the task stays REVIEW_REQUESTED: run

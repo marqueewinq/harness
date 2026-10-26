@@ -39,7 +39,10 @@ review:
   # human: approve/reject from an interactive terminal.
   # agent: review request launches cmd with a one-time token in its env;
   #        only that process can record the verdict.
+  # cmd gets no terminal: its stdin is /dev/null, so read the prompt from
+  # {{prompt_file}}. It is killed after timeout (default 30m).
   type: human
+  # timeout: 30m
   # cmd: 'claude -p --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |
     Review this diff for correctness, test coverage, and project conventions.
