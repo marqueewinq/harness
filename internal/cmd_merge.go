@@ -1,7 +1,11 @@
 package internal
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -14,6 +18,42 @@ func (a *App) failMerge(id string, cause error) error {
 	}
 	fmt.Printf("\nTask %s is now MERGE_FAILED.\n", id)
 	return cause
+}
+
+// waitForQueueHead returns once id is first in the queue, reclaiming dead or
+// expired leases ahead of it. Ctrl-C while waiting gives up the slot.
+func (a *App) waitForQueueHead(id string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	deadline := time.Now().Add(time.Duration(a.Config.Merge.QueueTimeout) * time.Second)
+	lastShown := ""
+	for {
+		if err := a.reclaimStaleHead(); err != nil {
+			return fmt.Errorf("reclaiming stale queue entry: %w", err)
+		}
+		first, err := a.DB.PeekQueue()
+		if err != nil {
+			return fmt.Errorf("peek queue: %w", err)
+		}
+		if first == id {
+			return nil
+		}
+		if first == "" {
+			return fmt.Errorf("%s was removed from the merge queue", id)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("merge queue timeout after %ds (waiting for %s)", a.Config.Merge.QueueTimeout, first)
+		}
+		if first != lastShown {
+			fmt.Printf("Waiting for %s...\n", first)
+			lastShown = first
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("interrupted while waiting in merge queue")
+		case <-time.After(queuePollEvery):
+		}
+	}
 }
 
 func (a *App) CmdWorkMerge(taskID string) error {
@@ -49,34 +89,24 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		}
 	}
 
-	pos, err := a.DB.EnqueueTask(id)
-	if err != nil {
-		return fmt.Errorf("enqueue: %w", err)
-	}
 	if err := a.DB.UpdateTaskState(id, StateQueued); err != nil {
 		return err
 	}
+	pos, err := a.DB.EnqueueTask(id, os.Getpid())
+	if err != nil {
+		return a.failMerge(id, fmt.Errorf("enqueue: %w", err))
+	}
+	stopHeartbeat := a.startHeartbeat(id)
+	defer stopHeartbeat()
 	fmt.Printf("Queued for merge (position #%d).\n", pos)
 
-	deadline := time.Now().Add(time.Duration(a.Config.Merge.QueueTimeout) * time.Second)
-	for {
-		if time.Now().After(deadline) {
-			return a.failMerge(id, fmt.Errorf("merge queue timeout after %ds", a.Config.Merge.QueueTimeout))
-		}
-		first, err := a.DB.PeekQueue()
-		if err != nil {
-			return fmt.Errorf("peek queue: %w", err)
-		}
-		if first == id {
-			break
-		}
-		fmt.Printf("Waiting for %s...\n", first)
-		time.Sleep(2 * time.Second)
+	if err := a.waitForQueueHead(id); err != nil {
+		return a.failMerge(id, err)
 	}
 
 	fmt.Printf("\nNow processing merge for %s...\n", id)
 	if err := a.DB.UpdateTaskState(id, StateMerging); err != nil {
-		return err
+		return a.failMerge(id, err)
 	}
 
 	strategy, err := NewMergeStrategy(a.Config.Merge.Strategy)

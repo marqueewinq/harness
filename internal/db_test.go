@@ -236,11 +236,11 @@ func TestMergeQueue(t *testing.T) {
 	db.CreateTask("task A", "", "branch-a", ".worktrees/a", "main", "", "")
 	db.CreateTask("task B", "", "branch-b", ".worktrees/b", "main", "", "")
 
-	pos1, err := db.EnqueueTask("task-001")
+	pos1, err := db.EnqueueTask("task-001", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pos2, err := db.EnqueueTask("task-002")
+	pos2, err := db.EnqueueTask("task-002", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,9 +397,9 @@ func TestPeekQueueEmpty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	_, err := db.PeekQueue()
-	if err == nil {
-		t.Error("expected error for empty queue")
+	first, err := db.PeekQueue()
+	if err != nil || first != "" {
+		t.Errorf("PeekQueue on empty queue = %q, %v; want \"\", nil", first, err)
 	}
 }
 
@@ -412,9 +412,9 @@ func TestGetQueuePositionMultiple(t *testing.T) {
 	db.CreateTask("task B", "", "branch-b", ".worktrees/b", "main", "", "")
 	db.CreateTask("task C", "", "branch-c", ".worktrees/c", "main", "", "")
 
-	db.EnqueueTask("task-001")
-	db.EnqueueTask("task-002")
-	db.EnqueueTask("task-003")
+	db.EnqueueTask("task-001", 1)
+	db.EnqueueTask("task-002", 1)
+	db.EnqueueTask("task-003", 1)
 
 	pos1, err := db.GetQueuePosition("task-001")
 	if err != nil {

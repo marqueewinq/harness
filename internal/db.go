@@ -114,8 +114,34 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v8: %w", err)
 		}
 	}
+	if version < 9 {
+		if err := migrateV9(conn); err != nil {
+			return fmt.Errorf("migration v9: %w", err)
+		}
+	}
 
 	return nil
+}
+
+// Pre-existing queue rows get pid 0 and heartbeat 0, so they read as stale
+// and are reclaimed instead of blocking the queue forever.
+func migrateV9(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		`ALTER TABLE merge_queue ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE merge_queue ADD COLUMN heartbeat_unix INTEGER NOT NULL DEFAULT 0`,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (9)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func setVersion(conn *sql.DB, v int) error {

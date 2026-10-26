@@ -43,7 +43,7 @@ var validTransitions = map[TaskState][]TaskState{
 	StateReviewRequested: {StateApproved, StateRequestChanges, StateChecksRunning, StateClosed},
 	StateApproved:        {StateQueued, StateClosed, StateInProgress},
 	StateRequestChanges:  {StateChecksRunning, StateClosed},
-	StateQueued:          {StateMerging, StateClosed},
+	StateQueued:          {StateMerging, StateMergeFailed, StateClosed},
 	StateMerging:         {StateMerged, StateMergeFailed},
 	StateMergeFailed:     {StateChecksRunning, StateClosed},
 	StateClosed:          {},

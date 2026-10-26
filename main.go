@@ -24,6 +24,7 @@ func main() {
 	rootCmd.AddCommand(epicCmd())
 	// dep is a subcommand of task (harness task dep)
 	rootCmd.AddCommand(setupCmd())
+	rootCmd.AddCommand(queueCmd())
 
 	// Top-level aliases (hidden)
 	rootCmd.AddCommand(aliasCheckCmd())
