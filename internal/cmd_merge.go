@@ -213,10 +213,12 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		return a.failMerge(id, fmt.Errorf("merge failed: %w", err))
 	}
 
-	a.DB.DequeueOwned(id, os.Getpid())
+	// MERGED before releasing the lease: a leaseless MERGING task would look
+	// abandoned to a concurrent recovery.
 	if err := a.DB.UpdateTaskState(id, StateMerged); err != nil {
 		return err
 	}
+	a.DB.DequeueOwned(id, os.Getpid())
 	fmt.Println("Merge successful.")
 
 	fmt.Printf("\nCleaned up:\n")
