@@ -58,6 +58,30 @@ func (db *DB) GetLatestCheckRuns(taskID string) ([]CheckRun, error) {
 	return runs, nil
 }
 
+// PassedChecksAt returns the checks that exited 0 in the latest run group
+// recorded against commitSHA.
+func (db *DB) PassedChecksAt(taskID, commitSHA string) (map[string]bool, error) {
+	rows, err := db.conn.Query(
+		`SELECT check_name FROM check_runs
+		 WHERE task_id = ? AND commit_sha = ? AND exit_code = 0
+		   AND run_group = (SELECT MAX(run_group) FROM check_runs WHERE task_id = ? AND commit_sha = ?)`,
+		taskID, commitSHA, taskID, commitSHA,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	passed := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		passed[name] = true
+	}
+	return passed, rows.Err()
+}
+
 func (db *DB) NextRunGroup(taskID string) (int, error) {
 	var maxGroup int
 	err := db.conn.QueryRow(

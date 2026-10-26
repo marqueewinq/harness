@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -65,6 +66,31 @@ func (a *App) waitForQueueHead(id string) error {
 	}
 }
 
+// requireChecksAt enforces merge.require.checks against the latest check run
+// on exactly the approved commit, so an approval cannot carry checks that ran
+// on different code.
+func (a *App) requireChecksAt(id, sha string) error {
+	required := a.Config.Merge.Require.Checks
+	if len(required) == 0 {
+		return nil
+	}
+	passed, err := a.DB.PassedChecksAt(id, sha)
+	if err != nil {
+		return err
+	}
+	var missing []string
+	for _, name := range required {
+		if !passed[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("required checks not passed on approved commit %s: %s (run: harness work check %s, then request review again)",
+			shortSHA(sha), strings.Join(missing, ", "), id)
+	}
+	return nil
+}
+
 func (a *App) CmdWorkMerge(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
@@ -82,20 +108,24 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	if err != nil {
 		return err
 	}
-	if latestApproval != nil && latestApproval.CommitSHA != "" {
-		currentHead, err := a.Git.RevParse(task.Branch)
-		if err != nil {
-			return fmt.Errorf("resolving %s: %w", task.Branch, err)
+	if latestApproval == nil || latestApproval.CommitSHA == "" {
+		return fmt.Errorf("task %s has no approval pinned to a commit; run: harness work check %s, then harness review request %s", id, id, id)
+	}
+	currentHead, err := a.Git.RevParse(task.Branch)
+	if err != nil {
+		return fmt.Errorf("resolving %s: %w", task.Branch, err)
+	}
+	if currentHead != latestApproval.CommitSHA {
+		if err := a.DB.UpdateTaskState(id, StateInProgress); err != nil {
+			return err
 		}
-		if currentHead != latestApproval.CommitSHA {
-			if err := a.DB.UpdateTaskState(id, StateInProgress); err != nil {
-				return err
-			}
-			fmt.Printf("Task %s is now IN_PROGRESS.\n", id)
-			fmt.Println("Next: run harness check")
-			return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
-				shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
-		}
+		fmt.Printf("Task %s is now IN_PROGRESS.\n", id)
+		fmt.Println("Next: run harness work check")
+		return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
+			shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
+	}
+	if err := a.requireChecksAt(id, latestApproval.CommitSHA); err != nil {
+		return err
 	}
 
 	if err := a.DB.UpdateTaskState(id, StateQueued); err != nil {

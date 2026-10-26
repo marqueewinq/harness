@@ -99,6 +99,11 @@ func ParseConfig(data []byte) (*Config, error) {
 			return nil, fmt.Errorf("checks.%s.timeout: invalid duration %q", name, check.Timeout)
 		}
 	}
+	for _, name := range cfg.Merge.Require.Checks {
+		if _, ok := cfg.Checks[name]; !ok {
+			return nil, fmt.Errorf("merge.require.checks: %q is not a configured check", name)
+		}
+	}
 
 	return cfg, nil
 }
