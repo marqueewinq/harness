@@ -44,6 +44,38 @@ func TestBuildTaskDetail(t *testing.T) {
 	}
 }
 
+func TestLiveLogTailToleratesCoarseFileClock(t *testing.T) {
+	t.Parallel()
+	app := newRepo(t, humanConfig)
+	task := seedTask(t, app, "running", "", internal.StateChecksRunning)
+	dir := internal.CheckLogDir(app.RepoRoot, task.ID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "test.log")
+	if err := os.WriteFile(path, []byte("hello\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	since := time.Now()
+
+	// Stamped a few ms before the recorded start, as a coarse kernel clock does.
+	early := since.Add(-20 * time.Millisecond)
+	if err := os.Chtimes(path, early, early); err != nil {
+		t.Fatal(err)
+	}
+	if name, tail := liveLogTail(app, task.ID, since); name != "test.log" || len(tail) != 1 {
+		t.Errorf("log written at run start was dropped: %q %v", name, tail)
+	}
+
+	stale := since.Add(-time.Hour)
+	if err := os.Chtimes(path, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	if name, _ := liveLogTail(app, task.ID, since); name != "" {
+		t.Errorf("log from an earlier run was shown: %q", name)
+	}
+}
+
 func TestBuildTaskDetailLiveLogAndQueue(t *testing.T) {
 	t.Parallel()
 	app := newRepo(t, humanConfig)

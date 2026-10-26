@@ -373,6 +373,15 @@ func checkResult(exitCode int) string {
 // runningChecks lists the checks whose live log was written since the run
 // began. A check that already finished within the run cannot be told apart
 // from one still running until the run is recorded, so it also shows here.
+// fsClockSlack: file timestamps come from the kernel's coarse clock, which can
+// lag time.Now() by a tick, so a log created right after a run started may
+// carry a timestamp slightly before the recorded start.
+const fsClockSlack = time.Second
+
+func writtenSince(t, since time.Time) bool {
+	return !t.Before(since.Add(-fsClockSlack))
+}
+
 func (b *builder) runningChecks(taskID string, since time.Time) []CheckStatus {
 	names := make([]string, 0, len(b.app.Config.Checks))
 	for name := range b.app.Config.Checks {
@@ -384,11 +393,11 @@ func (b *builder) runningChecks(taskID string, since time.Time) []CheckStatus {
 	for _, name := range names {
 		path := filepath.Join(dir, name+".log")
 		fi, err := os.Stat(path)
-		if err != nil || fi.ModTime().Before(since) {
+		if err != nil || !writtenSince(fi.ModTime(), since) {
 			continue
 		}
 		c := CheckStatus{Name: name, Result: CheckRunning}
-		if born, ok := birthTime(path); ok && !born.Before(since) {
+		if born, ok := birthTime(path); ok && writtenSince(born, since) {
 			c.Elapsed, c.ElapsedKnown = b.now.Sub(born), true
 		}
 		out = append(out, c)

@@ -202,7 +202,7 @@ func liveLogTail(app *internal.App, taskID string, since time.Time) (string, []s
 	var newest time.Time
 	for check := range app.Config.Checks {
 		fi, err := os.Stat(filepath.Join(dir, check+".log"))
-		if err != nil || fi.ModTime().Before(since) || fi.ModTime().Before(newest) {
+		if err != nil || !writtenSince(fi.ModTime(), since) || fi.ModTime().Before(newest) {
 			continue
 		}
 		name, newest = check+".log", fi.ModTime()
