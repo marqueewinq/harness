@@ -99,6 +99,11 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v6: %w", err)
 		}
 	}
+	if version < 7 {
+		if err := migrateV7(conn); err != nil {
+			return fmt.Errorf("migration v7: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -309,4 +314,21 @@ func migrateV6(conn *sql.DB) error {
 		return err
 	}
 	return setVersion(conn, 6)
+}
+
+func migrateV7(conn *sql.DB) error {
+	_, err := conn.Exec(`
+	CREATE TABLE IF NOT EXISTS review_requests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id TEXT DEFAULT NULL,
+		epic_id TEXT DEFAULT NULL,
+		commit_sha TEXT NOT NULL,
+		resolved_at TIMESTAMP DEFAULT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	`)
+	if err != nil {
+		return err
+	}
+	return setVersion(conn, 7)
 }

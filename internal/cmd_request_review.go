@@ -58,6 +58,22 @@ func (a *App) CmdReviewRequest(taskID string) error {
 	if task.State != StateChecksPassed {
 		return fmt.Errorf("cannot request review in state %s (need CHECKS_PASSED)", task.State)
 	}
+
+	head, err := a.Git.RevParse(task.Branch)
+	if err != nil {
+		return fmt.Errorf("resolving %s: %w", task.Branch, err)
+	}
+	runs, err := a.DB.GetLatestCheckRuns(id)
+	if err != nil {
+		return err
+	}
+	if len(runs) > 0 && runs[0].CommitSHA != "" && runs[0].CommitSHA != head {
+		return fmt.Errorf("%s moved since checks ran (%s -> %s); run: harness work check",
+			task.Branch, shortSHA(runs[0].CommitSHA), shortSHA(head))
+	}
+	if err := a.DB.OpenReviewRequest(id, "", head); err != nil {
+		return err
+	}
 	if err := a.DB.UpdateTaskState(id, StateReviewRequested); err != nil {
 		return err
 	}

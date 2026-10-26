@@ -2,6 +2,7 @@ package internal
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -66,6 +67,85 @@ func (db *DB) GetLatestApproval(taskID string) (*Review, error) {
 		return nil, err
 	}
 	return r, nil
+}
+
+type ReviewRequest struct {
+	ID        int
+	TaskID    string
+	EpicID    string
+	CommitSHA string
+	Resolved  bool
+	CreatedAt time.Time
+}
+
+// OpenReviewRequest supersedes any open request for the same task or epic.
+// Exactly one of taskID, epicID must be non-empty.
+func (db *DB) OpenReviewRequest(taskID, epicID, commitSHA string) error {
+	col, id := reviewSubject(taskID, epicID)
+	return db.WithTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`UPDATE review_requests SET resolved_at = CURRENT_TIMESTAMP WHERE `+col+` = ? AND resolved_at IS NULL`, id,
+		); err != nil {
+			return err
+		}
+		_, err := tx.Exec(
+			`INSERT INTO review_requests (`+col+`, commit_sha) VALUES (?, ?)`, id, commitSHA,
+		)
+		return err
+	})
+}
+
+// GetOpenReviewRequest returns nil if no unresolved request exists.
+func (db *DB) GetOpenReviewRequest(taskID, epicID string) (*ReviewRequest, error) {
+	col, id := reviewSubject(taskID, epicID)
+	r := &ReviewRequest{}
+	err := db.conn.QueryRow(
+		`SELECT id, COALESCE(task_id, ''), COALESCE(epic_id, ''), commit_sha, created_at
+		 FROM review_requests WHERE `+col+` = ? AND resolved_at IS NULL
+		 ORDER BY id DESC LIMIT 1`, id,
+	).Scan(&r.ID, &r.TaskID, &r.EpicID, &r.CommitSHA, &r.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// ResolveReviewRequest records the verdict and closes the request atomically,
+// so one request yields at most one verdict.
+func (db *DB) ResolveReviewRequest(req *ReviewRequest, decision, comment string) error {
+	return db.WithTx(func(tx *sql.Tx) error {
+		res, err := tx.Exec(
+			`UPDATE review_requests SET resolved_at = CURRENT_TIMESTAMP WHERE id = ? AND resolved_at IS NULL`, req.ID,
+		)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			return fmt.Errorf("review request #%d is already resolved", req.ID)
+		}
+		var taskVal, epicVal interface{}
+		if req.TaskID != "" {
+			taskVal = req.TaskID
+		}
+		if req.EpicID != "" {
+			epicVal = req.EpicID
+		}
+		_, err = tx.Exec(
+			`INSERT INTO reviews (task_id, epic_id, decision, comment, commit_sha) VALUES (?, ?, ?, ?, ?)`,
+			taskVal, epicVal, decision, comment, req.CommitSHA,
+		)
+		return err
+	})
+}
+
+func reviewSubject(taskID, epicID string) (string, string) {
+	if epicID != "" {
+		return "epic_id", epicID
+	}
+	return "task_id", taskID
 }
 
 // --- Epic review methods ---

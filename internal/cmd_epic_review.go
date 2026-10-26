@@ -14,6 +14,14 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}
 
+	head, err := a.Git.RevParse(e.Branch)
+	if err != nil {
+		return fmt.Errorf("resolving %s: %w", e.Branch, err)
+	}
+	if err := a.DB.OpenReviewRequest("", epicID, head); err != nil {
+		return err
+	}
+
 	diff, _ := a.Git.Diff(a.Config.MainBranch, e.Branch)
 	reviews, _ := a.DB.GetEpicReviews(epicID)
 	prevComments := FormatPreviousComments(reviews)
@@ -51,14 +59,14 @@ func (a *App) cmdEpicReviewApprove(epicID, comment string) error {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}
 
-	sha, err := a.Git.RevParse(e.Branch)
+	req, err := a.openReviewRequestFor("", epicID, e.Branch, true)
 	if err != nil {
-		sha = ""
-	}
-	if err := a.DB.RecordEpicReview(epicID, "approve", comment, sha); err != nil {
 		return err
 	}
-	fmt.Printf("Review recorded: APPROVE for epic %s\n", epicID)
+	if err := a.DB.ResolveReviewRequest(req, "approve", comment); err != nil {
+		return err
+	}
+	fmt.Printf("Review recorded: APPROVE for epic %s (%s)\n", epicID, shortSHA(req.CommitSHA))
 	fmt.Println("Next: run harness epic merge " + epicID)
 	return nil
 }
@@ -67,7 +75,11 @@ func (a *App) cmdEpicReviewReject(epicID, comment string) error {
 	if comment == "" {
 		return fmt.Errorf("--comment is required for reject")
 	}
-	if err := a.DB.RecordEpicReview(epicID, "request_changes", comment, ""); err != nil {
+	req, err := a.openReviewRequestFor("", epicID, "", false)
+	if err != nil {
+		return err
+	}
+	if err := a.DB.ResolveReviewRequest(req, "request_changes", comment); err != nil {
 		return err
 	}
 	fmt.Printf("Review recorded: REQUEST_CHANGES for epic %s\n", epicID)
