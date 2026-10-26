@@ -21,7 +21,8 @@ Requires Go (version in `go.mod`) and `git`.
 
 ```sh
 harness init               # writes .harness.yaml, creates .harness/, updates .gitignore
-harness setup opencode     # writes opencode.json permissions and installs agent skills
+harness setup opencode     # merges permission rules into opencode.json and installs agent skills
+harness setup claude       # or: merges deny rules into .claude/settings.json
 git add .harness.yaml && git commit -m "add harness"   # review config is read from main
 
 harness new "add login page"      # task-001: branch + worktree under .worktrees/
@@ -34,6 +35,10 @@ harness work merge task-001       # needs APPROVED; waits in the merge queue
 Other useful commands:
 
 - `harness work status [task]`, `harness work diff [task|epic]`, `harness work close [task] [--cleanup]`
+- `harness work sync [task] [--continue|--abort]` rebases the task onto its
+  base branch inside the worktree, so you can recover from conflicts. On a
+  conflict, resolve the files, `git add` them, and run `--continue`. The task
+  goes back to `IN_PROGRESS`, so you need to run the checks again.
 - `harness review approve|reject [task|epic] --comment "..."`, `harness review history [task|epic]`
 
 If you run a command from inside a task's worktree, you can leave out the task ID.
@@ -48,17 +53,19 @@ PLANNED -> IN_PROGRESS -> CHECKS_RUNNING -> CHECKS_PASSED -> REVIEW_REQUESTED ->
 
 You can re-run `harness work check` from any state between `IN_PROGRESS` and
 `APPROVED`, and from `MERGE_FAILED`. You can't re-run it from
-`PLANNED`/`QUEUED`/`MERGING` or from a terminal state. If the branch moves after
-approval, `work merge` resets the task to `IN_PROGRESS`.
+`PLANNED`/`QUEUED`/`MERGING` or from a terminal state. `work sync` moves a
+task back to `IN_PROGRESS` from `CHECKS_FAILED`, `CHECKS_PASSED`,
+`REQUEST_CHANGES` or `MERGE_FAILED`. If the branch moves after approval,
+`work merge` resets the task to `IN_PROGRESS`.
 `internal/state.go` has the full transition table.
 
 ## Review model
 
 - `harness review request` records the branch head and mints a **one-time
   token** for that request.
-- The `review:` section is always read from `.harness.yaml` **as committed on
-  the main branch**. Edits to the working tree are ignored, so an implementer
-  can't redirect the reviewer.
+- The `review:` section is always read from `.harness.yaml` **as committed at
+  `refs/heads/<main_branch>`**. Edits to the working tree are ignored, so an
+  implementer can't redirect the reviewer.
 - `review.type: agent` needs `review.cmd`. Harness runs that command with the
   composed prompt in `{{prompt_file}}` and the token in `HARNESS_REVIEW_TOKEN`
   in the command's environment only. The token is never printed. The reviewer
@@ -75,9 +82,16 @@ Do not let the reviewer run code from the branch under review (`go test`,
 ## Merge queue
 
 `harness work merge` puts the task in a queue in SQLite and blocks until the
-task reaches the head. Then it prepares the branch (a rebase, for the `merge`
-strategy), optionally runs the checks again (`merge.rerun_checks`), merges into
-the task's base branch, and removes the worktree and branch.
+task reaches the head. Before it queues, it checks that `merge.require.checks`
+passed on exactly the approved commit, and refuses otherwise. At the head, it:
+
+1. prepares the branch (a rebase, for the `merge` strategy),
+2. optionally runs the checks again (`merge.rerun_checks`),
+3. merges into the task's base branch,
+4. removes the worktree and branch.
+
+The merge happens in the target branch's own worktree, or in a temporary one.
+It never switches the branch of your main checkout.
 
 Each queue entry is a **lease** owned by the merging process (its PID). The
 process renews a heartbeat every 10s. Other mergers reclaim an entry whose PID
@@ -151,7 +165,7 @@ merge:
 
 review:
   type: agent                  # agent | human
-  cmd: 'claude -p --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
+  cmd: 'claude -p --setting-sources user --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |
     Review {{task_id}}: {{task_description}}
     {{diff}}
@@ -173,9 +187,23 @@ user can still:
   interactive-terminal check for human approval.
 
 The defence-in-depth layer is the permission rules from `harness setup
-opencode`. They deny `git push/merge/rebase/checkout/stash`, so the agent has to
-go through `harness`. For stronger guarantees, run the agent as a different user
-or in a sandbox that can't write to `.harness/`.
+opencode` and `harness setup claude`. Both merge their rules into an existing
+config. They deny:
+
+- `git push/merge/rebase/checkout/stash/replace/update-ref/tag`
+- `harness review approve/reject` and `harness queue clear`
+- `sqlite3`
+- for opencode, also shell writes into `.harness`
+
+With these rules the agent has to go through `harness`. For stronger
+guarantees, run the agent as a different user, or in a sandbox that can't write
+to `.harness/`.
+
+These denies also apply to a `review.cmd` reviewer that loads the project's
+settings, for example `claude -p` run in this repo. In Claude Code, deny beats
+allow, so that reviewer can't record a verdict. Launch the reviewer with a
+config that skips the project settings, for example
+`claude -p --setting-sources user ...`.
 
 ## Development
 

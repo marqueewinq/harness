@@ -243,6 +243,7 @@ This table matches `internal/state.go`. Any state except `NEW`, `CHECKS_RUNNING`
 | MERGING | MERGED | Merge succeeds | Rebase clean, checks re-run pass (if configured), git merge succeeds |
 | MERGING | MERGE_FAILED | Merge fails | Rebase conflict, check re-run failure, merge conflict, or stale lease reclaimed |
 | MERGE_FAILED | CHECKS_RUNNING | `harness work check` | Agent fixes code, re-runs checks |
+| CHECKS_FAILED / CHECKS_PASSED / REQUEST_CHANGES / MERGE_FAILED | IN_PROGRESS | `harness work sync` | Branch rebased onto its base, so checks must re-run |
 
 `CHECKS_FAILED`, `REQUEST_CHANGES`, and `MERGE_FAILED` are stable states. The agent stays in them until it fixes the code and calls `harness check` to retry. `harness status` shows the failure details in each state.
 
