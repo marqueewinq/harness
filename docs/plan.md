@@ -1,5 +1,9 @@
 # Harness Phase 0 Implementation Plan
 
+> **Note:** This is the original v1 implementation plan. It is kept for
+> history. For current behaviour and command names, `README.md` is
+> authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a working `harness` CLI binary that enforces a task-based development workflow with checks, reviews, and gated merges.

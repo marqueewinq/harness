@@ -1,5 +1,9 @@
 # Harness Planning Layer -- Design Spec
 
+> **Note:** This is the original v1 design. It is kept for history. For current
+> behaviour, `README.md` is authoritative. For example, `harness start` is now
+> `harness task start`, and epics get an `epic/<slug>` branch by default.
+
 ## Overview
 
 Add a planning layer to harness: Projects, Epics, and planned Tasks with

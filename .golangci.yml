@@ -1,0 +1,15 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+  # errcheck stays off: the codebase deliberately drops best-effort errors
+  # (cleanup, display output, rollback paths).
+  settings:
+    staticcheck:
+      # Quick-fix suggestions are style, not defects.
+      checks: ["all", "-QF*", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022"]

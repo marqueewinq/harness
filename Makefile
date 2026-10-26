@@ -1,10 +1,16 @@
-.PHONY: build test lint install
+.PHONY: build test test-race lint fmt-check install
 
-lint:
+fmt-check:
+	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+
+lint: fmt-check
 	go vet ./...
 
 test: lint
 	go test ./...
+
+test-race:
+	go test -race ./...
 
 build: test
 	go build -o harness .

@@ -1,5 +1,30 @@
 # Harness — Local Workflow Enforcement for AI Coding Agents
 
+> **Note:** This is the original v1 design. It is kept for history. For current
+> behaviour, `README.md` is authoritative. The command names below are the v1
+> names. Their current equivalents are:
+>
+> | v1 | Current |
+> |----|---------|
+> | `harness list` | `harness task list --status all` |
+> | `harness status` | `harness work status` |
+> | `harness check` | `harness work check` |
+> | `harness diff` | `harness work diff` |
+> | `harness merge` | `harness work merge` (inspect with `harness queue list`, `harness queue clear`) |
+> | `harness request-review` | `harness review request` |
+> | `harness record-review approve` | `harness review approve` |
+> | `harness record-review request-changes` | `harness review reject --comment ...` |
+> | `harness review-history` | `harness review history` |
+>
+> Other v1 details that changed:
+>
+> - The merge queue no longer takes a `BEGIN EXCLUSIVE` lock. It uses leases
+>   instead: an owner PID plus a heartbeat, and stale leases are reclaimed.
+> - There is no `rebase` strategy. The strategies are `merge` (rebase, then
+>   fast-forward) and `squash`.
+> - Approval needs either the one-time token given to `review.cmd` or a human
+>   at an interactive terminal.
+
 ## Problem
 
 AI coding agents are forgetful. They skip tests, commit to main, forget code reviews, and claim work is done without verification. Soft enforcement (instructions, skills, CLAUDE.md) doesn't reliably prevent this. There is no existing tool that provides deterministic, local workflow enforcement with task tracking.
@@ -58,7 +83,7 @@ merge:
   require:
     checks: [build]         # terminal DAG node — implies full dependency chain
     review: approved
-  strategy: merge            # merge | squash | rebase
+  strategy: merge            # merge (rebase + fast-forward) | squash
   rerun_checks: true         # re-run checks at merge time before merging
 
 # Review configuration
@@ -191,22 +216,33 @@ NEW ──> IN_PROGRESS ──> CHECKS_RUNNING ──> CHECKS_PASSED ──> REV
 
 ### State Transitions
 
+This table matches `internal/state.go`. Any state except `NEW`, `CHECKS_RUNNING`,
+`MERGING`, `MERGED`, `CLOSED` can also go to `CLOSED` (`harness work close` /
+`harness task close`).
+
 | From | To | Trigger | Condition |
 |------|----|---------|-----------|
+| PLANNED | IN_PROGRESS | `harness task start` | Worktree and branch created |
 | NEW | IN_PROGRESS | `harness new` | Worktree and branch created |
-| IN_PROGRESS | CHECKS_RUNNING | `harness check` | — |
-| CHECKS_RUNNING | CHECKS_PASSED | All checks pass | All required checks exit 0 |
-| CHECKS_RUNNING | CHECKS_FAILED | Any check fails | Any required check exits non-0 |
-| CHECKS_FAILED | CHECKS_RUNNING | `harness check` | Agent fixes code, re-runs checks |
-| CHECKS_PASSED | REVIEW_REQUESTED | `harness request-review` | Checks have passed |
-| REVIEW_REQUESTED | APPROVED | `harness record-review approve` | — |
-| REVIEW_REQUESTED | REQUEST_CHANGES | `harness record-review request-changes` | — |
-| REQUEST_CHANGES | CHECKS_RUNNING | `harness check` | Agent fixes code based on review comments, re-runs checks |
-| APPROVED | QUEUED | `harness merge` | Enters the merge queue |
-| QUEUED | MERGING | Queue position reached | This task is first in queue, merge lock acquired |
+| IN_PROGRESS | CHECKS_RUNNING | `harness work check` | — |
+| CHECKS_RUNNING | CHECKS_RUNNING | `harness work check` | Re-run while a previous run was interrupted |
+| CHECKS_RUNNING | CHECKS_PASSED | All checks pass | All checks exit 0 |
+| CHECKS_RUNNING | CHECKS_FAILED | Any check fails | Any check exits non-0, times out, or is interrupted |
+| CHECKS_FAILED | CHECKS_RUNNING | `harness work check` | Agent fixes code, re-runs checks |
+| CHECKS_PASSED | CHECKS_RUNNING | `harness work check` | Re-run after new commits |
+| CHECKS_PASSED | REVIEW_REQUESTED | `harness review request` | Branch head unchanged since checks |
+| REVIEW_REQUESTED | APPROVED | `harness review approve` | Review token or interactive terminal |
+| REVIEW_REQUESTED | REQUEST_CHANGES | `harness review reject` | Review token or interactive terminal |
+| REVIEW_REQUESTED | CHECKS_RUNNING | `harness work check` | New commits during review |
+| REQUEST_CHANGES | CHECKS_RUNNING | `harness work check` | Agent fixes code based on review comments, re-runs checks |
+| APPROVED | QUEUED | `harness work merge` | Branch head equals the approved commit |
+| APPROVED | IN_PROGRESS | `harness work merge` | Branch moved after approval (stale review) |
+| APPROVED | CHECKS_RUNNING | `harness work check` | Re-run after approval |
+| QUEUED | MERGING | Queue head reached | This task is first in the queue |
+| QUEUED | MERGE_FAILED | Queue failure | Enqueue error, queue timeout, interrupt, or stale lease reclaimed |
 | MERGING | MERGED | Merge succeeds | Rebase clean, checks re-run pass (if configured), git merge succeeds |
-| MERGING | MERGE_FAILED | Merge fails | Rebase conflict, check re-run failure, or merge conflict |
-| MERGE_FAILED | CHECKS_RUNNING | `harness check` | Agent fixes code, re-runs checks |
+| MERGING | MERGE_FAILED | Merge fails | Rebase conflict, check re-run failure, merge conflict, or stale lease reclaimed |
+| MERGE_FAILED | CHECKS_RUNNING | `harness work check` | Agent fixes code, re-runs checks |
 
 `CHECKS_FAILED`, `REQUEST_CHANGES`, and `MERGE_FAILED` are stable states. The agent stays in them until it fixes the code and calls `harness check` to retry. `harness status` shows the failure details in each state.
 
