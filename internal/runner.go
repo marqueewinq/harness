@@ -2,9 +2,14 @@ package internal
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -22,6 +27,8 @@ type CheckResult struct {
 type CheckRunner struct {
 	checks map[string]CheckConfig
 	dir    string
+	// LogDir, if set, receives <check>.log with live combined output.
+	LogDir string
 }
 
 func NewCheckRunner(checks map[string]CheckConfig, dir string) *CheckRunner {
@@ -109,26 +116,54 @@ func (cr *CheckRunner) RunAll() ([]CheckResult, error) {
 	return ordered, nil
 }
 
+// TimeoutExitCode mirrors coreutils timeout(1).
+const TimeoutExitCode = 124
+
 func (cr *CheckRunner) runOne(name string) CheckResult {
 	check := cr.checks[name]
+	timeout := check.TimeoutDuration()
 	start := time.Now()
 
-	cmd := exec.Command("sh", "-c", check.Run)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", check.Run)
 	cmd.Dir = cr.dir
+	// Checks spawn grandchildren (make -> go test); kill the whole process
+	// group on timeout, and stop waiting on pipes they may still hold.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 5 * time.Second
 
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	var outW, errW io.Writer = &stdout, &stderr
+	var logNote string
+	if cr.LogDir != "" {
+		if err := os.MkdirAll(cr.LogDir, 0755); err == nil {
+			if f, err := os.Create(filepath.Join(cr.LogDir, name+".log")); err == nil {
+				defer f.Close()
+				outW = io.MultiWriter(&stdout, f)
+				errW = io.MultiWriter(&stderr, f)
+			} else {
+				logNote = fmt.Sprintf("harness: could not create log file: %v\n", err)
+			}
+		}
+	}
+	cmd.Stdout = outW
+	cmd.Stderr = errW
 
 	err := cmd.Run()
 	finish := time.Now()
 
 	exitCode := 0
-	if err != nil {
+	if ctx.Err() == context.DeadlineExceeded {
+		exitCode = TimeoutExitCode
+		fmt.Fprintf(errW, "\nharness: check %q timed out after %s\n", name, timeout)
+	} else if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = 1
+			fmt.Fprintf(errW, "\nharness: %v\n", err)
 		}
 	}
 
@@ -136,7 +171,7 @@ func (cr *CheckRunner) runOne(name string) CheckResult {
 		Name:       name,
 		ExitCode:   exitCode,
 		Stdout:     stdout.String(),
-		Stderr:     stderr.String(),
+		Stderr:     logNote + stderr.String(),
 		StartedAt:  start,
 		FinishedAt: finish,
 		Duration:   finish.Sub(start),

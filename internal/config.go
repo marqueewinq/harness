@@ -3,13 +3,24 @@ package internal
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
+const DefaultCheckTimeout = 30 * time.Minute
+
 type CheckConfig struct {
-	Run   string   `yaml:"run"`
-	Needs []string `yaml:"needs,omitempty"`
+	Run     string   `yaml:"run"`
+	Needs   []string `yaml:"needs,omitempty"`
+	Timeout string   `yaml:"timeout,omitempty"` // Go duration, e.g. "10m"; default 30m
+}
+
+func (c CheckConfig) TimeoutDuration() time.Duration {
+	if d, err := time.ParseDuration(c.Timeout); err == nil && d > 0 {
+		return d
+	}
+	return DefaultCheckTimeout
 }
 
 type MergeRequire struct {
@@ -79,6 +90,14 @@ func ParseConfig(data []byte) (*Config, error) {
 	}
 	if cfg.Merge.QueueTimeout == 0 {
 		cfg.Merge.QueueTimeout = 300
+	}
+	for name, check := range cfg.Checks {
+		if check.Timeout == "" {
+			continue
+		}
+		if d, err := time.ParseDuration(check.Timeout); err != nil || d <= 0 {
+			return nil, fmt.Errorf("checks.%s.timeout: invalid duration %q", name, check.Timeout)
+		}
 	}
 
 	return cfg, nil

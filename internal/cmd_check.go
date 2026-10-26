@@ -1,6 +1,9 @@
 package internal
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 func (a *App) CmdWorkCheck(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
@@ -24,8 +27,9 @@ func (a *App) CmdWorkCheck(taskID string) error {
 	worktreeGit := NewGitClient(task.WorktreePath)
 	commitSHA, _ := worktreeGit.RevParse("HEAD")
 
-	fmt.Println("Running checks...")
 	runner := NewCheckRunner(a.Config.Checks, task.WorktreePath)
+	runner.LogDir = filepath.Join(a.RepoRoot, ".harness", "logs", id)
+	fmt.Printf("Running checks... (live logs: %s)\n", runner.LogDir)
 	results, err := runner.RunAll()
 	if err != nil {
 		a.DB.UpdateTaskState(id, StateChecksFailed)
