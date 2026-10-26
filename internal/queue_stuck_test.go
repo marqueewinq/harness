@@ -67,7 +67,9 @@ func TestStaleRowBehindLiveHeadIsReclaimed(t *testing.T) {
 	insertQueueRow(t, app, "task-998", os.Getppid(), time.Now())
 	insertQueueRow(t, app, "task-999", deadPID(t), time.Now())
 
-	app.CmdWorkMerge(task.ID)
+	if err := app.CmdWorkMerge(task.ID); err == nil || !strings.Contains(err.Error(), "merge queue timeout") {
+		t.Fatalf("err = %v, want queue timeout", err)
+	}
 	entries, _ := app.DB.ListQueue()
 	if len(entries) != 1 || entries[0].TaskID != "task-998" {
 		t.Errorf("queue = %+v, want only the live head", entries)

@@ -129,16 +129,23 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		return err
 	}
 
-	if err := a.DB.UpdateTaskState(id, StateQueued); err != nil {
-		return err
-	}
-	// From here on Ctrl-C/SIGTERM must not kill harness mid-merge: git children
-	// still get the signal and fail, and every exit path releases the lease.
+	// From here on Ctrl-C/SIGTERM must not kill harness mid-merge: the merge
+	// is cancelled at the next step (a terminal Ctrl-C also stops git
+	// children), and every exit path releases the lease.
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
-	pos, err := a.DB.EnqueueTask(id, os.Getpid())
+	// The lease row exists before the task reads QUEUED, so a concurrent
+	// recoverAbandonedMerge always sees a live owner.
+	if _, err := a.DB.EnqueueTask(id, os.Getpid()); err != nil {
+		return fmt.Errorf("enqueue %s: %w", id, err)
+	}
+	if err := a.DB.UpdateTaskState(id, StateQueued); err != nil {
+		a.DB.DequeueOwned(id, os.Getpid())
+		return err
+	}
+	pos, err := a.DB.GetQueuePosition(id)
 	if err != nil {
-		return a.failMerge(id, fmt.Errorf("enqueue: %w", err))
+		return a.failMerge(id, err)
 	}
 	stopHeartbeat := a.startHeartbeat(id)
 	defer stopHeartbeat()

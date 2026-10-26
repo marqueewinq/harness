@@ -109,8 +109,12 @@ func (a *App) recoverAbandonedMerge(id string) error {
 		if !leaseStale(e, now) {
 			return fmt.Errorf("%s is already being merged by process %d", id, e.PID)
 		}
-		if _, err := a.DB.RemoveQueueEntryIfUnchanged(e); err != nil {
+		removed, err := a.DB.RemoveQueueEntryIfUnchanged(e)
+		if err != nil {
 			return err
+		}
+		if !removed {
+			return fmt.Errorf("%s is already being merged (its lease was just renewed)", id)
 		}
 	}
 	a.markAbandonedMerge(id)
