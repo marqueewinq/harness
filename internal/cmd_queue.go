@@ -55,18 +55,29 @@ func (a *App) startHeartbeat(taskID string) (stop func()) {
 	return func() { close(done) }
 }
 
-func (a *App) reclaimStaleHead() error {
-	head, err := a.DB.queueHead()
-	if err != nil || head == nil || !leaseStale(*head, time.Now()) {
+// reclaimStaleEntries removes every dead or expired lease, not only the head,
+// so an abandoned row anywhere in the queue never outlives its owner.
+func (a *App) reclaimStaleEntries() error {
+	entries, err := a.DB.ListQueue()
+	if err != nil {
 		return err
 	}
-	removed, err := a.DB.RemoveQueueEntryIfUnchanged(*head)
-	if err != nil || !removed {
-		return err
+	now := time.Now()
+	for _, e := range entries {
+		if !leaseStale(e, now) {
+			continue
+		}
+		removed, err := a.DB.RemoveQueueEntryIfUnchanged(e)
+		if err != nil {
+			return err
+		}
+		if !removed {
+			continue
+		}
+		fmt.Printf("Reclaimed stale merge queue entry %s (pid %d, last heartbeat %s).\n",
+			e.TaskID, e.PID, e.Heartbeat.Format(time.RFC3339))
+		a.markAbandonedMerge(e.TaskID)
 	}
-	fmt.Printf("Reclaimed stale merge queue entry %s (pid %d, last heartbeat %s).\n",
-		head.TaskID, head.PID, head.Heartbeat.Format(time.RFC3339))
-	a.markAbandonedMerge(head.TaskID)
 	return nil
 }
 
@@ -77,9 +88,33 @@ func (a *App) markAbandonedMerge(taskID string) {
 	}
 	if task.State == StateQueued || task.State == StateMerging {
 		if err := a.DB.UpdateTaskState(taskID, StateMergeFailed); err == nil {
-			fmt.Printf("Task %s is now MERGE_FAILED; check its worktree for an unfinished rebase, then run: harness check %s\n", taskID, taskID)
+			fmt.Printf("Task %s is now MERGE_FAILED. If its worktree has an unfinished rebase, run: harness work sync --abort %s; then: harness work check %s\n", taskID, taskID, taskID)
 		}
 	}
+}
+
+// recoverAbandonedMerge handles a task found QUEUED/MERGING at the start of a
+// merge: a live lease means another process owns it; otherwise the merger
+// died (or predates leases) and the task is released as MERGE_FAILED.
+func (a *App) recoverAbandonedMerge(id string) error {
+	entries, err := a.DB.ListQueue()
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	for _, e := range entries {
+		if e.TaskID != id {
+			continue
+		}
+		if !leaseStale(e, now) {
+			return fmt.Errorf("%s is already being merged by process %d", id, e.PID)
+		}
+		if _, err := a.DB.RemoveQueueEntryIfUnchanged(e); err != nil {
+			return err
+		}
+	}
+	a.markAbandonedMerge(id)
+	return fmt.Errorf("recovered abandoned merge of %s (its merger is gone); re-run checks, then merge again", id)
 }
 
 func (a *App) CmdQueueList() error {
@@ -106,6 +141,10 @@ func (a *App) CmdQueueList() error {
 // CmdQueueClear removes taskID from the queue. A live lease needs force,
 // because its owner is mid-merge.
 func (a *App) CmdQueueClear(taskID string, force bool) error {
+	taskID, err := a.ResolveTaskID(taskID)
+	if err != nil {
+		return err
+	}
 	entries, err := a.DB.ListQueue()
 	if err != nil {
 		return err
@@ -121,6 +160,11 @@ func (a *App) CmdQueueClear(taskID string, force bool) error {
 			return err
 		}
 		fmt.Printf("Removed %s from the merge queue.\n", taskID)
+		a.markAbandonedMerge(taskID)
+		return nil
+	}
+	if task, err := a.DB.GetTask(taskID); err == nil && (task.State == StateQueued || task.State == StateMerging) {
+		fmt.Printf("%s is not in the merge queue but is stuck in %s.\n", taskID, task.State)
 		a.markAbandonedMerge(taskID)
 		return nil
 	}

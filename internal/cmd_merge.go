@@ -27,10 +27,8 @@ func (a *App) failMerge(id string, cause error) error {
 var errQueueEntryLost = errors.New("removed from the merge queue by another process")
 
 // waitForQueueHead returns once id is first in the queue, reclaiming dead or
-// expired leases ahead of it. Ctrl-C while waiting gives up the slot.
-func (a *App) waitForQueueHead(id string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+// expired leases. Cancelling ctx (Ctrl-C) gives up the slot.
+func (a *App) waitForQueueHead(ctx context.Context, id string) error {
 	deadline := time.Now().Add(time.Duration(a.Config.Merge.QueueTimeout) * time.Second)
 	lastShown := ""
 	for {
@@ -41,7 +39,7 @@ func (a *App) waitForQueueHead(id string) error {
 		if !owned {
 			return errQueueEntryLost
 		}
-		if err := a.reclaimStaleHead(); err != nil {
+		if err := a.reclaimStaleEntries(); err != nil {
 			return fmt.Errorf("reclaiming stale queue entry: %w", err)
 		}
 		first, err := a.DB.PeekQueue()
@@ -100,6 +98,9 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	if err != nil {
 		return err
 	}
+	if task.State == StateQueued || task.State == StateMerging {
+		return a.recoverAbandonedMerge(id)
+	}
 	if task.State != StateApproved {
 		return fmt.Errorf("cannot merge in state %s (need APPROVED)", task.State)
 	}
@@ -131,15 +132,24 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	if err := a.DB.UpdateTaskState(id, StateQueued); err != nil {
 		return err
 	}
+	// From here on Ctrl-C/SIGTERM must not kill harness mid-merge: git children
+	// still get the signal and fail, and every exit path releases the lease.
+	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	pos, err := a.DB.EnqueueTask(id, os.Getpid())
 	if err != nil {
 		return a.failMerge(id, fmt.Errorf("enqueue: %w", err))
 	}
 	stopHeartbeat := a.startHeartbeat(id)
 	defer stopHeartbeat()
+	defer func() {
+		if owned, err := a.DB.OwnsQueueEntry(id, os.Getpid()); err == nil && owned {
+			a.failMerge(id, errors.New("merge did not finish"))
+		}
+	}()
 	fmt.Printf("Queued for merge (position #%d).\n", pos)
 
-	if err := a.waitForQueueHead(id); err != nil {
+	if err := a.waitForQueueHead(ctx, id); err != nil {
 		if errors.Is(err, errQueueEntryLost) {
 			return fmt.Errorf("%s: %w", id, err)
 		}
@@ -166,6 +176,10 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		return a.failMerge(id, fmt.Errorf("prepare failed: %w", err))
 	}
 
+	if ctx.Err() != nil {
+		return a.failMerge(id, errors.New("interrupted"))
+	}
+
 	if a.Config.Merge.RerunChecks {
 		fmt.Println("Re-running checks...")
 		runner := NewCheckRunner(a.Config.Checks, task.WorktreePath)
@@ -177,6 +191,10 @@ func (a *App) CmdWorkMerge(taskID string) error {
 			fmt.Println("Fix the failures, then run: harness work check")
 			return a.failMerge(id, fmt.Errorf("checks failed after rebase"))
 		}
+	}
+
+	if ctx.Err() != nil {
+		return a.failMerge(id, errors.New("interrupted"))
 	}
 
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", task.Branch, targetBranch, strategy.Name())
