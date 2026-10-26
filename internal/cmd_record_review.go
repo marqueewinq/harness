@@ -77,19 +77,22 @@ func terminalAuth(via string) verdictAuth {
 // UI (e.g. the dashboard) and returns the CLI's report instead of printing
 // it. It runs the same checks as the CLI verdict commands: open request,
 // REVIEW_REQUESTED state, and for approve the branch head must still be the
-// requested commit.
-func (a *App) RecordTerminalVerdict(subject, decision, comment, via string) (string, error) {
+// requested commit. A non-empty expectSHA is the request commit the human
+// was shown; the verdict is refused if the open request is now for another.
+func (a *App) RecordTerminalVerdict(subject, decision, comment, via, expectSHA string) (string, error) {
 	auth := terminalAuth(via)
 	if isEpicID(subject) {
-		return a.epicVerdictReport(subject, decision, comment, auth)
+		return a.epicVerdictReport(subject, decision, comment, expectSHA, auth)
 	}
-	return a.taskVerdictReport(subject, decision, comment, auth)
+	return a.taskVerdictReport(subject, decision, comment, expectSHA, auth)
 }
 
 // openReviewRequestFor returns the open request for the subject and, when
 // requireHead is set, refuses if branch moved since the request: the verdict
-// must cover exactly the commit the reviewer was shown.
-func (a *App) openReviewRequestFor(taskID, epicID, branch string, requireHead bool) (*ReviewRequest, error) {
+// must cover exactly the commit the reviewer was shown. expectSHA, when set,
+// must match the open request read here, so no separate earlier read can
+// race with a newer request.
+func (a *App) openReviewRequestFor(taskID, epicID, branch, expectSHA string, requireHead bool) (*ReviewRequest, error) {
 	subject := taskID
 	hint := fmt.Sprintf("run: harness work check %s, then harness review request %s", subject, subject)
 	if epicID != "" {
@@ -102,6 +105,10 @@ func (a *App) openReviewRequestFor(taskID, epicID, branch string, requireHead bo
 	}
 	if req == nil {
 		return nil, fmt.Errorf("no open review request for %s (%s)", subject, hint)
+	}
+	if expectSHA != "" && req.CommitSHA != expectSHA {
+		return nil, fmt.Errorf("review request for %s changed since you opened it: was %s, now %s; reopen the diff",
+			subject, shortSHA(expectSHA), shortSHA(req.CommitSHA))
 	}
 	if !requireHead {
 		return req, nil
@@ -119,7 +126,7 @@ func (a *App) openReviewRequestFor(taskID, epicID, branch string, requireHead bo
 
 // Reject is pinned to the requested commit but does not require the branch to
 // still be there: feedback on the code the reviewer saw stays valid.
-func (a *App) recordVerdict(taskID, epicID, branch, decision, comment string, auth verdictAuth) (*ReviewRequest, error) {
+func (a *App) recordVerdict(taskID, epicID, branch, decision, comment, expectSHA string, auth verdictAuth) (*ReviewRequest, error) {
 	subject := taskID
 	if epicID != "" {
 		subject = epicID
@@ -133,7 +140,7 @@ func (a *App) recordVerdict(taskID, epicID, branch, decision, comment string, au
 	default:
 		return nil, fmt.Errorf("unknown review decision %q (want approve or request_changes)", decision)
 	}
-	req, err := a.openReviewRequestFor(taskID, epicID, branch, decision == "approve")
+	req, err := a.openReviewRequestFor(taskID, epicID, branch, expectSHA, decision == "approve")
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +178,7 @@ func (a *App) CmdReviewReject(taskID, comment string) error {
 }
 
 func (a *App) taskVerdict(id, decision, comment string, auth verdictAuth) error {
-	report, err := a.taskVerdictReport(id, decision, comment, auth)
+	report, err := a.taskVerdictReport(id, decision, comment, "", auth)
 	fmt.Print(report)
 	return err
 }
@@ -179,7 +186,7 @@ func (a *App) taskVerdict(id, decision, comment string, auth verdictAuth) error 
 // taskVerdictReport returns what the CLI prints on success instead of
 // printing it, so a full-screen UI can record verdicts without writing to
 // the terminal.
-func (a *App) taskVerdictReport(id, decision, comment string, auth verdictAuth) (string, error) {
+func (a *App) taskVerdictReport(id, decision, comment, expectSHA string, auth verdictAuth) (string, error) {
 	task, err := a.DB.GetTask(id)
 	if err != nil {
 		return "", err
@@ -187,7 +194,7 @@ func (a *App) taskVerdictReport(id, decision, comment string, auth verdictAuth) 
 	if task.State != StateReviewRequested {
 		return "", fmt.Errorf("cannot record review in state %s (need REVIEW_REQUESTED)", task.State)
 	}
-	req, err := a.recordVerdict(id, "", task.Branch, decision, comment, auth)
+	req, err := a.recordVerdict(id, "", task.Branch, decision, comment, expectSHA, auth)
 	if err != nil {
 		return "", err
 	}

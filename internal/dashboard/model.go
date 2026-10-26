@@ -16,8 +16,9 @@ type Loader struct {
 	Detail   func(row Row, now time.Time) (Detail, error)
 	Diff     func(row Row) (DiffView, error)
 	// Verdict records a human verdict the dashboard has confirmed and
-	// returns the CLI's report.
-	Verdict func(subject, decision, comment string) (string, error)
+	// returns the CLI's report. sha is the request commit the human was
+	// shown; the verdict is refused if the open request is for another.
+	Verdict func(subject, decision, comment, sha string) (string, error)
 }
 
 // DashboardVia labels dashboard verdicts: terminal:<user> (dashboard).
@@ -28,8 +29,8 @@ func AppLoader(app *internal.App, all bool) Loader {
 		Snapshot: func(now time.Time) (Snapshot, error) { return BuildSnapshot(app, now, all) },
 		Detail:   func(row Row, now time.Time) (Detail, error) { return BuildDetail(app, row, now) },
 		Diff:     func(row Row) (DiffView, error) { return BuildDiff(app, row) },
-		Verdict: func(subject, decision, comment string) (string, error) {
-			return app.RecordTerminalVerdict(subject, decision, comment, DashboardVia)
+		Verdict: func(subject, decision, comment, sha string) (string, error) {
+			return app.RecordTerminalVerdict(subject, decision, comment, DashboardVia, sha)
 		},
 	}
 }
@@ -202,11 +203,30 @@ func (m *Model) setStatus(text string, isErr bool) {
 	m.fixOffset()
 }
 
-func (m *Model) openDiff(r Row) tea.Cmd {
-	m.ui.DiffOpen, m.ui.DiffKey, m.ui.DiffOffset = true, r.Key(), 0
-	if m.ui.Diff != nil && m.ui.Diff.Key == r.Key() {
+func requestSHA(r Row) string {
+	if r.Review != nil {
+		return r.Review.CommitSHA
+	}
+	return ""
+}
+
+// shownDiff is the loaded diff of row r, if it is open on screen.
+func (m *Model) shownDiff(r Row) *DiffView {
+	d := m.ui.Diff
+	if !m.ui.DiffOpen || d == nil || d.Failed || d.Key != r.Key() {
 		return nil
 	}
+	return d
+}
+
+// openDiff reuses a loaded diff only while it is of the row's current
+// request commit; failed loads are retried.
+func (m *Model) openDiff(r Row) tea.Cmd {
+	m.ui.DiffOpen, m.ui.DiffKey, m.ui.DiffOffset = true, r.Key(), 0
+	if d := m.ui.Diff; d != nil && d.Key == r.Key() && !d.Failed && d.SHA == requestSHA(r) {
+		return nil
+	}
+	m.ui.Diff = nil
 	if m.diffLoading {
 		return nil
 	}
@@ -215,16 +235,18 @@ func (m *Model) openDiff(r Row) tea.Cmd {
 	return func() tea.Msg {
 		d, err := load(r)
 		if err != nil {
-			d = DiffView{Key: r.Key(), Title: r.ID, Header: []string{"error: " + err.Error()}}
+			d = DiffView{Key: r.Key(), Title: r.ID, Header: []string{"error: " + err.Error()}, Failed: true}
 		}
 		return diffMsg{diff: d}
 	}
 }
 
+// openModal pins the verdict to the commit the human saw: the open diff's,
+// else the row's request commit shown in the modal.
 func (m *Model) openModal(decision string, r Row) tea.Cmd {
-	sha := ""
-	if r.Review != nil {
-		sha = r.Review.CommitSHA
+	sha := requestSHA(r)
+	if d := m.shownDiff(r); d != nil {
+		sha = d.SHA
 	}
 	m.input = textinput.New()
 	m.input.Prompt = ""
@@ -273,9 +295,9 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.ui.Modal = nil
 		m.setStatus("recording verdict for "+md.Subject+"…", false)
-		verdict, subject, decision, comment := m.load.Verdict, md.Subject, md.Decision, md.Comment
+		verdict, subject, decision, comment, sha := m.load.Verdict, md.Subject, md.Decision, md.Comment, md.SHA
 		return m, func() tea.Msg {
-			report, err := verdict(subject, decision, comment)
+			report, err := verdict(subject, decision, comment, sha)
 			return verdictMsg{report: report, err: err}
 		}
 	}

@@ -33,7 +33,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	d := Detail{Key: row.Key(), Title: t.ID + " " + t.Title}
+	d := Detail{Key: row.Key(), Title: t.ID + " " + flatten(t.Title)}
 	add := func(format string, args ...interface{}) { d.Lines = append(d.Lines, fmt.Sprintf(format, args...)) }
 
 	trs, err := app.DB.GetTaskTransitions(t.ID)
@@ -53,7 +53,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	add("State: %s · branch %s · base %s", state, orDash(t.Branch), orDash(t.BaseBranch))
 	add("Worktree: %s", orDash(t.WorktreePath))
 	if t.Description != "" {
-		add("Description: %s", t.Description)
+		add("Description: %s", flatten(t.Description))
 	}
 
 	if len(trs) > 0 {
@@ -138,11 +138,11 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	d := Detail{Key: row.Key(), Title: e.ID + " " + e.Title}
+	d := Detail{Key: row.Key(), Title: e.ID + " " + flatten(e.Title)}
 	add := func(format string, args ...interface{}) { d.Lines = append(d.Lines, fmt.Sprintf(format, args...)) }
 	add("Epic: %s · project %s · branch %s", e.Status, e.ProjectID, orDash(e.Branch))
 	if e.Description != "" {
-		add("Description: %s", e.Description)
+		add("Description: %s", flatten(e.Description))
 	}
 	tasks, err := app.DB.ListTasksByEpic(e.ID)
 	if err != nil {
@@ -190,7 +190,7 @@ func verdictLines(add func(string, ...interface{}), reviews []internal.Review) {
 	}
 	add("%s", line)
 	if r.Comment != "" {
-		add("  %s", strings.ReplaceAll(r.Comment, "\n", " "))
+		add("  %s", flatten(r.Comment))
 	}
 }
 

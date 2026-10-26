@@ -46,7 +46,7 @@ func TestBuildDiffTask(t *testing.T) {
 	}
 	header := strings.Join(v.Header, "\n")
 	diff := strings.Join(v.Diff, "\n")
-	if v.Key != "review:"+task.ID || !strings.Contains(v.Title, "main..."+sha[:8]) {
+	if v.Key != "review:"+task.ID || v.SHA != sha || !strings.Contains(v.Title, "main..."+sha[:8]) {
 		t.Errorf("key/title = %q %q", v.Key, v.Title)
 	}
 	if !strings.Contains(header, "Checks on "+sha[:8]+": lint PASS, test PASS") {
@@ -83,8 +83,8 @@ func TestBuildDiffEpicAndMissingRequest(t *testing.T) {
 func TestAppLoaderVerdictUsesTerminalPath(t *testing.T) {
 	t.Parallel()
 	app := newRepo(t, humanConfig)
-	task, _ := reviewedTask(t, app)
-	report, err := AppLoader(app, false).Verdict(task.ID, "approve", "lgtm")
+	task, sha := reviewedTask(t, app)
+	report, err := AppLoader(app, false).Verdict(task.ID, "approve", "lgtm", sha)
 	got, _ := app.DB.GetTask(task.ID)
 	if err != nil {
 		if !strings.Contains(err.Error(), "refusing a dashboard verdict") || got.State != internal.StateReviewRequested {

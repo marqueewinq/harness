@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type verdictCall struct{ subject, decision, comment string }
+type verdictCall struct{ subject, decision, comment, sha string }
 
 type fakeLoader struct {
 	snap       Snapshot
@@ -21,6 +21,7 @@ type fakeLoader struct {
 	diffLines  int
 	verdicts   []verdictCall
 	verdictErr error
+	diffErr    error
 }
 
 func (f *fakeLoader) loader() Loader {
@@ -35,14 +36,17 @@ func (f *fakeLoader) loader() Loader {
 		},
 		Diff: func(r Row) (DiffView, error) {
 			f.diffs = append(f.diffs, r.Key())
-			v := DiffView{Key: r.Key(), Title: r.ID + " diff", Header: []string{"Review of " + r.ID}}
+			if f.diffErr != nil {
+				return DiffView{}, f.diffErr
+			}
+			v := DiffView{Key: r.Key(), SHA: r.Review.CommitSHA, Title: r.ID + " diff", Header: []string{"Review of " + r.ID + " at " + r.Review.CommitSHA}}
 			for i := 0; i < f.diffLines; i++ {
 				v.Diff = append(v.Diff, fmt.Sprintf("+line %d", i))
 			}
 			return v, nil
 		},
-		Verdict: func(subject, decision, comment string) (string, error) {
-			f.verdicts = append(f.verdicts, verdictCall{subject, decision, comment})
+		Verdict: func(subject, decision, comment, sha string) (string, error) {
+			f.verdicts = append(f.verdicts, verdictCall{subject, decision, comment, sha})
 			if f.verdictErr != nil {
 				return "", f.verdictErr
 			}

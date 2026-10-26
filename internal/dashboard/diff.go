@@ -46,11 +46,11 @@ func BuildDiff(app *internal.App, row Row) (DiffView, error) {
 		return DiffView{}, fmt.Errorf("%s has no open review request", row.ID)
 	}
 
-	v := DiffView{Key: row.Key(), Title: fmt.Sprintf("%s %s · %s...%s", row.ID, title, base, shortSHA(req.CommitSHA))}
+	v := DiffView{Key: row.Key(), SHA: req.CommitSHA, Title: fmt.Sprintf("%s %s · %s...%s", row.ID, flatten(title), base, shortSHA(req.CommitSHA))}
 	add := func(format string, args ...interface{}) { v.Header = append(v.Header, fmt.Sprintf(format, args...)) }
 	add("Review of %s at %s (requested %s), base %s", row.ID, shortSHA(req.CommitSHA), req.CreatedAt.Local().Format("2006-01-02 15:04"), base)
 	if description != "" {
-		add("Description: %s", description)
+		add("Description: %s", flatten(description))
 	}
 	if taskID != "" {
 		if err := checkLines(app, taskID, req.CommitSHA, add); err != nil {
@@ -66,7 +66,7 @@ func BuildDiff(app *internal.App, row Row) (DiffView, error) {
 			add("Previous comments:")
 			commented = true
 		}
-		add("  [%s at %s] %s", r.Decision, orDash(shortSHA(r.CommitSHA)), strings.ReplaceAll(r.Comment, "\n", " "))
+		add("  [%s at %s] %s", r.Decision, orDash(shortSHA(r.CommitSHA)), flatten(r.Comment))
 	}
 	add("")
 
@@ -80,6 +80,12 @@ func BuildDiff(app *internal.App, row Row) (DiffView, error) {
 		}
 	}
 	return v, nil
+}
+
+// flatten makes user text safe for one pane line: no escapes or line breaks.
+func flatten(s string) string {
+	s = ansi.Strip(s)
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func checkLines(app *internal.App, taskID, sha string, add func(string, ...interface{})) error {

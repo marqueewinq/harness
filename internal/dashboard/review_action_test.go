@@ -41,7 +41,7 @@ func TestApproveFlow(t *testing.T) {
 	m = typeText(t, m, "task-026")
 	calls := f.snapCalls
 	m = press(t, m, "enter")
-	want := []verdictCall{{"task-026", "approve", "looks good"}}
+	want := []verdictCall{{"task-026", "approve", "looks good", "8174267712345"}}
 	if len(f.verdicts) != 1 || f.verdicts[0] != want[0] {
 		t.Fatalf("verdicts = %+v, want %+v", f.verdicts, want)
 	}
@@ -68,7 +68,7 @@ func TestRejectRequiresComment(t *testing.T) {
 	m = press(t, m, "enter")
 	m = typeText(t, m, "epic-002")
 	m = press(t, m, "enter")
-	if len(f.verdicts) != 1 || f.verdicts[0] != (verdictCall{"epic-002", "request_changes", "split the migration"}) {
+	if len(f.verdicts) != 1 || f.verdicts[0] != (verdictCall{"epic-002", "request_changes", "split the migration", "5d1c09aa999"}) {
 		t.Errorf("verdicts = %+v", f.verdicts)
 	}
 }
@@ -168,6 +168,73 @@ func TestDiffPane(t *testing.T) {
 	m = press(t, m, "a")
 	if m.ui.Modal == nil || m.ui.Modal.Subject != "task-026" {
 		t.Errorf("approve from diff pane: %+v", m.ui.Modal)
+	}
+}
+
+// The snapshot moves on to a new request while the human reads the old
+// diff: the verdict must carry the SHA of the diff on screen, and reopening
+// the diff must load the new commit.
+func TestVerdictPinnedToShownDiff(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot(), diffLines: 3}
+	m := started(t, f)
+	m = press(t, m, "d")
+	f.snap = sampleSnapshot()
+	f.snap.Reviews[0].CommitSHA = "feedface0001"
+	m = press(t, m, "f")
+	if got := m.rows[0].Review.CommitSHA; got != "feedface0001" {
+		t.Fatalf("snapshot not refreshed: %s", got)
+	}
+	m = press(t, m, "a")
+	if m.ui.Modal == nil || m.ui.Modal.SHA != "8174267712345" {
+		t.Fatalf("modal SHA = %+v, want the shown diff's 8174267712345", m.ui.Modal)
+	}
+	m = press(t, m, "enter")
+	m = typeText(t, m, "task-026")
+	m = press(t, m, "enter")
+	if len(f.verdicts) != 1 || f.verdicts[0].sha != "8174267712345" {
+		t.Errorf("verdicts = %+v, want SHA of the shown diff", f.verdicts)
+	}
+	m = press(t, m, "a")
+	if m.ui.Modal == nil || m.ui.Modal.SHA != "feedface0001" {
+		t.Errorf("modal without open diff: %+v, want the row's request SHA", m.ui.Modal)
+	}
+}
+
+func TestDiffCacheKeyedByRequestSHA(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot(), diffLines: 3}
+	m := started(t, f)
+	m = press(t, m, "d", "esc", "f", "d")
+	if len(f.diffs) != 1 {
+		t.Errorf("unchanged request reloaded: %v", f.diffs)
+	}
+	m = press(t, m, "esc")
+	f.snap = sampleSnapshot()
+	f.snap.Reviews[0].CommitSHA = "feedface0001"
+	m = press(t, m, "f", "d")
+	if len(f.diffs) != 2 || m.ui.Diff == nil || m.ui.Diff.SHA != "feedface0001" {
+		t.Errorf("stale diff reused: loads=%v diff=%+v", f.diffs, m.ui.Diff)
+	}
+	if !strings.Contains(m.View(), "at feedface0001") {
+		t.Errorf("view shows the old diff:\n%s", m.View())
+	}
+}
+
+func TestFailedDiffNotCached(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot(), diffErr: errors.New("git diff: bad object")}
+	m := started(t, f)
+	m = press(t, m, "d")
+	if !strings.Contains(m.View(), "bad object") {
+		t.Errorf("diff error not shown:\n%s", m.View())
+	}
+	m = press(t, m, "a")
+	if m.ui.Modal == nil || m.ui.Modal.SHA != "8174267712345" {
+		t.Errorf("modal after failed diff: %+v", m.ui.Modal)
+	}
+	m = press(t, m, "esc", "esc")
+	f.diffErr = nil
+	m = press(t, m, "d")
+	if len(f.diffs) != 2 || m.ui.Diff == nil || m.ui.Diff.Failed {
+		t.Errorf("failed diff not retried: loads=%v diff=%+v", f.diffs, m.ui.Diff)
 	}
 }
 

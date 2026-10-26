@@ -18,8 +18,13 @@ func TestCheckRunsIndexedByTaskAndGroup(t *testing.T) {
 	defer rows.Close()
 	for rows.Next() {
 		var c string
-		rows.Scan(&c)
+		if err := rows.Scan(&c); err != nil {
+			t.Fatal(err)
+		}
 		cols = append(cols, c)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(cols, []string{"task_id", "run_group"}) {
 		t.Errorf("index columns = %v", cols)

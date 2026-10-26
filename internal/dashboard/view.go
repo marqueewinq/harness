@@ -71,10 +71,14 @@ type Detail struct {
 // DiffView is the review pane: context lines, then the diff of exactly the
 // requested commit.
 type DiffView struct {
-	Key    string
+	Key string
+	// SHA is the request commit the diff shows; a verdict from this pane is
+	// pinned to it.
+	SHA    string
 	Title  string
 	Header []string
 	Diff   []string
+	Failed bool
 }
 
 type ModalStep int

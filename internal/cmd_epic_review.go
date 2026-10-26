@@ -44,12 +44,12 @@ func (a *App) cmdEpicReviewReject(epicID, comment string) error {
 }
 
 func (a *App) epicVerdict(epicID, decision, comment string, auth verdictAuth) error {
-	report, err := a.epicVerdictReport(epicID, decision, comment, auth)
+	report, err := a.epicVerdictReport(epicID, decision, comment, "", auth)
 	fmt.Print(report)
 	return err
 }
 
-func (a *App) epicVerdictReport(epicID, decision, comment string, auth verdictAuth) (string, error) {
+func (a *App) epicVerdictReport(epicID, decision, comment, expectSHA string, auth verdictAuth) (string, error) {
 	e, err := a.DB.GetEpic(epicID)
 	if err != nil {
 		return "", err
@@ -57,7 +57,7 @@ func (a *App) epicVerdictReport(epicID, decision, comment string, auth verdictAu
 	if decision == "approve" && e.Branch == "" {
 		return "", fmt.Errorf("epic %s has no branch", epicID)
 	}
-	req, err := a.recordVerdict("", epicID, e.Branch, decision, comment, auth)
+	req, err := a.recordVerdict("", epicID, e.Branch, decision, comment, expectSHA, auth)
 	if err != nil {
 		return "", err
 	}
