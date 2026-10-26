@@ -66,6 +66,10 @@ func TestLiveLogTailToleratesCoarseFileClock(t *testing.T) {
 	if name, tail := liveLogTail(app, task.ID, since); name != "test.log" || len(tail) != 1 {
 		t.Errorf("log written at run start was dropped: %q %v", name, tail)
 	}
+	b := &builder{app: app, now: since.Add(time.Second)}
+	if checks := b.runningChecks(task.ID, since); len(checks) != 1 || checks[0].Name != "test" {
+		t.Errorf("runningChecks dropped a log written at run start: %+v", checks)
+	}
 
 	stale := since.Add(-time.Hour)
 	if err := os.Chtimes(path, stale, stale); err != nil {
@@ -73,6 +77,9 @@ func TestLiveLogTailToleratesCoarseFileClock(t *testing.T) {
 	}
 	if name, _ := liveLogTail(app, task.ID, since); name != "" {
 		t.Errorf("log from an earlier run was shown: %q", name)
+	}
+	if checks := b.runningChecks(task.ID, since); len(checks) != 0 {
+		t.Errorf("runningChecks showed a log from an earlier run: %+v", checks)
 	}
 }
 
