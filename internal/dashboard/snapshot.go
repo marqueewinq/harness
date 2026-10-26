@@ -117,7 +117,7 @@ func attention(r TaskRow) string {
 
 func reviewerAttention(reviewer string) string {
 	switch reviewer {
-	case internal.ReviewerFailed, internal.ReviewerTimeout, internal.ReviewerOrphaned, internal.ReviewerNoVerdict:
+	case internal.ReviewerFailed, internal.ReviewerTimeout, internal.ReviewerOrphaned, internal.ReviewerNoVerdict, internal.ReviewerInterrupted:
 		return "reviewer " + reviewer
 	case ReviewerHuman:
 		return "awaiting human review"

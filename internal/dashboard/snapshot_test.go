@@ -135,6 +135,7 @@ func TestSnapshotAttention(t *testing.T) {
 		{"reviewer failed", agentConfig, reviewerOutcome(internal.ReviewerFailed), "reviewer failed"},
 		{"reviewer timeout", agentConfig, reviewerOutcome(internal.ReviewerTimeout), "reviewer timeout"},
 		{"reviewer no verdict", agentConfig, reviewerOutcome(internal.ReviewerNoVerdict), "reviewer no_verdict"},
+		{"reviewer interrupted", agentConfig, reviewerOutcome(internal.ReviewerInterrupted), "reviewer interrupted"},
 		{"reviewer orphaned", agentConfig, func(t *testing.T, app *internal.App) string {
 			task := seedTask(t, app, "orphan", "", internal.StateReviewRequested)
 			_, reqID, err := app.DB.OpenReviewRequestID(task.ID, "", "abc12345ff")
