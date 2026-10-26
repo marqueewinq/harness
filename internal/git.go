@@ -18,6 +18,14 @@ func NewGitClient(dir string) *GitClient {
 }
 
 func (g *GitClient) run(args ...string) (string, error) {
+	out, err := g.runRaw(args...)
+	if err != nil {
+		return out, err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func (g *GitClient) runRaw(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = g.dir
 	var stdout, stderr bytes.Buffer
@@ -26,13 +34,13 @@ func (g *GitClient) run(args ...string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		return stdout.String(), fmt.Errorf("git %s: %w\n%s%s", strings.Join(args, " "), err, stdout.String(), stderr.String())
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.String(), nil
 }
 
-// ShowCommitted reads <ref>:<path> with replace refs disabled, so a local
-// `git replace` cannot substitute the committed content.
+// ShowCommitted returns the exact bytes of <ref>:<path> with replace refs
+// disabled, so a local `git replace` cannot substitute the committed content.
 func (g *GitClient) ShowCommitted(ref, path string) (string, error) {
-	return g.run("--no-replace-objects", "show", ref+":"+path)
+	return g.runRaw("--no-replace-objects", "show", ref+":"+path)
 }
 
 // MainWorktreeRoot returns the main worktree's root when dir is inside a

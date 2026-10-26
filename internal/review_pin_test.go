@@ -104,6 +104,20 @@ func TestTrustedReviewConfigIgnoresGitReplace(t *testing.T) {
 	}
 }
 
+func TestTrustedReviewConfigMatchesUnchangedWorkingTree(t *testing.T) {
+	t.Parallel()
+	app, _ := setupApp(t)
+	defer app.Close()
+
+	review, err := app.trustedReviewConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review != app.Config.Review {
+		t.Errorf("trustedReviewConfig = %+v, want %+v", review, app.Config.Review)
+	}
+}
+
 func TestApproveIsSingleUsePerRequest(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
