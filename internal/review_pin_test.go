@@ -104,6 +104,43 @@ func TestTrustedReviewConfigIgnoresGitReplace(t *testing.T) {
 	}
 }
 
+func TestTrustedReviewConfigIgnoresTagNamedLikeMain(t *testing.T) {
+	t.Parallel()
+	app, dir := setupApp(t)
+	defer app.Close()
+
+	committed, err := app.Git.run("show", "main:.harness.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := strings.Replace(committed, "type: human", "type: agent\n  cmd: forged-reviewer", 1)
+	if forged == committed {
+		t.Fatalf("committed config has no 'type: human' to forge:\n%s", committed)
+	}
+	if err := app.Git.CreateBranch("forge", "main"); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(dir, ".worktrees", "forge")
+	if err := app.Git.CreateWorktree("forge", wt); err != nil {
+		t.Fatal(err)
+	}
+	gitCommitFile(t, wt, ".harness.yaml", forged, "forge config")
+	if _, err := app.Git.run("tag", "main", "forge"); err != nil {
+		t.Fatal(err)
+	}
+	if plain, _ := app.Git.run("show", "main:.harness.yaml"); !strings.Contains(plain, "forged-reviewer") {
+		t.Fatalf("tag does not shadow branch; plain show = %q", plain)
+	}
+
+	review, err := app.trustedReviewConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.Cmd == "forged-reviewer" || review.Type != "human" {
+		t.Errorf("trustedReviewConfig followed tag main: %+v", review)
+	}
+}
+
 func TestTrustedReviewConfigMatchesUnchangedWorkingTree(t *testing.T) {
 	t.Parallel()
 	app, _ := setupApp(t)

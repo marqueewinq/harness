@@ -32,6 +32,12 @@ func FindRepoRoot() (string, error) {
 // worktree: the worktree has its own checked-out .harness.yaml, but the DB
 // lives only under the main root.
 func resolveRepoRoot(dir string) (string, error) {
+	// git reports symlink-resolved paths for linked worktrees, so dir must be
+	// resolved too or RepoRoot would differ by entry point.
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", err
+	}
 	if root := mainHarnessRoot(dir); root != "" {
 		return root, nil
 	}
@@ -58,12 +64,17 @@ func mainHarnessRoot(dir string) string {
 	return root
 }
 
-// LoadApp creates an App from the repo root. Given a task worktree, it loads
-// the main root's config and DB and keeps the worktree as WorkDir.
-func LoadApp(dir string) (*App, error) {
-	repoRoot := dir
-	if root := mainHarnessRoot(dir); root != "" {
-		repoRoot = root
+// LoadApp creates an App for a command run in workDir, which may be the repo
+// root, a subdirectory, or a task worktree. Config and DB always come from
+// the main root.
+func LoadApp(workDir string) (*App, error) {
+	workDir, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		return nil, err
+	}
+	repoRoot, err := resolveRepoRoot(workDir)
+	if err != nil {
+		return nil, err
 	}
 	cfg, err := LoadConfig(filepath.Join(repoRoot, ".harness.yaml"))
 	if err != nil {
@@ -90,7 +101,7 @@ func LoadApp(dir string) (*App, error) {
 		}
 	}
 
-	return &App{Config: cfg, DB: db, Git: git, RepoRoot: repoRoot, WorkDir: dir}, nil
+	return &App{Config: cfg, DB: db, Git: git, RepoRoot: repoRoot, WorkDir: workDir}, nil
 }
 
 func (a *App) Close() {

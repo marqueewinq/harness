@@ -20,8 +20,10 @@ func composeReviewPrompt(review ReviewConfig, subjectID, title, diff, prevCommen
 // trustedReviewConfig reads the review section from the config committed on
 // the main branch, not the working tree: review.cmd receives the approval
 // token, so an implementer must not be able to redirect it with a local edit.
+// The ref is fully qualified because a local tag named like the main branch
+// would otherwise win ref resolution.
 func (a *App) trustedReviewConfig() (ReviewConfig, error) {
-	data, err := a.Git.ShowCommitted(a.Config.MainBranch, ".harness.yaml")
+	data, err := a.Git.ShowCommitted("refs/heads/"+a.Config.MainBranch, ".harness.yaml")
 	if err != nil {
 		return ReviewConfig{}, fmt.Errorf("reading committed .harness.yaml from %s: %w", a.Config.MainBranch, err)
 	}

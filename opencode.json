@@ -9,12 +9,26 @@
       "git branch*": "allow",
       "git add*": "allow",
       "git commit*": "allow",
+      "harness *": "allow",
       "git push*": "deny",
       "git merge*": "deny",
       "git rebase*": "deny",
       "git checkout*": "deny",
       "git stash*": "deny",
-      "harness *": "allow"
+      "git replace*": "deny",
+      "git update-ref*": "deny",
+      "git tag*": "deny",
+      "harness review approve*": "deny",
+      "harness review reject*": "deny",
+      "harness queue clear*": "deny",
+      "sqlite3*": "deny",
+      "*harness.db*": "deny",
+      "rm *.harness*": "deny",
+      "mv *.harness*": "deny",
+      "cp *.harness*": "deny",
+      "*> .harness*": "deny",
+      "*>.harness*": "deny",
+      "*tee *.harness*": "deny"
     }
   }
 }

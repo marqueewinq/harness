@@ -48,18 +48,15 @@ func withApp(fn func(*internal.App, *cobra.Command, []string) error) func(*cobra
 	return func(cmd *cobra.Command, args []string) error {
 		// Args parsed fine; a failure from here on is not a usage problem.
 		cmd.SilenceUsage = true
-		root, err := internal.FindRepoRoot()
+		cwd, err := os.Getwd()
 		if err != nil {
 			return err
 		}
-		app, err := internal.LoadApp(root)
+		app, err := internal.LoadApp(cwd)
 		if err != nil {
 			return err
 		}
 		defer app.Close()
-		if cwd, err := os.Getwd(); err == nil {
-			app.WorkDir = cwd
-		}
 		return fn(app, cmd, args)
 	}
 }
@@ -580,11 +577,20 @@ func setupCmd() *cobra.Command {
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "opencode",
-		Short: "Generate opencode.json with harness permissions",
+		Short: "Write harness permissions into opencode.json, keeping other keys",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			dir, _ := os.Getwd()
 			return internal.RunSetupOpencode(dir)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "claude",
+		Short: "Merge harness deny rules into .claude/settings.json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
+			dir, _ := os.Getwd()
+			return internal.RunSetupClaude(dir)
 		},
 	})
 	return cmd

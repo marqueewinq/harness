@@ -32,6 +32,53 @@ func TestLoadAppFromTaskWorktree(t *testing.T) {
 	}
 }
 
+func TestLoadAppResolvesSymlinks(t *testing.T) {
+	t.Parallel()
+	app, dir, task := setupTask(t)
+	defer app.Close()
+
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(dir, task.WorktreePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wd := range []string{link, filepath.Join(link, rel)} {
+		got, err := LoadApp(wd)
+		if err != nil {
+			t.Fatalf("LoadApp(%s): %v", wd, err)
+		}
+		got.Close()
+		if got.RepoRoot != dir {
+			t.Errorf("LoadApp(%s).RepoRoot = %q, want %q", wd, got.RepoRoot, dir)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(task.WorktreePath, ".harness")); !os.IsNotExist(err) {
+		t.Errorf("LoadApp via symlink created .harness inside the worktree (stat err = %v)", err)
+	}
+}
+
+func TestLoadAppFromSubdirKeepsWorkDir(t *testing.T) {
+	t.Parallel()
+	app, dir := setupApp(t)
+	defer app.Close()
+
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadApp(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Close()
+	if got.RepoRoot != dir || got.WorkDir != sub {
+		t.Errorf("RepoRoot, WorkDir = %q, %q; want %q, %q", got.RepoRoot, got.WorkDir, dir, sub)
+	}
+}
+
 // Not parallel: t.Chdir changes the process cwd.
 func TestFindRepoRootFromTaskWorktree(t *testing.T) {
 	app, dir, task := setupTask(t)

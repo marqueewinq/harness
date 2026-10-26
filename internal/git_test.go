@@ -528,12 +528,16 @@ func TestMainWorktreeRoot(t *testing.T) {
 	}
 
 	wtPath := filepath.Join(dir, ".worktrees", "feature-x")
-	git.CreateBranch("feature-x", "main")
+	if err := git.CreateBranch("feature-x", "main"); err != nil {
+		t.Fatal(err)
+	}
 	if err := git.CreateWorktree("feature-x", wtPath); err != nil {
 		t.Fatal(err)
 	}
 	sub := filepath.Join(wtPath, "sub")
-	os.MkdirAll(sub, 0755)
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
 	root, err = NewGitClient(sub).MainWorktreeRoot()
 	if err != nil {
 		t.Fatal(err)
