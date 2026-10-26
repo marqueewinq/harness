@@ -27,7 +27,7 @@ func (a *App) CmdTaskNew(title, description, epicID string) error {
 	if description != "" {
 		fmt.Printf("Description: %s\n", description)
 	}
-	fmt.Printf("\nNext: harness start %s\n", task.ID)
+	fmt.Printf("\nNext: harness task start %s\n", task.ID)
 	return nil
 }
 
@@ -99,26 +99,25 @@ func (a *App) CmdTaskView(taskID string) error {
 		}
 	}
 
-	// Show dependencies
-	deps, _ := a.DB.GetDependencies(task.ID)
-	if len(deps) > 0 {
-		fmt.Println("\nDependencies:")
-		for _, d := range deps {
-			if d.FromTaskID == task.ID {
-				dt, _ := a.DB.GetTask(d.ToTaskID)
-				if dt != nil {
-					fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Title)
-				}
-			} else {
-				dt, _ := a.DB.GetTask(d.FromTaskID)
-				if dt != nil {
-					fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Title)
-				}
+	a.printDependencies(task.ID)
+	return nil
+}
+
+func (a *App) printDependencies(taskID string) {
+	deps, _ := a.DB.GetDependencies(taskID)
+	if len(deps) == 0 {
+		return
+	}
+	fmt.Println("\nDependencies:")
+	for _, d := range deps {
+		if d.FromTaskID == taskID {
+			if dt, _ := a.DB.GetTask(d.ToTaskID); dt != nil {
+				fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Title)
 			}
+		} else if dt, _ := a.DB.GetTask(d.FromTaskID); dt != nil {
+			fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Title)
 		}
 	}
-
-	return nil
 }
 
 func (a *App) CmdTaskList(filterEpic, filterProject, filterStatus string, readyOnly bool) error {

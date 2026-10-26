@@ -88,7 +88,7 @@ func (a *App) deliverReview(review ReviewConfig, subjectID, title, diff, prevCom
 		fmt.Printf("Diff:\n%s\n\n", diff)
 	}
 	fmt.Println("For human review, in an interactive terminal run:")
-	fmt.Printf("  harness diff %s\n", subjectID)
+	fmt.Printf("  harness work diff %s\n", subjectID)
 	fmt.Printf("  harness review approve %s\n", subjectID)
 	fmt.Printf("  harness review reject --comment \"...\" %s\n", subjectID)
 	return nil
@@ -158,7 +158,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 			fmt.Printf("\nReviewer requested changes: %s\n", last.Comment)
 		}
 		fmt.Printf("Task %s is REQUEST_CHANGES.\n", id)
-		fmt.Println("Next: address comments, then run: harness check")
+		fmt.Println("Next: address comments, then run: harness work check")
 	default:
 		fmt.Printf("\nWarning: reviewer exited without recording a verdict.\n")
 		fmt.Printf("Task %s is still %s.\n", id, task.State)

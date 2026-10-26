@@ -59,7 +59,7 @@ func (a *App) CmdWorkCheck(taskID string) error {
 			return err
 		}
 		fmt.Println("\nChecks failed.")
-		fmt.Println("Next: fix the failures, then run: harness check")
+		fmt.Println("Next: fix the failures, then run: harness work check")
 		return fmt.Errorf("checks failed for %s", id)
 	}
 	if err := a.DB.UpdateTaskState(id, StateChecksPassed); err != nil {

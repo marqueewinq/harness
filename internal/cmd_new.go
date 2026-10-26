@@ -26,6 +26,6 @@ func (a *App) CmdNew(title, baseBranch, epicID, description string) error {
 	fmt.Printf("Base: %s\n", baseInfo)
 	fmt.Printf("Worktree: %s\n", worktreePath)
 	fmt.Printf("\nNext: implement the changes in %s/\n", worktreePath)
-	fmt.Println("      then run: harness check")
+	fmt.Println("      then run: harness work check")
 	return nil
 }

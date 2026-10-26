@@ -37,6 +37,13 @@ func main() {
 	}
 }
 
+func optionalArg(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	return ""
+}
+
 func withApp(fn func(*internal.App, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		// Args parsed fine; a failure from here on is not a usage problem.
@@ -61,6 +68,7 @@ func initCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Initialize harness in the current directory",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
 			dir, _ := os.Getwd()
 			return internal.RunInit(dir)
 		},
@@ -107,11 +115,7 @@ func workStatusCmd() *cobra.Command {
 		Short: "Show task status",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
-			if len(args) > 0 {
-				taskID = args[0]
-			}
-			return app.CmdWorkStatus(taskID)
+			return app.CmdWorkStatus(optionalArg(args))
 		}),
 	}
 }
@@ -122,11 +126,7 @@ func workCheckCmd() *cobra.Command {
 		Short: "Run checks",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
-			if len(args) > 0 {
-				taskID = args[0]
-			}
-			return app.CmdWorkCheck(taskID)
+			return app.CmdWorkCheck(optionalArg(args))
 		}),
 	}
 }
@@ -137,11 +137,7 @@ func workDiffCmd() *cobra.Command {
 		Short: "Show diff",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			id := ""
-			if len(args) > 0 {
-				id = args[0]
-			}
-			return app.CmdDiffDispatch(id)
+			return app.CmdDiffDispatch(optionalArg(args))
 		}),
 	}
 }
@@ -152,11 +148,7 @@ func workMergeCmd() *cobra.Command {
 		Short: "Merge task branch into main",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
-			if len(args) > 0 {
-				taskID = args[0]
-			}
-			return app.CmdWorkMerge(taskID)
+			return app.CmdWorkMerge(optionalArg(args))
 		}),
 	}
 }
@@ -170,11 +162,7 @@ func workCloseCmd() *cobra.Command {
 	var cleanup bool
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Remove worktree and delete branch")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		taskID := ""
-		if len(args) > 0 {
-			taskID = args[0]
-		}
-		return app.CmdWorkClose(taskID, cleanup)
+		return app.CmdWorkClose(optionalArg(args), cleanup)
 	})
 	return cmd
 }
@@ -189,11 +177,7 @@ func workCommitCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message")
 	cmd.MarkFlagRequired("message")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		taskID := ""
-		if len(args) > 0 {
-			taskID = args[0]
-		}
-		return app.CmdWorkCommit(taskID, message, nil)
+		return app.CmdWorkCommit(optionalArg(args), message, nil)
 	})
 	return cmd
 }
@@ -218,11 +202,7 @@ func reviewRequestCmd() *cobra.Command {
 		Short: "Request review for task or epic",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			id := ""
-			if len(args) > 0 {
-				id = args[0]
-			}
-			return app.CmdReviewRequestDispatch(id)
+			return app.CmdReviewRequestDispatch(optionalArg(args))
 		}),
 	}
 }
@@ -236,11 +216,7 @@ func reviewApproveCmd() *cobra.Command {
 	var comment string
 	cmd.Flags().StringVar(&comment, "comment", "", "Review comment")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		id := ""
-		if len(args) > 0 {
-			id = args[0]
-		}
-		return app.CmdReviewApproveDispatch(id, comment)
+		return app.CmdReviewApproveDispatch(optionalArg(args), comment)
 	})
 	return cmd
 }
@@ -254,11 +230,7 @@ func reviewRejectCmd() *cobra.Command {
 	var comment string
 	cmd.Flags().StringVar(&comment, "comment", "", "Review comment")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		id := ""
-		if len(args) > 0 {
-			id = args[0]
-		}
-		return app.CmdReviewRejectDispatch(id, comment)
+		return app.CmdReviewRejectDispatch(optionalArg(args), comment)
 	})
 	return cmd
 }
@@ -269,11 +241,7 @@ func reviewHistoryCmd() *cobra.Command {
 		Short: "Show review history",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			id := ""
-			if len(args) > 0 {
-				id = args[0]
-			}
-			return app.CmdReviewHistoryDispatch(id)
+			return app.CmdReviewHistoryDispatch(optionalArg(args))
 		}),
 	}
 }
@@ -514,7 +482,7 @@ func epicEditCmd() *cobra.Command {
 	var editTitle, editDesc, editProject string
 	cmd.Flags().StringVar(&editTitle, "title", "", "New title")
 	cmd.Flags().StringVar(&editDesc, "description", "", "New description")
-	cmd.Flags().StringVar(&editProject, "project", "", "New project ID (empty to unset)")
+	cmd.Flags().StringVar(&editProject, "project", "", "New project ID")
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
 		return app.CmdEpicEdit(args[0], editTitle, editDesc, editProject,
 			c.Flags().Changed("title"),
@@ -610,6 +578,7 @@ func setupCmd() *cobra.Command {
 		Use:   "opencode",
 		Short: "Generate opencode.json with harness permissions",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
 			dir, _ := os.Getwd()
 			return internal.RunSetupOpencode(dir)
 		},
@@ -626,11 +595,7 @@ func aliasCheckCmd() *cobra.Command {
 		Args:   cobra.MaximumNArgs(1),
 		Hidden: true,
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
-			if len(args) > 0 {
-				taskID = args[0]
-			}
-			return app.CmdWorkCheck(taskID)
+			return app.CmdWorkCheck(optionalArg(args))
 		}),
 	}
 }
@@ -642,11 +607,7 @@ func aliasDiffCmd() *cobra.Command {
 		Args:   cobra.MaximumNArgs(1),
 		Hidden: true,
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			id := ""
-			if len(args) > 0 {
-				id = args[0]
-			}
-			return app.CmdDiffDispatch(id)
+			return app.CmdDiffDispatch(optionalArg(args))
 		}),
 	}
 }
@@ -658,11 +619,7 @@ func aliasStatusCmd() *cobra.Command {
 		Args:   cobra.MaximumNArgs(1),
 		Hidden: true,
 		RunE: withApp(func(app *internal.App, cmd *cobra.Command, args []string) error {
-			taskID := ""
-			if len(args) > 0 {
-				taskID = args[0]
-			}
-			return app.CmdWorkStatus(taskID)
+			return app.CmdWorkStatus(optionalArg(args))
 		}),
 	}
 }

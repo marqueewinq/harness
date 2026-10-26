@@ -86,7 +86,10 @@ func (a *App) CmdEpicView(epicID string) error {
 	if err != nil {
 		return err
 	}
-	p, _ := a.DB.GetProject(e.ProjectID)
+	p, err := a.DB.GetProject(e.ProjectID)
+	if err != nil {
+		return fmt.Errorf("epic %s: %w", e.ID, err)
+	}
 	fmt.Printf("Epic: %s %q\n", e.ID, e.Title)
 	fmt.Printf("Project: %s %q\n", p.ID, p.Title)
 	fmt.Printf("Status: %s\n", e.Status)
@@ -98,7 +101,7 @@ func (a *App) CmdEpicView(epicID string) error {
 	}
 	tasks, _ := a.DB.ListTasksByEpic(e.ID)
 	if len(tasks) == 0 {
-		fmt.Printf("\nNo tasks. Run: harness plan \"description\" --epic %s\n", e.ID)
+		fmt.Printf("\nNo tasks. Run: harness task new \"title\" --epic %s\n", e.ID)
 		return nil
 	}
 	fmt.Println("\nTasks:")
@@ -143,12 +146,13 @@ func (a *App) CmdEpicEdit(epicID, title, description, projectID string, setTitle
 	}
 	newProject := e.ProjectID
 	if setProject {
-		newProject = projectID
-		if newProject != "" {
-			if _, err := a.DB.GetProject(newProject); err != nil {
-				return err
-			}
+		if projectID == "" {
+			return fmt.Errorf("--project cannot be empty: epics require a project")
 		}
+		if _, err := a.DB.GetProject(projectID); err != nil {
+			return err
+		}
+		newProject = projectID
 	}
 	if err := a.DB.UpdateEpic(epicID, newTitle, newDesc, newProject); err != nil {
 		return err

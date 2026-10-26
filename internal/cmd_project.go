@@ -64,7 +64,7 @@ func (a *App) CmdProjectView(projectID string) error {
 		}
 		fmt.Printf("  %-10s %-8s %s%s\n", e.ID, e.Status, e.Title, progress)
 		for _, t := range tasks {
-			fmt.Printf("    %-10s %-20s %s\n", t.ID, t.State, t.Description)
+			fmt.Printf("    %-10s %-20s %s\n", t.ID, t.State, t.Title)
 		}
 	}
 	return nil

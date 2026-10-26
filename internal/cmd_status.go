@@ -40,24 +40,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		}
 	}
 
-	// Show dependencies
-	deps, _ := a.DB.GetDependencies(task.ID)
-	if len(deps) > 0 {
-		fmt.Println("\nDependencies:")
-		for _, d := range deps {
-			if d.FromTaskID == task.ID {
-				dt, _ := a.DB.GetTask(d.ToTaskID)
-				if dt != nil {
-					fmt.Printf("  %s %s (%s) %q\n", d.DepType, d.ToTaskID, dt.State, dt.Title)
-				}
-			} else {
-				dt, _ := a.DB.GetTask(d.FromTaskID)
-				if dt != nil {
-					fmt.Printf("  blocked by %s (%s) %q\n", d.FromTaskID, dt.State, dt.Title)
-				}
-			}
-		}
-	}
+	a.printDependencies(task.ID)
 
 	// Show commit range
 	if task.State == StatePlanned {
@@ -142,13 +125,13 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	fmt.Println()
 	switch task.State {
 	case StateInProgress:
-		fmt.Println("Next: run harness check")
+		fmt.Println("Next: run harness work check")
 	case StateChecksFailed, StateMergeFailed:
-		fmt.Println("Next: fix the failures, then run: harness check")
+		fmt.Println("Next: fix the failures, then run: harness work check")
 	case StateChecksPassed:
 		fmt.Println("Next: run harness review request")
 	case StateRequestChanges:
-		fmt.Println("Next: address review comments, then run: harness check")
+		fmt.Println("Next: address review comments, then run: harness work check")
 	case StateReviewRequested:
 		if a.Config.Review.Cmd != "" {
 			fmt.Println("Next: run harness review request (will launch automated reviewer)")
@@ -162,9 +145,9 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		fmt.Println("Next: run harness work merge")
 	case StateQueued:
 		pos, _ := a.DB.GetQueuePosition(task.ID)
-		fmt.Printf("Queued at position #%d. harness merge is blocking.\n", pos)
+		fmt.Printf("Queued at position #%d. harness work merge is blocking.\n", pos)
 	case StatePlanned:
-		fmt.Printf("Next: run harness start %s\n", task.ID)
+		fmt.Printf("Next: run harness task start %s\n", task.ID)
 	case StateMerged:
 		fmt.Println("Task is complete.")
 	}

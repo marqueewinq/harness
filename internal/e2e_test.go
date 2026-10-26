@@ -342,7 +342,7 @@ func setupTaskInState(t *testing.T, state TaskState) (*App, *Task) {
 
 func TestCmdCheckWrongState(t *testing.T) {
 	t.Parallel()
-	for _, state := range []TaskState{StateApproved, StateQueued} {
+	for _, state := range []TaskState{StateQueued, StateMerging, StateMerged} {
 		app, task := setupTaskInState(t, state)
 		err := app.CmdWorkCheck(task.ID)
 		if err == nil {

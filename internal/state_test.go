@@ -17,6 +17,7 @@ func TestValidTransitions(t *testing.T) {
 		{StateReviewRequested, StateRequestChanges},
 		{StateRequestChanges, StateChecksRunning},
 		{StateApproved, StateQueued},
+		{StateApproved, StateChecksRunning},
 		{StateQueued, StateMerging},
 		{StateMerging, StateMerged},
 		{StateMerging, StateMergeFailed},
@@ -106,7 +107,7 @@ func TestPlannedTransitions(t *testing.T) {
 func TestCheckableStates(t *testing.T) {
 	t.Parallel()
 	checkable := []TaskState{
-		StateInProgress, StateChecksRunning, StateChecksPassed, StateChecksFailed, StateRequestChanges, StateReviewRequested, StateMergeFailed,
+		StateInProgress, StateChecksRunning, StateChecksPassed, StateChecksFailed, StateRequestChanges, StateReviewRequested, StateMergeFailed, StateApproved,
 	}
 	for _, s := range checkable {
 		if !ValidTransition(s, StateChecksRunning) {

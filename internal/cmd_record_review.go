@@ -155,6 +155,6 @@ func (a *App) CmdReviewReject(taskID, comment string) error {
 	fmt.Printf("Review recorded: REQUEST_CHANGES\n")
 	fmt.Printf("Comment: %s\n", comment)
 	fmt.Printf("Task %s is now REQUEST_CHANGES.\n", id)
-	fmt.Println("Next: address the comments, then run: harness check")
+	fmt.Println("Next: address the comments, then run: harness work check")
 	return nil
 }
