@@ -70,6 +70,17 @@ task back to `IN_PROGRESS` from `CHECKS_FAILED`, `CHECKS_PASSED`,
   composed prompt in `{{prompt_file}}` and the token in `HARNESS_REVIEW_TOKEN`
   in the command's environment only. The token is never printed. The reviewer
   records its verdict with `harness review approve|reject`.
+- The reviewer runs in its own process group under `review.timeout` (Go
+  duration, default `30m`). On timeout, Ctrl-C or SIGTERM, harness kills the
+  whole group. Each run is recorded on its request (pid, start, heartbeat,
+  exit code, outcome: `verdict`, `no_verdict`, `failed`, `timeout`,
+  `interrupted`). `harness work status` and `harness review history` show it; a
+  run whose `harness review request` process died reads as `orphaned`.
+- Fail closed: if the reviewer exits without a verdict, harness closes the
+  request (its token stops working) and `review request` exits non-zero. The
+  task stays `REVIEW_REQUESTED`; run `harness work check`, then
+  `harness review request` again. A verdict followed by a non-zero exit still
+  counts, with a warning.
 - `review.type: human`: without a token, approving or rejecting only works from
   an interactive terminal (stdin is a TTY), and the human has to type the task
   ID to confirm.
@@ -165,6 +176,7 @@ merge:
 
 review:
   type: agent                  # agent | human
+  timeout: 30m                 # default 30m; review.cmd is killed after this
   cmd: 'claude -p --setting-sources user --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |
     Review {{task_id}}: {{task_description}}

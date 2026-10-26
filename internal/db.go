@@ -120,7 +120,40 @@ func createSchema(conn *sql.DB) error {
 		}
 	}
 
+	if version < 10 {
+		if err := migrateV10(conn); err != nil {
+			return fmt.Errorf("migration v10: %w", err)
+		}
+	}
+
 	return nil
+}
+
+// resolution tells a verdict apart from a superseded or failed-closed request;
+// pre-existing rows keep ” and an empty reviewer_outcome (no recorded run).
+func migrateV10(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		`ALTER TABLE review_requests ADD COLUMN resolution TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE review_requests ADD COLUMN reviewer_pid INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE review_requests ADD COLUMN reviewer_owner_pid INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE review_requests ADD COLUMN reviewer_started_unix INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE review_requests ADD COLUMN reviewer_heartbeat_unix INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE review_requests ADD COLUMN reviewer_finished_unix INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE review_requests ADD COLUMN reviewer_exit_code INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE review_requests ADD COLUMN reviewer_outcome TEXT NOT NULL DEFAULT ''`,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (10)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // Pre-existing queue rows get pid 0 and heartbeat 0, so they read as stale

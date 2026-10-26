@@ -28,8 +28,11 @@ If the task is already IN_PROGRESS, continue in its worktree.
    configured reviewer (`review.cmd`), which records the verdict. With
    `review.type: human`, a person records it from an interactive terminal.
 6. You cannot approve or reject your own task: verdicts need the one-time
-   token harness gives only to the reviewer it launches. If the reviewer
-   exits without a verdict, run `harness work check` and request again.
+   token harness gives only to the reviewer it launches. The reviewer is
+   killed after `review.timeout` (default 30m). If it exits without a verdict
+   (failed, timeout, interrupted, no verdict), `harness review request` fails,
+   the request is closed, and the task stays REVIEW_REQUESTED: run
+   `harness work check`, then `harness review request` again.
 7. If changes requested: fix, commit, go to step 4
 8. `harness work merge` — enters merge queue, rebases, re-runs checks, merges, cleans up
 
@@ -52,7 +55,7 @@ branch onto its base inside the worktree (commit or discard local changes first)
 `harness work status` shows:
 - Task state, branch, worktree, base branch
 - Latest check results with the commit SHA they ran against
-- Latest review decision
+- Latest review decision and the latest reviewer run (outcome, pid, exit code; `orphaned` if its `review request` died)
 - Full state transition history with timestamps (e.g. IN_PROGRESS -> CHECKS_RUNNING -> CHECKS_PASSED)
 - Merge requirements checklist
 - Subtask progress

@@ -1,6 +1,9 @@
 package internal
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 func (a *App) cmdEpicReviewRequest(epicID string) error {
 	e, err := a.DB.GetEpic(epicID)
@@ -19,7 +22,7 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	if err != nil {
 		return fmt.Errorf("resolving %s: %w", e.Branch, err)
 	}
-	token, err := a.DB.OpenReviewRequest("", epicID, head)
+	token, reqID, err := a.DB.OpenReviewRequestID("", epicID, head)
 	if err != nil {
 		return err
 	}
@@ -29,7 +32,7 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Review requested for epic %s (%s).\n\n", epicID, shortSHA(head))
-	return a.deliverReview(review, epicID, e.Title, diff, prevComments, token)
+	return a.deliverReview(review, reqID, epicID, e.Title, diff, prevComments, token, "run: harness review request "+epicID)
 }
 
 func (a *App) cmdEpicReviewApprove(epicID, comment string) error {
@@ -65,7 +68,43 @@ func (a *App) cmdEpicReviewHistory(epicID string) error {
 		return err
 	}
 	printReviews(reviews)
+	runs, err := a.DB.ListReviewerRuns("", epicID)
+	if err != nil {
+		return err
+	}
+	printReviewerRuns(runs)
 	return nil
+}
+
+// formatReviewerRun is one line: outcome (or orphaned), pid, start, duration
+// or heartbeat age, and exit code once finished.
+func formatReviewerRun(r *ReviewRequest, now time.Time) string {
+	status := r.RunStatus(now)
+	s := fmt.Sprintf("%s (request #%d, commit %s, pid %d", status, r.ID, shortSHA(r.CommitSHA), r.ReviewerPID)
+	if !r.ReviewerStarted.IsZero() {
+		s += ", started " + r.ReviewerStarted.Format("2006-01-02 15:04:05")
+	}
+	switch {
+	case !r.ReviewerFinished.IsZero():
+		if !r.ReviewerStarted.IsZero() {
+			s += ", ran " + r.ReviewerFinished.Sub(r.ReviewerStarted).String()
+		}
+		s += fmt.Sprintf(", exit %d", r.ReviewerExitCode)
+	case !r.ReviewerHeartbeat.IsZero():
+		s += ", last heartbeat " + now.Sub(r.ReviewerHeartbeat).Truncate(time.Second).String() + " ago"
+	}
+	return s + ")"
+}
+
+func printReviewerRuns(runs []ReviewRequest) {
+	if len(runs) == 0 {
+		return
+	}
+	now := time.Now()
+	fmt.Println("Reviewer runs:")
+	for i := range runs {
+		fmt.Printf("  %s\n", formatReviewerRun(&runs[i], now))
+	}
 }
 
 func printReviews(reviews []Review) {

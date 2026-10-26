@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 func (a *App) CmdWorkStatus(taskID string) error {
@@ -99,6 +100,19 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	} else {
 		fmt.Println("\nReview: not requested")
 	}
+	if req, err := a.DB.GetLatestReviewRequest(task.ID, ""); err == nil && req != nil && req.ReviewerOutcome != "" {
+		status := req.RunStatus(time.Now())
+		fmt.Printf("Reviewer run: %s\n", formatReviewerRun(req, time.Now()))
+		switch status {
+		case ReviewerOrphaned:
+			fmt.Println("  The harness review request that launched it is gone (killed or crashed).")
+			fallthrough
+		case ReviewerNoVerdict, ReviewerFailed, ReviewerTimeout, ReviewerInterrupted:
+			if task.State == StateReviewRequested {
+				fmt.Printf("  No verdict. Run: harness work check %s, then harness review request %s\n", task.ID, task.ID)
+			}
+		}
+	}
 
 	// Skip merge requirements for terminal states
 	if task.State != StateMerged {
@@ -134,7 +148,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		fmt.Println("Next: address review comments, then run: harness work check")
 	case StateReviewRequested:
 		if a.Config.Review.Cmd != "" {
-			fmt.Println("Next: run harness review request (will launch automated reviewer)")
+			fmt.Println("Next: if no reviewer is running, run harness work check, then harness review request")
 		} else if a.Config.Review.Type == "human" {
 			fmt.Println("Next: waiting for human review.")
 			fmt.Printf("      In another terminal: harness review approve %s\n", task.ID)

@@ -10,5 +10,10 @@ func (a *App) CmdReviewHistory(taskID string) error {
 		return err
 	}
 	printReviews(reviews)
+	runs, err := a.DB.ListReviewerRuns(id, "")
+	if err != nil {
+		return err
+	}
+	printReviewerRuns(runs)
 	return nil
 }

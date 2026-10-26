@@ -9,11 +9,21 @@ import (
 )
 
 // requestWithReviewer runs a full check + review request whose review.cmd is
-// reviewCmd (with %s replaced by a freshly built harness binary).
-func requestWithReviewer(t *testing.T, reviewCmd string) (*App, *Task) {
+// reviewCmd (with %s replaced by a freshly built harness binary) and returns
+// the review request's error.
+func requestWithReviewer(t *testing.T, reviewCmd string) (*App, *Task, error) {
+	t.Helper()
+	return requestWithReviewerConfig(t, reviewCmd, "")
+}
+
+func requestWithReviewerConfig(t *testing.T, reviewCmd, extraReview string) (*App, *Task, error) {
 	t.Helper()
 	bin := buildHarnessBinary(t)
-	app, _ := setupAppWithReviewCmd(t, fmt.Sprintf(reviewCmd, bin))
+	cmd := reviewCmd
+	if strings.Contains(reviewCmd, "%s") {
+		cmd = fmt.Sprintf(reviewCmd, bin)
+	}
+	app, _ := setupAppWithReviewConfig(t, cmd, extraReview)
 	t.Cleanup(func() { app.Close() })
 
 	if err := app.CmdNew("token feature", "", "", ""); err != nil {
@@ -26,16 +36,17 @@ func requestWithReviewer(t *testing.T, reviewCmd string) (*App, *Task) {
 	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdReviewRequest(task.ID); err != nil {
-		t.Fatal("request:", err)
-	}
+	reqErr := app.CmdReviewRequest(task.ID)
 	task, _ = app.DB.GetTask(task.ID)
-	return app, task
+	return app, task, reqErr
 }
 
 func TestReviewerWithTokenApproves(t *testing.T) {
 	t.Parallel()
-	app, task := requestWithReviewer(t, `%s review approve {{task_id}} < /dev/null`)
+	app, task, err := requestWithReviewer(t, `%s review approve {{task_id}} < /dev/null`)
+	if err != nil {
+		t.Fatal("request:", err)
+	}
 	if task.State != StateApproved {
 		t.Fatalf("state = %s, want APPROVED", task.State)
 	}
@@ -43,12 +54,19 @@ func TestReviewerWithTokenApproves(t *testing.T) {
 	if len(reviews) != 1 || reviews[0].Reviewer != "review.cmd" {
 		t.Errorf("reviews = %+v, want one by review.cmd", reviews)
 	}
+	run := latestRun(t, app, task.ID)
+	if run.ReviewerOutcome != ReviewerVerdict || run.ReviewerExitCode != 0 {
+		t.Errorf("run = %+v, want outcome verdict, exit 0", run)
+	}
 }
 
 func TestApproveWithoutTokenRefused(t *testing.T) {
 	t.Parallel()
 	// Simulates the implementing agent calling approve: no token, no terminal.
-	app, task := requestWithReviewer(t, `env -u `+ReviewTokenEnv+` %s review approve {{task_id}} < /dev/null`)
+	app, task, err := requestWithReviewer(t, `env -u `+ReviewTokenEnv+` %s review approve {{task_id}} < /dev/null`)
+	if err == nil {
+		t.Fatal("request: want error, reviewer recorded no verdict")
+	}
 	if task.State != StateReviewRequested {
 		t.Fatalf("state = %s, want REVIEW_REQUESTED", task.State)
 	}
@@ -59,7 +77,10 @@ func TestApproveWithoutTokenRefused(t *testing.T) {
 
 func TestRejectWithWrongTokenRefused(t *testing.T) {
 	t.Parallel()
-	app, task := requestWithReviewer(t, ReviewTokenEnv+`=forged %s review reject --comment no {{task_id}} < /dev/null`)
+	app, task, err := requestWithReviewer(t, ReviewTokenEnv+`=forged %s review reject --comment no {{task_id}} < /dev/null`)
+	if err == nil {
+		t.Fatal("request: want error, reviewer recorded no verdict")
+	}
 	if task.State != StateReviewRequested {
 		t.Fatalf("state = %s, want REVIEW_REQUESTED", task.State)
 	}
@@ -96,8 +117,8 @@ func TestLocalReviewCmdEditIgnored(t *testing.T) {
 	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdReviewRequest(task.ID); err != nil {
-		t.Fatal(err)
+	if err := app.CmdReviewRequest(task.ID); err == nil {
+		t.Fatal("request: want error, reviewer recorded no verdict")
 	}
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateReviewRequested {

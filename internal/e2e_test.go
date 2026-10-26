@@ -1510,6 +1510,12 @@ func buildHarnessBinary(t *testing.T) string {
 // setupAppWithReviewCmd creates a test repo with a configured review.cmd.
 func setupAppWithReviewCmd(t *testing.T, reviewCmd string) (*App, string) {
 	t.Helper()
+	return setupAppWithReviewConfig(t, reviewCmd, "")
+}
+
+// extraReview is appended inside the review: section, e.g. "  timeout: 1s\n".
+func setupAppWithReviewConfig(t *testing.T, reviewCmd, extraReview string) (*App, string) {
+	t.Helper()
 	dir := initTestRepo(t)
 	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("test:\n\t@echo pass\n"), 0644)
 	gitRun(t, dir, "add", "Makefile")
@@ -1533,12 +1539,12 @@ merge:
 review:
   type: agent
   cmd: '%s'
-  prompt: |
+%s  prompt: |
     Review this diff:
     {{diff}}
     Task: {{task_description}}
     Previous: {{previous_comments}}
-`, reviewCmd)
+`, reviewCmd, extraReview)
 	os.WriteFile(cfgPath, []byte(cfgContent), 0644)
 
 	gitRun(t, dir, "add", ".harness.yaml", ".gitignore")
@@ -1659,9 +1665,9 @@ func TestE2EAutomatedReviewerNoVerdict(t *testing.T) {
 		t.Fatal("check:", err)
 	}
 
-	// Should not error even though reviewer gave no verdict
-	if err := app.CmdReviewRequest(task.ID); err != nil {
-		t.Fatal("request-review:", err)
+	err := app.CmdReviewRequest(task.ID)
+	if err == nil || !strings.Contains(err.Error(), "outcome: no_verdict") {
+		t.Fatalf("request-review: err = %v, want reviewer no_verdict error", err)
 	}
 
 	// State should still be REVIEW_REQUESTED
@@ -1692,8 +1698,8 @@ func TestE2EAutomatedReviewerPromptFile(t *testing.T) {
 	if err := app.CmdWorkCheck(task.ID); err != nil {
 		t.Fatal("check:", err)
 	}
-	if err := app.CmdReviewRequest(task.ID); err != nil {
-		t.Fatal("request-review:", err)
+	if err := app.CmdReviewRequest(task.ID); err == nil {
+		t.Fatal("request-review: want error, reviewer recorded no verdict")
 	}
 
 	// Read the captured prompt

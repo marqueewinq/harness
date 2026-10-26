@@ -1,10 +1,15 @@
 package internal
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // Single pass, so placeholders that occur inside the diff are left alone.
@@ -40,19 +45,20 @@ func (a *App) trustedReviewConfig() (ReviewConfig, error) {
 	return cfg.Review, nil
 }
 
-// runReviewer blocks until review.cmd exits. The token goes only into the
-// reviewer's environment.
-func (a *App) runReviewer(review ReviewConfig, subjectID, prompt, token string) error {
+// runReviewer blocks until review.cmd exits, times out, or harness is
+// interrupted, records the run on request reqID, and returns the stored
+// outcome. The token goes only into the reviewer's environment.
+func (a *App) runReviewer(review ReviewConfig, reqID int, subjectID, prompt, token string) (string, error) {
 	f, err := os.CreateTemp("", "harness-review-*.txt")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return "", fmt.Errorf("create temp file: %w", err)
 	}
 	promptFile := f.Name()
 	defer os.Remove(promptFile)
 
 	if _, err := f.WriteString(prompt); err != nil {
 		f.Close()
-		return fmt.Errorf("write prompt: %w", err)
+		return "", fmt.Errorf("write prompt: %w", err)
 	}
 	f.Close()
 
@@ -61,22 +67,103 @@ func (a *App) runReviewer(review ReviewConfig, subjectID, prompt, token string) 
 	cmdStr = strings.ReplaceAll(cmdStr, "{{task_id}}", subjectID)
 	fmt.Printf("Running reviewer: %s\n", cmdStr)
 
-	cmd := exec.Command("sh", "-c", cmdStr)
+	// The reviewer runs in its own process group, so a terminal Ctrl-C no
+	// longer reaches it; forward it by cancelling.
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	timeout := review.TimeoutDuration()
+	ctx, cancel := context.WithTimeout(sigCtx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	cmd.Dir = a.RepoRoot
 	cmd.Env = append(os.Environ(), ReviewTokenEnv+"="+token)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	return cmd.Run()
+	// Agents spawn helpers that may hold the token; kill the whole group.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 5 * time.Second
+
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "harness: starting reviewer: %v\n", err)
+		return a.DB.FinishReviewerRun(reqID, ReviewerFailed, -1)
+	}
+	ownerPID := os.Getpid()
+	if err := a.DB.StartReviewerRun(reqID, ownerPID, cmd.Process.Pid); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: recording reviewer run failed: %v\n", err)
+	}
+	stopHeartbeat := a.startReviewerHeartbeat(reqID, ownerPID)
+	err = cmd.Wait()
+	stopHeartbeat()
+
+	outcome, exitCode := ReviewerNoVerdict, 0
+	switch {
+	case sigCtx.Err() != nil:
+		outcome, exitCode = ReviewerInterrupted, InterruptedExitCode
+		fmt.Fprintln(os.Stderr, "\nharness: reviewer interrupted")
+	case ctx.Err() == context.DeadlineExceeded:
+		outcome, exitCode = ReviewerTimeout, TimeoutExitCode
+		fmt.Fprintf(os.Stderr, "\nharness: reviewer timed out after %s (review.timeout)\n", timeout)
+	case errors.Is(err, exec.ErrWaitDelay):
+		// The reviewer itself exited 0; a leftover child held its output.
+	case err != nil:
+		outcome, exitCode = ReviewerFailed, -1
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+		fmt.Fprintf(os.Stderr, "\nharness: reviewer failed: %v\n", err)
+	}
+	if outcome != ReviewerInterrupted && outcome != ReviewerTimeout {
+		// Background children may outlive a reviewer that exited; they must
+		// not keep running with the token.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	stored, ferr := a.DB.FinishReviewerRun(reqID, outcome, exitCode)
+	if ferr != nil {
+		return "", fmt.Errorf("recording reviewer outcome: %w", ferr)
+	}
+	if stored == ReviewerVerdict && exitCode != 0 {
+		fmt.Printf("Warning: reviewer recorded a verdict but then exited with %s (exit %d); keeping the verdict.\n", outcome, exitCode)
+	}
+	return stored, nil
 }
 
-// The token is never printed.
-func (a *App) deliverReview(review ReviewConfig, subjectID, title, diff, prevComments, token string) error {
+func (a *App) startReviewerHeartbeat(reqID, ownerPID int) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(reviewerHeartbeatEvery)
+		defer t.Stop()
+		warned := false
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				if err := a.DB.HeartbeatReviewerRun(reqID, ownerPID); err != nil && !warned {
+					fmt.Fprintf(os.Stderr, "Warning: renewing reviewer heartbeat failed: %v\n", err)
+					warned = true
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
+// deliverReview launches the reviewer (agent) or prints instructions (human).
+// An agent run that ends without a verdict is an error naming retryHint. The
+// token is never printed.
+func (a *App) deliverReview(review ReviewConfig, reqID int, subjectID, title, diff, prevComments, token, retryHint string) error {
 	prompt := composeReviewPrompt(review, subjectID, title, diff, prevComments)
 	if review.Type == "agent" {
 		fmt.Println("Launching automated reviewer...")
-		if err := a.runReviewer(review, subjectID, prompt, token); err != nil {
-			fmt.Printf("Reviewer command failed: %s\n", err)
+		outcome, err := a.runReviewer(review, reqID, subjectID, prompt, token)
+		if err != nil {
+			return err
+		}
+		if outcome != ReviewerVerdict {
+			return fmt.Errorf("reviewer exited without a verdict (outcome: %s); the review request is closed and its token revoked; %s", outcome, retryHint)
 		}
 		return nil
 	}
@@ -128,7 +215,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 		return fmt.Errorf("%s moved since checks ran (%s -> %s); run: harness work check",
 			task.Branch, shortSHA(runs[0].CommitSHA), shortSHA(head))
 	}
-	token, err := a.DB.OpenReviewRequest(id, "", head)
+	token, reqID, err := a.DB.OpenReviewRequestID(id, "", head)
 	if err != nil {
 		return err
 	}
@@ -141,7 +228,8 @@ func (a *App) CmdReviewRequest(taskID string) error {
 	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Task %s is now REVIEW_REQUESTED (%s).\n\n", id, shortSHA(head))
-	if err := a.deliverReview(review, id, task.Title, diff, prevComments, token); err != nil {
+	retry := fmt.Sprintf("task %s stays REVIEW_REQUESTED; run: harness work check %s, then harness review request %s", id, id, id)
+	if err := a.deliverReview(review, reqID, id, task.Title, diff, prevComments, token, retry); err != nil {
 		return err
 	}
 	if review.Type != "agent" {
@@ -165,10 +253,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 		fmt.Printf("Task %s is REQUEST_CHANGES.\n", id)
 		fmt.Println("Next: address comments, then run: harness work check")
 	default:
-		fmt.Printf("\nWarning: reviewer exited without recording a verdict.\n")
-		fmt.Printf("Task %s is still %s.\n", id, task.State)
-		fmt.Println("Next: run harness work check, then harness review request again,")
-		fmt.Printf("or record a verdict yourself in an interactive terminal: harness review approve %s\n", id)
+		return fmt.Errorf("reviewer recorded a verdict but task %s is %s; see harness review history %s", id, task.State, id)
 	}
 	return nil
 }

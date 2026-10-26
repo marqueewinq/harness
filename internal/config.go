@@ -35,10 +35,22 @@ type MergeConfig struct {
 	QueueTimeout int          `yaml:"queue_timeout"` // seconds, 0 = default 300
 }
 
+const DefaultReviewTimeout = 30 * time.Minute
+
+// ReviewConfig must stay comparable with ==: trustedReviewConfig compares the
+// committed and working-tree copies.
 type ReviewConfig struct {
-	Type   string `yaml:"type"`
-	Cmd    string `yaml:"cmd"`
-	Prompt string `yaml:"prompt"`
+	Type    string `yaml:"type"`
+	Cmd     string `yaml:"cmd"`
+	Prompt  string `yaml:"prompt"`
+	Timeout string `yaml:"timeout,omitempty"` // Go duration for review.cmd; default 30m
+}
+
+func (r ReviewConfig) TimeoutDuration() time.Duration {
+	if d, err := time.ParseDuration(r.Timeout); err == nil && d > 0 {
+		return d
+	}
+	return DefaultReviewTimeout
 }
 
 type CommitConfig struct {
@@ -97,6 +109,11 @@ func ParseConfig(data []byte) (*Config, error) {
 		}
 		if d, err := time.ParseDuration(check.Timeout); err != nil || d <= 0 {
 			return nil, fmt.Errorf("checks.%s.timeout: invalid duration %q", name, check.Timeout)
+		}
+	}
+	if cfg.Review.Timeout != "" {
+		if d, err := time.ParseDuration(cfg.Review.Timeout); err != nil || d <= 0 {
+			return nil, fmt.Errorf("review.timeout: invalid duration %q", cfg.Review.Timeout)
 		}
 	}
 	for _, name := range cfg.Merge.Require.Checks {
