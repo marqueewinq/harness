@@ -39,6 +39,7 @@ Use when decomposing work into projects, epics, and tasks.
 | `harness epic list [--project <id>]` | List epics |
 | `harness epic view <id>` | Epic details + tasks |
 | `harness epic close <id>` | Close an epic |
+| `harness epic sync <id> [--continue\|--abort]` | Rebase the epic branch onto main (then `work sync` its in-flight tasks) |
 | `harness task new "title" [--epic <id>] [--description "..."]` | Create planned task |
 | `harness task start <task-id> [--base <branch>]` | Start a planned task |
 | `harness task list --ready` | List unblocked planned tasks |

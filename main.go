@@ -455,6 +455,7 @@ func epicCmd() *cobra.Command {
 	cmd.AddCommand(epicViewCmd())
 	cmd.AddCommand(epicCloseCmd())
 	cmd.AddCommand(epicMergeCmd())
+	cmd.AddCommand(epicSyncCmd())
 	return cmd
 }
 
