@@ -91,6 +91,20 @@ func TestApprovedToInProgress(t *testing.T) {
 	}
 }
 
+func TestSyncableStatesToInProgress(t *testing.T) {
+	t.Parallel()
+	for _, s := range []TaskState{StateChecksFailed, StateChecksPassed, StateRequestChanges, StateMergeFailed} {
+		if !ValidTransition(s, StateInProgress) {
+			t.Errorf("expected %s -> IN_PROGRESS to be valid", s)
+		}
+	}
+	for _, s := range []TaskState{StateReviewRequested, StateQueued, StateMerging, StateMerged} {
+		if ValidTransition(s, StateInProgress) {
+			t.Errorf("expected %s -> IN_PROGRESS to be invalid", s)
+		}
+	}
+}
+
 func TestPlannedTransitions(t *testing.T) {
 	t.Parallel()
 	if !ValidTransition(StatePlanned, StateInProgress) {

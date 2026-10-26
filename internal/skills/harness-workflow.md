@@ -33,6 +33,20 @@ If the task is already IN_PROGRESS, continue in its worktree.
 7. If changes requested: fix, commit, go to step 4
 8. `harness work merge` — enters merge queue, rebases, re-runs checks, merges, cleans up
 
+## Conflict Recovery
+
+If the merge fails on conflicts (task is MERGE_FAILED), or you want to pick up
+new commits from the base branch, run `harness work sync`. It rebases the task
+branch onto its base inside the worktree (commit or discard local changes first).
+
+- Clean rebase: the task returns to IN_PROGRESS; run `harness work check`, then
+  request review again before merging.
+- Conflicts: the rebase stays in progress and the conflicted files are listed.
+  Edit them, `git add` them, then run `harness work sync --continue`. Repeat
+  until it finishes. To give up, run `harness work sync --abort`.
+- Sync is refused in REVIEW_REQUESTED, QUEUED, MERGING, MERGED and CLOSED. In
+  APPROVED, run `harness work check` first.
+
 ## Status and History
 
 `harness work status` shows:
@@ -45,7 +59,7 @@ If the task is already IN_PROGRESS, continue in its worktree.
 
 ## Rules
 
-- NEVER use git push, git merge, git rebase, or git checkout directly
+- NEVER use git push, git merge, git rebase, or git checkout directly (use `harness work sync` to rebase)
 - Use git add and git commit freely inside the worktree
 - ALWAYS run `harness work check` before requesting review
 - ALWAYS request and pass review before merging
@@ -67,6 +81,7 @@ If the task is already IN_PROGRESS, continue in its worktree.
 | `harness review reject --comment "..." [task-id]` | Record rejection (reviewer or human terminal only) |
 | `harness review history [task-id]` | Show past reviews |
 | `harness work merge [task-id]` | Merge queue -> rebase -> checks -> merge |
+| `harness work sync [task-id]` | Rebase task branch onto its base (`--continue` / `--abort` after conflicts) |
 | `harness work close [task-id]` | Close task without merging |
 | `harness task start <task-id>` | Start a planned task (creates branch + worktree) |
 

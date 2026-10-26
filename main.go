@@ -109,6 +109,7 @@ func workCmd() *cobra.Command {
 	cmd.AddCommand(workMergeCmd())
 	cmd.AddCommand(workCloseCmd())
 	cmd.AddCommand(workCommitCmd())
+	cmd.AddCommand(workSyncCmd())
 	return cmd
 }
 
