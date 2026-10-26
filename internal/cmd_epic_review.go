@@ -36,26 +36,29 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 }
 
 func (a *App) cmdEpicReviewApprove(epicID, comment string) error {
+	return a.epicVerdict(epicID, "approve", comment, a.authorizeVerdict)
+}
+
+func (a *App) cmdEpicReviewReject(epicID, comment string) error {
+	return a.epicVerdict(epicID, "request_changes", comment, a.authorizeVerdict)
+}
+
+func (a *App) epicVerdict(epicID, decision, comment string, auth verdictAuth) error {
 	e, err := a.DB.GetEpic(epicID)
 	if err != nil {
 		return err
 	}
-	if e.Branch == "" {
+	if decision == "approve" && e.Branch == "" {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}
-
-	req, err := a.recordVerdict("", epicID, e.Branch, "approve", comment)
+	req, err := a.recordVerdict("", epicID, e.Branch, decision, comment, auth)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Review recorded: APPROVE for epic %s (%s)\n", epicID, shortSHA(req.CommitSHA))
-	fmt.Println("Next: run harness epic merge " + epicID)
-	return nil
-}
-
-func (a *App) cmdEpicReviewReject(epicID, comment string) error {
-	if _, err := a.recordVerdict("", epicID, "", "request_changes", comment); err != nil {
-		return err
+	if decision == "approve" {
+		fmt.Printf("Review recorded: APPROVE for epic %s (%s)\n", epicID, shortSHA(req.CommitSHA))
+		fmt.Println("Next: run harness epic merge " + epicID)
+		return nil
 	}
 	fmt.Printf("Review recorded: REQUEST_CHANGES for epic %s\n", epicID)
 	fmt.Printf("Comment: %s\n", comment)

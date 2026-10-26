@@ -13,11 +13,16 @@ import (
 const ReviewTokenEnv = "HARNESS_REVIEW_TOKEN"
 
 // Replaced in tests, which play the human at the terminal.
-var confirmVerdict = terminalConfirm
+var (
+	confirmVerdict  = terminalConfirm
+	stdinIsTerminal = func() bool {
+		fi, err := os.Stdin.Stat()
+		return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	}
+)
 
 func terminalConfirm(question, expect string) bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+	if !stdinIsTerminal() {
 		return false
 	}
 	fmt.Fprint(os.Stderr, question)
@@ -25,9 +30,19 @@ func terminalConfirm(question, expect string) bool {
 	return strings.TrimSpace(line) == expect
 }
 
-// authorizeVerdict returns who is recording the verdict. Without the token
-// minted for this request, only a human at a terminal may record one, so the
-// implementing agent cannot review its own work.
+// verdictAuth decides who records a verdict on req, or refuses.
+type verdictAuth func(req *ReviewRequest, subject, decision string) (reviewer string, err error)
+
+func terminalUser() string {
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	return "unknown"
+}
+
+// authorizeVerdict is the CLI's authorizer. Without the token minted for this
+// request, only a human at a terminal may record one, so the implementing
+// agent cannot review its own work.
 func (a *App) authorizeVerdict(req *ReviewRequest, subject, decision string) (string, error) {
 	if token := os.Getenv(ReviewTokenEnv); token != "" {
 		if !req.TokenMatches(token) {
@@ -37,13 +52,37 @@ func (a *App) authorizeVerdict(req *ReviewRequest, subject, decision string) (st
 	}
 	question := fmt.Sprintf("Record %s for %s at %s? Type %s to confirm: ", decision, subject, shortSHA(req.CommitSHA), subject)
 	if confirmVerdict(question, subject) {
-		who := "unknown"
-		if u, err := user.Current(); err == nil {
-			who = u.Username
-		}
-		return "terminal:" + who, nil
+		return "terminal:" + terminalUser(), nil
 	}
 	return "", fmt.Errorf("refusing to record a verdict for %s: only the reviewer launched by `harness review request` (review.cmd) or a human at an interactive terminal may do this", subject)
+}
+
+// terminalAuth authorizes a verdict the caller has already confirmed with a
+// human in its own UI (the caller owns stdin, so it cannot use
+// confirmVerdict). It refuses inside a reviewer's environment, so a reviewer
+// agent cannot launch the UI and record a verdict labelled as a human's.
+func terminalAuth(via string) verdictAuth {
+	return func(req *ReviewRequest, subject, decision string) (string, error) {
+		if os.Getenv(ReviewTokenEnv) != "" {
+			return "", fmt.Errorf("refusing a %s verdict while %s is set (this is a reviewer's environment)", via, ReviewTokenEnv)
+		}
+		if !stdinIsTerminal() {
+			return "", fmt.Errorf("refusing a %s verdict for %s: stdin is not an interactive terminal", via, subject)
+		}
+		return fmt.Sprintf("terminal:%s (%s)", terminalUser(), via), nil
+	}
+}
+
+// RecordTerminalVerdict records a verdict a human confirmed in an interactive
+// UI (e.g. the dashboard). It runs the same checks as the CLI verdict
+// commands: open request, REVIEW_REQUESTED state, and for approve the branch
+// head must still be the requested commit.
+func (a *App) RecordTerminalVerdict(subject, decision, comment, via string) error {
+	auth := terminalAuth(via)
+	if isEpicID(subject) {
+		return a.epicVerdict(subject, decision, comment, auth)
+	}
+	return a.taskVerdict(subject, decision, comment, auth)
 }
 
 // openReviewRequestFor returns the open request for the subject and, when
@@ -77,7 +116,9 @@ func (a *App) openReviewRequestFor(taskID, epicID, branch string, requireHead bo
 	return req, nil
 }
 
-func (a *App) recordVerdict(taskID, epicID, branch, decision, comment string) (*ReviewRequest, error) {
+// Reject is pinned to the requested commit but does not require the branch to
+// still be there: feedback on the code the reviewer saw stays valid.
+func (a *App) recordVerdict(taskID, epicID, branch, decision, comment string, auth verdictAuth) (*ReviewRequest, error) {
 	subject := taskID
 	if epicID != "" {
 		subject = epicID
@@ -89,7 +130,7 @@ func (a *App) recordVerdict(taskID, epicID, branch, decision, comment string) (*
 	if err != nil {
 		return nil, err
 	}
-	reviewer, err := a.authorizeVerdict(req, subject, decision)
+	reviewer, err := auth(req, subject, decision)
 	if err != nil {
 		return nil, err
 	}
@@ -111,26 +152,7 @@ func (a *App) CmdReviewApprove(taskID, comment string) error {
 	if err != nil {
 		return err
 	}
-	task, err := a.DB.GetTask(id)
-	if err != nil {
-		return err
-	}
-	if task.State != StateReviewRequested {
-		return fmt.Errorf("cannot record review in state %s (need REVIEW_REQUESTED)", task.State)
-	}
-
-	req, err := a.recordVerdict(id, "", task.Branch, "approve", comment)
-	if err != nil {
-		return err
-	}
-	if err := a.DB.UpdateTaskState(id, StateApproved); err != nil {
-		return err
-	}
-	fmt.Printf("Review recorded: APPROVE (%s)\n", shortSHA(req.CommitSHA))
-	fmt.Printf("Task %s is now APPROVED.\n", id)
-	fmt.Println("Next: run harness work merge")
-
-	return nil
+	return a.taskVerdict(id, "approve", comment, a.authorizeVerdict)
 }
 
 func (a *App) CmdReviewReject(taskID, comment string) error {
@@ -138,6 +160,10 @@ func (a *App) CmdReviewReject(taskID, comment string) error {
 	if err != nil {
 		return err
 	}
+	return a.taskVerdict(id, "request_changes", comment, a.authorizeVerdict)
+}
+
+func (a *App) taskVerdict(id, decision, comment string, auth verdictAuth) error {
 	task, err := a.DB.GetTask(id)
 	if err != nil {
 		return err
@@ -145,9 +171,18 @@ func (a *App) CmdReviewReject(taskID, comment string) error {
 	if task.State != StateReviewRequested {
 		return fmt.Errorf("cannot record review in state %s (need REVIEW_REQUESTED)", task.State)
 	}
-
-	if _, err := a.recordVerdict(id, "", task.Branch, "request_changes", comment); err != nil {
+	req, err := a.recordVerdict(id, "", task.Branch, decision, comment, auth)
+	if err != nil {
 		return err
+	}
+	if decision == "approve" {
+		if err := a.DB.UpdateTaskState(id, StateApproved); err != nil {
+			return err
+		}
+		fmt.Printf("Review recorded: APPROVE (%s)\n", shortSHA(req.CommitSHA))
+		fmt.Printf("Task %s is now APPROVED.\n", id)
+		fmt.Println("Next: run harness work merge")
+		return nil
 	}
 	if err := a.DB.UpdateTaskState(id, StateRequestChanges); err != nil {
 		return err
