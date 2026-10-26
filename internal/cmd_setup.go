@@ -185,8 +185,13 @@ func buildOpencodeConfig(existing []byte) ([]byte, error) {
 	for _, r := range opencodeBashRules {
 		managed[r.Pattern] = true
 	}
-	// "*" stays first so the user's own patterns still override it.
-	bash := orderedObject{{opencodeBashRules[0].Pattern, mustJSON(opencodeBashRules[0].Action)}}
+	// "*" stays first so the user's own patterns still override it, and a
+	// stricter default the user chose (e.g. "ask") is never loosened.
+	star := mustJSON(opencodeBashRules[0].Action)
+	if v, ok := oldBash.get("*"); ok {
+		star = v
+	}
+	bash := orderedObject{{opencodeBashRules[0].Pattern, star}}
 	for _, f := range oldBash {
 		if !managed[f.Key] {
 			bash = append(bash, f)

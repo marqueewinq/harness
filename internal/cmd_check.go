@@ -18,6 +18,9 @@ func (a *App) CmdWorkCheck(taskID string) error {
 	if !ValidTransition(task.State, StateChecksRunning) {
 		return fmt.Errorf("cannot run checks in state %s", task.State)
 	}
+	if err := requireIdleWorktree(task); err != nil {
+		return err
+	}
 
 	if err := a.DB.UpdateTaskState(id, StateChecksRunning); err != nil {
 		return err

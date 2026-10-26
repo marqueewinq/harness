@@ -162,7 +162,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	fmt.Printf("Preparing %s for %s merge into %s...\n", task.Branch, strategy.Name(), targetBranch)
 	if err := strategy.Prepare(wtGit, targetBranch); err != nil {
 		wtGit.RebaseAbort()
-		fmt.Println("Fix the conflicts, then run: harness work check")
+		fmt.Println("Next: harness work sync (rebase onto the latest base and resolve conflicts), then harness work check")
 		return a.failMerge(id, fmt.Errorf("prepare failed: %w", err))
 	}
 
@@ -184,7 +184,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Title)
 
 	if err := a.mergeIntoTarget(strategy, task.Branch, targetBranch, mergeMessage, id); err != nil {
-		fmt.Println("Fix the conflicts, then run: harness work check")
+		fmt.Println("Next: harness work sync (rebase onto the latest base and resolve conflicts), then harness work check")
 		return a.failMerge(id, fmt.Errorf("merge failed: %w", err))
 	}
 

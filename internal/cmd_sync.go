@@ -44,6 +44,9 @@ func (a *App) CmdWorkSync(taskID string, cont, abort bool) error {
 	wt := NewGitClient(task.WorktreePath)
 
 	if abort {
+		if task.State == StateQueued || task.State == StateMerging {
+			return fmt.Errorf("cannot abort in state %s: the merge in progress owns this worktree's rebase", task.State)
+		}
 		inProgress, err := wt.RebaseInProgress()
 		if err != nil {
 			return err
@@ -65,6 +68,10 @@ func (a *App) CmdWorkSync(taskID string, cont, abort bool) error {
 	if err != nil {
 		return err
 	}
+	before, err := a.Git.RevParse(task.Branch)
+	if err != nil {
+		return err
+	}
 
 	if cont {
 		if !inProgress {
@@ -73,7 +80,7 @@ func (a *App) CmdWorkSync(taskID string, cont, abort bool) error {
 		if err := wt.RebaseContinue(); err != nil {
 			return a.syncFailed(task, wt, err)
 		}
-		return a.syncDone(task)
+		return a.syncDone(task, before)
 	}
 
 	if inProgress {
@@ -90,7 +97,7 @@ func (a *App) CmdWorkSync(taskID string, cont, abort bool) error {
 	if err := wt.Rebase(task.BaseBranch); err != nil {
 		return a.syncFailed(task, wt, err)
 	}
-	return a.syncDone(task)
+	return a.syncDone(task, before)
 }
 
 func (a *App) syncFailed(task *Task, wt *GitClient, rebaseErr error) error {
@@ -111,9 +118,17 @@ func (a *App) syncFailed(task *Task, wt *GitClient, rebaseErr error) error {
 	return fmt.Errorf("rebase conflicts in %s", task.ID)
 }
 
-func (a *App) syncDone(task *Task) error {
-	// The branch head changed, so earlier check results and approvals no
-	// longer describe it; IN_PROGRESS forces checks to run again.
+// syncDone: a moved branch head invalidates earlier check results and
+// approvals, so IN_PROGRESS forces checks to run again.
+func (a *App) syncDone(task *Task, before string) error {
+	after, err := a.Git.RevParse(task.Branch)
+	if err != nil {
+		return err
+	}
+	if after == before {
+		fmt.Printf("%s is already up to date with %s.\n", task.Branch, task.BaseBranch)
+		return nil
+	}
 	if task.State != StateInProgress {
 		if err := a.DB.UpdateTaskState(task.ID, StateInProgress); err != nil {
 			return err

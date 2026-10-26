@@ -29,9 +29,11 @@ func (g *GitClient) RebaseInProgress() (bool, error) {
 	return false, nil
 }
 
+// RebaseContinue keeps the existing commit messages. GIT_EDITOR outranks
+// core.editor and VISUAL/EDITOR, so an agent's environment cannot make git
+// wait on an interactive editor.
 func (g *GitClient) RebaseContinue() error {
-	// core.editor=true accepts the existing commit message without opening an editor.
-	_, err := g.run("-c", "core.editor=true", "rebase", "--continue")
+	_, err := g.runEnv([]string{"GIT_EDITOR=true"}, "rebase", "--continue")
 	return err
 }
 

@@ -26,8 +26,15 @@ func (g *GitClient) run(args ...string) (string, error) {
 }
 
 func (g *GitClient) runRaw(args ...string) (string, error) {
+	return g.runEnv(nil, args...)
+}
+
+func (g *GitClient) runEnv(env []string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = g.dir
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

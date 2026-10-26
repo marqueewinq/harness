@@ -108,6 +108,9 @@ func (a *App) CmdReviewRequest(taskID string) error {
 	if task.State != StateChecksPassed {
 		return fmt.Errorf("cannot request review in state %s (need CHECKS_PASSED)", task.State)
 	}
+	if err := requireIdleWorktree(task); err != nil {
+		return err
+	}
 	review, err := a.trustedReviewConfig()
 	if err != nil {
 		return err

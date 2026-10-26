@@ -41,29 +41,70 @@ func (g *GitClient) OperationInProgress() (string, error) {
 	return "", nil
 }
 
-// mergeIntoTarget integrates source into target where target is checked out
-// (the main checkout, or a parent task's worktree); if no worktree has it, a
-// temporary one is used. It never switches any checkout to another branch.
+// requireIdleWorktree: checks or a review on a half-finished rebase would
+// judge files full of conflict markers.
+func requireIdleWorktree(task *Task) error {
+	op, err := NewGitClient(task.WorktreePath).OperationInProgress()
+	if err != nil {
+		return fmt.Errorf("inspecting worktree %s: %w", task.WorktreePath, err)
+	}
+	if op != "" {
+		return fmt.Errorf("worktree %s has an unfinished git operation (%s); finish it with harness work sync --continue or --abort", task.WorktreePath, op)
+	}
+	return nil
+}
+
+// mergeIntoTarget builds the merge result in a detached temporary worktree
+// and then only fast-forwards target, so conflicts never land in a checkout
+// someone is using, and no checkout is switched to another branch.
 func (a *App) mergeIntoTarget(strategy MergeStrategy, source, target, message, scratchName string) error {
+	result, err := a.buildMergeResult(strategy, source, target, message, scratchName)
+	if err != nil {
+		return err
+	}
+	return a.fastForward(target, result)
+}
+
+func (a *App) buildMergeResult(strategy MergeStrategy, source, target, message, scratchName string) (string, error) {
+	path := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, "_merge-"+scratchName)
+	a.Git.RemoveWorktree(path)
+	if _, err := a.Git.run("worktree", "add", "--detach", path, "refs/heads/"+target); err != nil {
+		return "", fmt.Errorf("creating temporary worktree for %s: %w", target, err)
+	}
+	defer a.Git.RemoveWorktree(path)
+	g := NewGitClient(path)
+	if err := strategy.Merge(g, source, target, message); err != nil {
+		return "", err
+	}
+	return g.RevParse("HEAD")
+}
+
+// fastForward moves target to result. Where target is checked out, the
+// checkout is updated with an ff-only merge (git refuses rather than clobber
+// local changes); otherwise the ref is compare-and-swapped.
+func (a *App) fastForward(target, result string) error {
 	path, err := a.Git.WorktreeFor(target)
 	if err != nil {
 		return err
 	}
-	if path == "" {
-		path = filepath.Join(a.RepoRoot, a.Config.WorktreeDir, "_merge-"+scratchName)
-		a.Git.RemoveWorktree(path)
-		if err := a.Git.CreateWorktree(target, path); err != nil {
-			return fmt.Errorf("creating temporary worktree for %s: %w", target, err)
+	if path != "" {
+		g := NewGitClient(path)
+		op, err := g.OperationInProgress()
+		if err != nil {
+			return err
 		}
-		defer a.Git.RemoveWorktree(path)
+		if op != "" {
+			return fmt.Errorf("%s (%s checked out) has an unfinished git operation (%s); finish or abort it first", path, target, op)
+		}
+		return g.MergeFF(result)
 	}
-	g := NewGitClient(path)
-	op, err := g.OperationInProgress()
+	old, err := a.Git.RevParse("refs/heads/" + target)
 	if err != nil {
 		return err
 	}
-	if op != "" {
-		return fmt.Errorf("%s (%s checked out) has an unfinished git operation (%s); finish or abort it first", path, target, op)
+	if _, err := a.Git.run("merge-base", "--is-ancestor", old, result); err != nil {
+		return fmt.Errorf("%s moved and %s is not a fast-forward of it", target, shortSHA(result))
 	}
-	return strategy.Merge(g, source, target, message)
+	_, err = a.Git.run("update-ref", "refs/heads/"+target, result, old)
+	return err
 }

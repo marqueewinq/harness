@@ -14,13 +14,18 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Drain concurrently so output larger than the pipe buffer can't block fn.
+	done := make(chan string)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
 	orig := os.Stdout
 	os.Stdout = w
+	defer func() { os.Stdout = orig }()
 	runErr := fn()
-	os.Stdout = orig
 	w.Close()
-	out, _ := io.ReadAll(r)
-	return string(out), runErr
+	return <-done, runErr
 }
 
 func TestCmdProjectViewPrintsTaskTitle(t *testing.T) {
