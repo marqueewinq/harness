@@ -125,8 +125,32 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v10: %w", err)
 		}
 	}
+	if version < 11 {
+		if err := migrateV11(conn); err != nil {
+			return fmt.Errorf("migration v11: %w", err)
+		}
+	}
 
 	return nil
+}
+
+// The dashboard reads the latest run group of every task on each refresh.
+func migrateV11(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_check_runs_task_group ON check_runs (task_id, run_group)`,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (11)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // resolution tells a verdict apart from a superseded or failed-closed request;

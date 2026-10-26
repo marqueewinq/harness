@@ -6,6 +6,26 @@ import (
 	"time"
 )
 
+func TestCheckRunsIndexedByTaskAndGroup(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	defer db.Close()
+	var cols []string
+	rows, err := db.conn.Query(`SELECT name FROM pragma_index_info('idx_check_runs_task_group')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c string
+		rows.Scan(&c)
+		cols = append(cols, c)
+	}
+	if !reflect.DeepEqual(cols, []string{"task_id", "run_group"}) {
+		t.Errorf("index columns = %v", cols)
+	}
+}
+
 func TestBatchReadsMatchPerTaskReads(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)

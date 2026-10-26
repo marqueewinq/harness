@@ -8,8 +8,7 @@ import (
 // Whole-table reads for views that show every task at once (the dashboard
 // redraws every few seconds), instead of one query per task.
 
-// StateEnteredAt maps each task with transition history to when it last
-// entered its current state.
+// StateEnteredAt omits tasks without transition history.
 func (db *DB) StateEnteredAt() (map[string]time.Time, error) {
 	rows, err := db.conn.Query(
 		`SELECT tr.task_id, tr.created_at FROM task_state_transitions tr
@@ -56,7 +55,6 @@ func (db *DB) LatestCheckRunsByTask() (map[string][]CheckRun, error) {
 	return out, rows.Err()
 }
 
-// LatestReviewDecisions maps each task and epic to its most recent verdict.
 func (db *DB) LatestReviewDecisions() (tasks, epics map[string]string, err error) {
 	rows, err := db.conn.Query(`SELECT task_id, epic_id, decision FROM reviews ORDER BY id ASC`)
 	if err != nil {
@@ -79,7 +77,6 @@ func (db *DB) LatestReviewDecisions() (tasks, epics map[string]string, err error
 	return tasks, epics, rows.Err()
 }
 
-// LatestTaskReviewRequests maps each task ever requested for review to its newest request.
 func (db *DB) LatestTaskReviewRequests() (map[string]ReviewRequest, error) {
 	reqs, err := db.queryReviewRequests(`SELECT ` + reviewRequestColumns + ` FROM review_requests
 		 WHERE id IN (SELECT MAX(id) FROM review_requests WHERE task_id IS NOT NULL GROUP BY task_id)`)

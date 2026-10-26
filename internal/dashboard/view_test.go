@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -78,6 +79,88 @@ func TestRenderScrolledGolden(t *testing.T) {
 	checkGolden(t, "tui_scrolled.golden", out+"\n")
 }
 
+func sampleDiff() *DiffView {
+	d := &DiffView{
+		Key:   "review:task-026",
+		Title: "task-026 Reviewer supervision · epic/planning...81742677",
+		Header: []string{
+			"Review of task-026 at 81742677 (requested 2026-10-26 16:30), base epic/planning",
+			"Checks on 81742677: lint PASS, test PASS",
+			"Previous comments:",
+			"  [request_changes at 5d1c09aa] handle SIGHUP",
+			"",
+		},
+		Diff: []string{
+			"diff --git a/run.go b/run.go",
+			"--- a/run.go",
+			"+++ b/run.go",
+			"@@ -1,3 +1,4 @@",
+			" package internal",
+			"-var old = 1",
+			"+var timeout = 30",
+			"+var heartbeat = 10",
+		},
+	}
+	for i := 0; i < 20; i++ {
+		d.Diff = append(d.Diff, fmt.Sprintf(" context %d", i))
+	}
+	return d
+}
+
+func TestRenderDiffGolden(t *testing.T) {
+	ui := UIState{Selected: 0, DiffOpen: true, DiffKey: "review:task-026", Diff: sampleDiff(), DiffOffset: 2, Actions: DefaultActions(true)}
+	out := Render(sampleSnapshot(), ui, 100, 20)
+	renderLines(t, out, 20)
+	checkGolden(t, "tui_diff.golden", out+"\n")
+}
+
+func TestRenderApproveModalGolden(t *testing.T) {
+	ui := UIState{Selected: 0, Actions: DefaultActions(true), Modal: &Modal{
+		Decision: "approve", Subject: "task-026", SHA: "8174267712345", Step: StepConfirm,
+		Comment: "looks good", Input: "task-062", Error: `typed "task-062"; type task-026 exactly to confirm`,
+	}}
+	out := Render(sampleSnapshot(), ui, 100, 24)
+	renderLines(t, out, 24)
+	checkGolden(t, "tui_approve.golden", out+"\n")
+}
+
+func TestRenderRejectModalGolden(t *testing.T) {
+	ui := UIState{Selected: 1, Actions: DefaultActions(true), Status: "previous action cancelled", Modal: &Modal{
+		Decision: "request_changes", Subject: "epic-002", SHA: "5d1c09aa999", Step: StepComment,
+		Error: "a comment is required to reject",
+	}}
+	out := Render(sampleSnapshot(), ui, 100, 24)
+	renderLines(t, out, 24)
+	checkGolden(t, "tui_reject.golden", out+"\n")
+}
+
+func TestModalKeyBarColor(t *testing.T) {
+	st := NewStyles(true)
+	ui := UIState{Color: true, Modal: &Modal{Decision: "approve", Subject: "task-026"}}
+	out := Render(sampleSnapshot(), ui, 100, 24)
+	bar := out[strings.LastIndex(out, "\n")+1:]
+	if !strings.Contains(bar, st.Accent.Render("enter")+" "+st.Plain.Render("confirm")) || !strings.Contains(bar, st.Accent.Render("esc")) {
+		t.Errorf("modal key bar = %q", bar)
+	}
+}
+
+func TestReviewActionsEnabledOnlyOnReviewRowsWhenAllowed(t *testing.T) {
+	st := NewStyles(true)
+	rows := Rows(sampleSnapshot())
+	review, task := rows[0], rows[2]
+	on := keyBar(st, DefaultActions(true), &review)
+	if !strings.Contains(on, st.Plain.Render("")+st.Accent.Render("a")+st.Plain.Render("pprove")) || !strings.Contains(on, st.Accent.Render("d")+st.Plain.Render("iff")) {
+		t.Errorf("approve/diff not enabled on a review row: %q", on)
+	}
+	for _, bar := range []string{keyBar(st, DefaultActions(true), &task), keyBar(st, DefaultActions(false), &review)} {
+		for _, label := range []string{"approve", "reject", "diff"} {
+			if !strings.Contains(bar, st.Dim.Render(label)) {
+				t.Errorf("%s not dimmed: %q", label, bar)
+			}
+		}
+	}
+}
+
 func TestRenderTooSmallGolden(t *testing.T) {
 	checkGolden(t, "tui_small.golden", Render(sampleSnapshot(), UIState{}, 59, 30)+"\n")
 	if out := Render(sampleSnapshot(), UIState{}, 100, 11); !strings.Contains(out, "terminal too small") {
@@ -111,7 +194,7 @@ func TestRenderWidthBound(t *testing.T) {
 func TestKeyBarColor(t *testing.T) {
 	st := NewStyles(true)
 	sel := Rows(sampleSnapshot())[0]
-	bar := keyBar(st, DefaultActions(), &sel)
+	bar := keyBar(st, DefaultActions(false), &sel)
 	refresh := st.Plain.Render("re") + st.Accent.Render("f") + st.Plain.Render("resh")
 	if !strings.Contains(bar, refresh) {
 		t.Errorf("refresh hotkey not accented inside its word: %q", bar)
@@ -127,10 +210,10 @@ func TestKeyBarColor(t *testing.T) {
 	if !strings.Contains(bar, st.Accent.Render("enter")) {
 		t.Errorf("enter hint not accented with a row selected: %q", bar)
 	}
-	if noRow := keyBar(st, DefaultActions(), nil); !strings.Contains(noRow, st.Dim.Render("enter details")) {
+	if noRow := keyBar(st, DefaultActions(false), nil); !strings.Contains(noRow, st.Dim.Render("enter details")) {
 		t.Errorf("details not dimmed without a row: %q", noRow)
 	}
-	if plain := keyBar(NewStyles(false), DefaultActions(), &sel); plain != " approve  reject  diff  enter details  refresh  quit  ↑↓ select" {
+	if plain := keyBar(NewStyles(false), DefaultActions(false), &sel); plain != " approve  reject  diff  enter details  refresh  quit  ↑↓ select" {
 		t.Errorf("plain key bar = %q", plain)
 	}
 }

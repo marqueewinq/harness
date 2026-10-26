@@ -118,6 +118,8 @@ harness queue list                 # entries, owner PID, heartbeat age, live/sta
 harness queue clear <task> [--force]   # remove a stale entry (--force for a live one)
 ```
 
+All mergers have to run on one host, because PID liveness is checked locally.
+
 ## Dashboard
 
 ```sh
@@ -138,14 +140,22 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 | `enter`, `tab` | toggle the detail pane: state history, checks, review request and reviewer run, queue lease, live check log |
 | `f` | refresh now |
 | `q`, `Ctrl-C` | quit |
-| `a`, `r`, `d` | approve, reject, diff (shown dimmed; not available yet) |
+| `d` | on a review row: diff of exactly the requested commit (`git diff <base>...<sha>`, base is the task's base branch or main for an epic), with description, check results on that commit and previous review comments; `j`/`k`, `pgup`/`pgdn`, `g`/`G` scroll, `esc` closes |
+| `a` | on a review row: approve; optional comment, then type the task or epic ID to confirm |
+| `r` | on a review row: reject; a comment is required, then type the ID to confirm |
+
+`esc` cancels an approve or reject at any step. The verdict goes through the
+same checks as `harness review approve|reject` (open request, branch head still
+at the requested commit for approve) and is recorded as
+`terminal:<user> (dashboard)`. Approve, reject and diff are enabled only when
+the dashboard runs on an interactive terminal and `HARNESS_REVIEW_TOKEN` is not
+set, so a reviewer agent cannot record a verdict labelled as a human's;
+otherwise they stay dimmed and pressing them says why.
 
 The interactive view needs a terminal; from scripts and agents use `--once`,
 whose output has no colour when stdout is not a terminal. `NO_COLOR` turns
 colour off in both. If a refresh fails, the last good snapshot stays on screen
 with a `stale:` note in the header.
-
-All mergers have to run on one host, because PID liveness is checked locally.
 
 ## Checks
 
@@ -257,3 +267,9 @@ make build       # test + build ./harness
 ```
 
 CI (`.github/workflows/ci.yml`) runs the lint, race tests, build and golangci-lint.
+
+The Charm modules (`bubbletea`, `bubbles`, `x/ansi`, `x/cellbuf`, `x/term`,
+`colorprofile`, `go-runewidth`) are pinned to the versions Bubble Tea v1.3.10
+itself requires. Do not upgrade them independently: `go-runewidth` v0.0.27
+builds a 2.2MB table at init, which added ~300ms to every harness command.
+After `go get`, check `go mod graph` and the startup time of `harness --help`.

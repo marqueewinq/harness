@@ -12,7 +12,6 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// Styles are shared by the --once renderer and the interactive UI.
 type Styles struct {
 	Plain   lipgloss.Style
 	Header  lipgloss.Style

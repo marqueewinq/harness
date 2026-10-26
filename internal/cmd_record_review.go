@@ -74,15 +74,16 @@ func terminalAuth(via string) verdictAuth {
 }
 
 // RecordTerminalVerdict records a verdict a human confirmed in an interactive
-// UI (e.g. the dashboard). It runs the same checks as the CLI verdict
-// commands: open request, REVIEW_REQUESTED state, and for approve the branch
-// head must still be the requested commit.
-func (a *App) RecordTerminalVerdict(subject, decision, comment, via string) error {
+// UI (e.g. the dashboard) and returns the CLI's report instead of printing
+// it. It runs the same checks as the CLI verdict commands: open request,
+// REVIEW_REQUESTED state, and for approve the branch head must still be the
+// requested commit.
+func (a *App) RecordTerminalVerdict(subject, decision, comment, via string) (string, error) {
 	auth := terminalAuth(via)
 	if isEpicID(subject) {
-		return a.epicVerdict(subject, decision, comment, auth)
+		return a.epicVerdictReport(subject, decision, comment, auth)
 	}
-	return a.taskVerdict(subject, decision, comment, auth)
+	return a.taskVerdictReport(subject, decision, comment, auth)
 }
 
 // openReviewRequestFor returns the open request for the subject and, when
@@ -170,32 +171,36 @@ func (a *App) CmdReviewReject(taskID, comment string) error {
 }
 
 func (a *App) taskVerdict(id, decision, comment string, auth verdictAuth) error {
+	report, err := a.taskVerdictReport(id, decision, comment, auth)
+	fmt.Print(report)
+	return err
+}
+
+// taskVerdictReport returns what the CLI prints on success instead of
+// printing it, so a full-screen UI can record verdicts without writing to
+// the terminal.
+func (a *App) taskVerdictReport(id, decision, comment string, auth verdictAuth) (string, error) {
 	task, err := a.DB.GetTask(id)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if task.State != StateReviewRequested {
-		return fmt.Errorf("cannot record review in state %s (need REVIEW_REQUESTED)", task.State)
+		return "", fmt.Errorf("cannot record review in state %s (need REVIEW_REQUESTED)", task.State)
 	}
 	req, err := a.recordVerdict(id, "", task.Branch, decision, comment, auth)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if decision == "approve" {
 		if err := a.DB.UpdateTaskState(id, StateApproved); err != nil {
-			return err
+			return "", err
 		}
-		fmt.Printf("Review recorded: APPROVE (%s)\n", shortSHA(req.CommitSHA))
-		fmt.Printf("Task %s is now APPROVED.\n", id)
-		fmt.Println("Next: run harness work merge")
-		return nil
+		return fmt.Sprintf("Review recorded: APPROVE (%s)\nTask %s is now APPROVED.\nNext: run harness work merge\n",
+			shortSHA(req.CommitSHA), id), nil
 	}
 	if err := a.DB.UpdateTaskState(id, StateRequestChanges); err != nil {
-		return err
+		return "", err
 	}
-	fmt.Printf("Review recorded: REQUEST_CHANGES\n")
-	fmt.Printf("Comment: %s\n", comment)
-	fmt.Printf("Task %s is now REQUEST_CHANGES.\n", id)
-	fmt.Println("Next: address the comments, then run: harness work check")
-	return nil
+	return fmt.Sprintf("Review recorded: REQUEST_CHANGES\nComment: %s\nTask %s is now REQUEST_CHANGES.\nNext: address the comments, then run: harness work check\n",
+		comment, id), nil
 }

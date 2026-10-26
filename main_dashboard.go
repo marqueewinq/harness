@@ -22,7 +22,8 @@ func dashboardCmd() *cobra.Command {
 		Long: `Full-screen view of open reviews, in-flight tasks grouped by epic, the merge
 queue and recently finished tasks, refreshed every --interval.
 
-Keys: ↑/↓ or j/k select, enter/tab details, f refresh, q quit.
+Keys: ↑/↓ or j/k select, enter/tab details, f refresh, q quit; on a row under
+AWAITING REVIEW: d diff, a approve, r reject (not when HARNESS_REVIEW_TOKEN is set).
 --once prints one plain snapshot and exits (for scripts and agents).`,
 		Args: cobra.NoArgs,
 	}
@@ -39,7 +40,13 @@ Keys: ↑/↓ or j/k select, enter/tab details, f refresh, q quit.
 			if interval <= 0 {
 				return fmt.Errorf("--interval must be positive, got %s", interval)
 			}
-			m := dashboard.NewModel(dashboard.AppLoader(app, all), interval, dashboard.UseColor(tty, os.Getenv("NO_COLOR")))
+			opts := dashboard.Options{
+				Interval:     interval,
+				Color:        dashboard.UseColor(tty, os.Getenv("NO_COLOR")),
+				AllowActions: os.Getenv(internal.ReviewTokenEnv) == "",
+				DenyReason:   internal.ReviewTokenEnv + " is set (a reviewer's environment)",
+			}
+			m := dashboard.NewModel(dashboard.AppLoader(app, all), opts)
 			_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 			return err
 		}

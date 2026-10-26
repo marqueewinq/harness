@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -9,11 +10,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type verdictCall struct{ subject, decision, comment string }
+
 type fakeLoader struct {
-	snap      Snapshot
-	err       error
-	snapCalls int
-	details   []string
+	snap       Snapshot
+	err        error
+	snapCalls  int
+	details    []string
+	diffs      []string
+	diffLines  int
+	verdicts   []verdictCall
+	verdictErr error
 }
 
 func (f *fakeLoader) loader() Loader {
@@ -25,6 +32,21 @@ func (f *fakeLoader) loader() Loader {
 		Detail: func(r Row, _ time.Time) (Detail, error) {
 			f.details = append(f.details, r.Key())
 			return Detail{Key: r.Key(), Title: r.ID, Lines: []string{"detail of " + r.ID}}, nil
+		},
+		Diff: func(r Row) (DiffView, error) {
+			f.diffs = append(f.diffs, r.Key())
+			v := DiffView{Key: r.Key(), Title: r.ID + " diff", Header: []string{"Review of " + r.ID}}
+			for i := 0; i < f.diffLines; i++ {
+				v.Diff = append(v.Diff, fmt.Sprintf("+line %d", i))
+			}
+			return v, nil
+		},
+		Verdict: func(subject, decision, comment string) (string, error) {
+			f.verdicts = append(f.verdicts, verdictCall{subject, decision, comment})
+			if f.verdictErr != nil {
+				return "", f.verdictErr
+			}
+			return "Review recorded: " + strings.ToUpper(decision) + " (81742677)\nTask " + subject + " is now APPROVED.\n", nil
 		},
 	}
 }
@@ -68,13 +90,24 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyTab}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "esc":
+		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
 
 func started(t *testing.T, f *fakeLoader) Model {
 	t.Helper()
-	m := NewModel(f.loader(), time.Millisecond, false)
+	return startedWith(t, f, Options{Interval: time.Millisecond, AllowActions: true})
+}
+
+func startedWith(t *testing.T, f *fakeLoader, opts Options) Model {
+	t.Helper()
+	m := NewModel(f.loader(), opts)
 	m, _ = step(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = run(t, m, m.Init())
 	if f.snapCalls != 1 || m.loading {
@@ -207,7 +240,7 @@ func TestModelStaleSnapshotKeepsLastGood(t *testing.T) {
 
 func TestModelFirstSnapshotFails(t *testing.T) {
 	f := &fakeLoader{err: errors.New("no such table")}
-	m := NewModel(f.loader(), time.Millisecond, false)
+	m := NewModel(f.loader(), Options{Interval: time.Millisecond, AllowActions: true})
 	m, _ = step(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = run(t, m, m.Init())
 	if first := strings.Split(m.View(), "\n")[0]; !strings.Contains(first, "stale: no such table") {
@@ -228,13 +261,35 @@ func TestModelQuit(t *testing.T) {
 	}
 }
 
-func TestModelDisabledActionsDoNothing(t *testing.T) {
-	m := started(t, &fakeLoader{snap: sampleSnapshot()})
+func TestModelActionsDisabledWhenNotAllowed(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot()}
+	m := startedWith(t, f, Options{Interval: time.Millisecond, DenyReason: "HARNESS_REVIEW_TOKEN is set"})
 	for _, k := range []string{"a", "r", "d"} {
 		next, cmd := step(t, m, key(k))
-		if cmd != nil || next.ui.DetailOpen != m.ui.DetailOpen || next.ui.Selected != m.ui.Selected {
-			t.Errorf("%s changed state or ran a command", k)
+		if cmd != nil || next.ui.Modal != nil || next.ui.DiffOpen {
+			t.Errorf("%s opened something while actions are not allowed", k)
 		}
+		if !next.ui.StatusErr || !strings.Contains(next.ui.Status, "disabled: HARNESS_REVIEW_TOKEN is set") {
+			t.Errorf("%s status = %q", k, next.ui.Status)
+		}
+		if !strings.Contains(next.View(), "HARNESS_REVIEW_TOKEN is set") {
+			t.Errorf("status line not rendered:\n%s", next.View())
+		}
+	}
+	if len(f.verdicts)+len(f.diffs) != 0 {
+		t.Errorf("loader called: %v %v", f.verdicts, f.diffs)
+	}
+	after := press(t, m, "a", "j")
+	if after.ui.Status != "" {
+		t.Errorf("status survived the next key: %q", after.ui.Status)
+	}
+}
+
+func TestModelActionsNeedAReviewRow(t *testing.T) {
+	m := started(t, &fakeLoader{snap: sampleSnapshot()})
+	m = press(t, m, "j", "j", "a")
+	if m.ui.Modal != nil || !strings.Contains(m.ui.Status, "AWAITING REVIEW") {
+		t.Errorf("approve on a task row: modal=%v status=%q", m.ui.Modal, m.ui.Status)
 	}
 }
 

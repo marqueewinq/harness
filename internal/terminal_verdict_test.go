@@ -21,7 +21,7 @@ func requestedTask(t *testing.T) (*App, *Task) {
 func TestRecordTerminalVerdictApproves(t *testing.T) {
 	t.Parallel()
 	app, task := requestedTask(t)
-	if err := app.RecordTerminalVerdict(task.ID, "approve", "lgtm", "dashboard"); err != nil {
+	if _, err := app.RecordTerminalVerdict(task.ID, "approve", "lgtm", "dashboard"); err != nil {
 		t.Fatal(err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -34,13 +34,46 @@ func TestRecordTerminalVerdictApproves(t *testing.T) {
 	}
 }
 
+func TestRecordTerminalVerdictReturnsReportWithoutPrinting(t *testing.T) {
+	app, task := requestedTask(t)
+	var report string
+	out, err := captureStdout(t, func() error {
+		var err error
+		report, err = app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "" {
+		t.Errorf("printed %q; the dashboard owns the terminal", out)
+	}
+	if !strings.Contains(report, "Task "+task.ID+" is now APPROVED.") {
+		t.Errorf("report = %q", report)
+	}
+}
+
+func TestCLIVerdictOutputUnchanged(t *testing.T) {
+	app, task := requestedTask(t)
+	out, err := captureStdout(t, func() error {
+		return app.taskVerdict(task.ID, "request_changes", "fix it", terminalAuth("test"))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Review recorded: REQUEST_CHANGES\nComment: fix it\nTask " + task.ID + " is now REQUEST_CHANGES.\nNext: address the comments, then run: harness work check\n"
+	if out != want {
+		t.Errorf("CLI output = %q, want %q", out, want)
+	}
+}
+
 func TestRecordTerminalVerdictRejectNeedsComment(t *testing.T) {
 	t.Parallel()
 	app, task := requestedTask(t)
-	if err := app.RecordTerminalVerdict(task.ID, "request_changes", "", "dashboard"); err == nil {
+	if _, err := app.RecordTerminalVerdict(task.ID, "request_changes", "", "dashboard"); err == nil {
 		t.Fatal("reject without comment should fail")
 	}
-	if err := app.RecordTerminalVerdict(task.ID, "request_changes", "fix it", "dashboard"); err != nil {
+	if _, err := app.RecordTerminalVerdict(task.ID, "request_changes", "fix it", "dashboard"); err != nil {
 		t.Fatal(err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
@@ -52,7 +85,7 @@ func TestRecordTerminalVerdictRejectNeedsComment(t *testing.T) {
 func TestRecordTerminalVerdictRejectsUnknownDecision(t *testing.T) {
 	t.Parallel()
 	app, task := requestedTask(t)
-	err := app.RecordTerminalVerdict(task.ID, "reject", "", "dashboard")
+	_, err := app.RecordTerminalVerdict(task.ID, "reject", "", "dashboard")
 	if err == nil || !strings.Contains(err.Error(), "unknown review decision") {
 		t.Fatalf("err = %v, want unknown review decision", err)
 	}
@@ -69,7 +102,7 @@ func TestRecordTerminalVerdictKeepsCLIChecks(t *testing.T) {
 	t.Parallel()
 	app, task := requestedTask(t)
 	gitCommitFile(t, task.WorktreePath, "late.txt", "x\n", "commit after request")
-	err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
+	_, err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
 	if err == nil || !strings.Contains(err.Error(), "moved since review was requested") {
 		t.Errorf("err = %v, want moved since review was requested", err)
 	}
@@ -88,13 +121,13 @@ func TestRecordTerminalVerdictEpic(t *testing.T) {
 	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.RecordTerminalVerdict("epic-001", "request_changes", "not yet", "dashboard"); err != nil {
+	if _, err := app.RecordTerminalVerdict("epic-001", "request_changes", "not yet", "dashboard"); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.RecordTerminalVerdict("epic-001", "approve", "", "dashboard"); err != nil {
+	if _, err := app.RecordTerminalVerdict("epic-001", "approve", "", "dashboard"); err != nil {
 		t.Fatal(err)
 	}
 	reviews, _ := app.DB.GetEpicReviews("epic-001")
@@ -109,7 +142,7 @@ func TestRecordTerminalVerdictRefusals(t *testing.T) {
 
 	t.Run("token env set", func(t *testing.T) {
 		t.Setenv(ReviewTokenEnv, "anything")
-		err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
+		_, err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
 		if err == nil || !strings.Contains(err.Error(), "reviewer's environment") {
 			t.Errorf("err = %v", err)
 		}
@@ -118,7 +151,7 @@ func TestRecordTerminalVerdictRefusals(t *testing.T) {
 	orig := stdinIsTerminal
 	stdinIsTerminal = func() bool { return false }
 	defer func() { stdinIsTerminal = orig }()
-	err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
+	_, err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
 	if err == nil || !strings.Contains(err.Error(), "not an interactive terminal") {
 		t.Errorf("without tty: err = %v", err)
 	}
