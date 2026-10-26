@@ -25,6 +25,15 @@ func (a *App) CmdEpicSync(epicID string, cont, abort bool) error {
 	_, statErr := os.Stat(path)
 	haveWorktree := statErr == nil
 	wt := NewGitClient(path)
+	// git run in a plain directory inside the repo would act on the main
+	// checkout (e.g. abort its rebase), so only a real worktree is trusted.
+	if haveWorktree {
+		top, err := wt.run("rev-parse", "--show-toplevel")
+		want, _ := filepath.EvalSymlinks(path)
+		if got, _ := filepath.EvalSymlinks(top); err != nil || got != want {
+			return fmt.Errorf("%s exists but is not an epic sync worktree; remove it, then retry", path)
+		}
+	}
 
 	if cont || abort {
 		if !haveWorktree {

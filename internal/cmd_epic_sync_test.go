@@ -68,13 +68,39 @@ func TestEpicSyncConflictContinueAndAbort(t *testing.T) {
 		t.Fatal("want conflict again")
 	}
 	wt := app.epicSyncWorktree(e.ID)
-	os.WriteFile(filepath.Join(wt, "clash.txt"), []byte("resolved\n"), 0644)
+	if err := os.WriteFile(filepath.Join(wt, "clash.txt"), []byte("resolved\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	gitRun(t, wt, "add", "clash.txt")
 	if err := app.CmdEpicSync(e.ID, true, false); err != nil {
 		t.Fatal("continue:", err)
 	}
 	if out, _ := app.Git.run("show", e.Branch+":clash.txt"); out != "resolved" {
 		t.Errorf("clash.txt = %q, want resolved", out)
+	}
+}
+
+func TestEpicSyncIgnoresStrayDirectory(t *testing.T) {
+	t.Parallel()
+	app, _, e := epicWithCommit(t, "epic.txt", "epic\n")
+	if err := os.MkdirAll(app.epicSyncWorktree(e.ID), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, flags := range [][2]bool{{false, false}, {true, false}, {false, true}} {
+		err := app.CmdEpicSync(e.ID, flags[0], flags[1])
+		if err == nil || !strings.Contains(err.Error(), "not an epic sync worktree") {
+			t.Errorf("flags %v: err = %v", flags, err)
+		}
+	}
+}
+
+func TestEpicSyncNothingInProgress(t *testing.T) {
+	t.Parallel()
+	app, _, e := epicWithCommit(t, "epic.txt", "epic\n")
+	for _, flags := range [][2]bool{{true, false}, {false, true}} {
+		if err := app.CmdEpicSync(e.ID, flags[0], flags[1]); err == nil || !strings.Contains(err.Error(), "no epic sync in progress") {
+			t.Errorf("flags %v: err = %v", flags, err)
+		}
 	}
 }
 
