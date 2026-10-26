@@ -123,8 +123,14 @@ func (a *App) recordVerdict(taskID, epicID, branch, decision, comment string, au
 	if epicID != "" {
 		subject = epicID
 	}
-	if decision == "request_changes" && comment == "" {
-		return nil, fmt.Errorf("--comment is required for reject")
+	switch decision {
+	case "approve":
+	case "request_changes":
+		if comment == "" {
+			return nil, fmt.Errorf("--comment is required for reject")
+		}
+	default:
+		return nil, fmt.Errorf("unknown review decision %q (want approve or request_changes)", decision)
 	}
 	req, err := a.openReviewRequestFor(taskID, epicID, branch, decision == "approve")
 	if err != nil {

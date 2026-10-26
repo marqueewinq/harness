@@ -49,6 +49,22 @@ func TestRecordTerminalVerdictRejectNeedsComment(t *testing.T) {
 	}
 }
 
+func TestRecordTerminalVerdictRejectsUnknownDecision(t *testing.T) {
+	t.Parallel()
+	app, task := requestedTask(t)
+	err := app.RecordTerminalVerdict(task.ID, "reject", "", "dashboard")
+	if err == nil || !strings.Contains(err.Error(), "unknown review decision") {
+		t.Fatalf("err = %v, want unknown review decision", err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateReviewRequested {
+		t.Errorf("state = %s, want REVIEW_REQUESTED", task.State)
+	}
+	if req, _ := app.DB.GetOpenReviewRequest(task.ID, ""); req == nil {
+		t.Error("request must stay open")
+	}
+}
+
 func TestRecordTerminalVerdictKeepsCLIChecks(t *testing.T) {
 	t.Parallel()
 	app, task := requestedTask(t)
@@ -72,11 +88,18 @@ func TestRecordTerminalVerdictEpic(t *testing.T) {
 	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
 		t.Fatal(err)
 	}
+	if err := app.RecordTerminalVerdict("epic-001", "request_changes", "not yet", "dashboard"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
+		t.Fatal(err)
+	}
 	if err := app.RecordTerminalVerdict("epic-001", "approve", "", "dashboard"); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := app.DB.GetLatestEpicApproval("epic-001"); a == nil {
-		t.Error("epic approval not recorded")
+	reviews, _ := app.DB.GetEpicReviews("epic-001")
+	if len(reviews) != 2 || reviews[0].Decision != "request_changes" || reviews[1].Decision != "approve" {
+		t.Errorf("epic reviews = %+v", reviews)
 	}
 }
 
@@ -84,17 +107,18 @@ func TestRecordTerminalVerdictEpic(t *testing.T) {
 func TestRecordTerminalVerdictRefusals(t *testing.T) {
 	app, task := requestedTask(t)
 
-	t.Setenv(ReviewTokenEnv, "anything")
-	err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
-	if err == nil || !strings.Contains(err.Error(), "reviewer's environment") {
-		t.Errorf("with token env: err = %v", err)
-	}
-	t.Setenv(ReviewTokenEnv, "")
+	t.Run("token env set", func(t *testing.T) {
+		t.Setenv(ReviewTokenEnv, "anything")
+		err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
+		if err == nil || !strings.Contains(err.Error(), "reviewer's environment") {
+			t.Errorf("err = %v", err)
+		}
+	})
 
 	orig := stdinIsTerminal
 	stdinIsTerminal = func() bool { return false }
 	defer func() { stdinIsTerminal = orig }()
-	err = app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
+	err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard")
 	if err == nil || !strings.Contains(err.Error(), "not an interactive terminal") {
 		t.Errorf("without tty: err = %v", err)
 	}
