@@ -13,16 +13,17 @@ import (
 )
 
 type Styles struct {
-	Plain   lipgloss.Style
-	Header  lipgloss.Style
-	Section lipgloss.Style
-	Group   lipgloss.Style
-	Dim     lipgloss.Style
-	Pass    lipgloss.Style
-	Running lipgloss.Style
-	Fail    lipgloss.Style
-	Gutter  lipgloss.Style
-	Accent  lipgloss.Style
+	Plain     lipgloss.Style
+	Header    lipgloss.Style
+	Section   lipgloss.Style
+	Group     lipgloss.Style
+	Dim       lipgloss.Style
+	Pass      lipgloss.Style
+	Running   lipgloss.Style
+	Fail      lipgloss.Style
+	Gutter    lipgloss.Style
+	Accent    lipgloss.Style
+	AccentDim lipgloss.Style
 }
 
 // NewStyles with color=false renders plain text with no escape sequences.
@@ -47,6 +48,8 @@ func NewStyles(color bool) Styles {
 		Fail:    r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}),
 		Gutter:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}).Bold(true),
 		Accent:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "6"}).Bold(true),
+		// AccentDim keeps a disabled action's hotkey coloured but faint.
+		AccentDim: r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "6"}).Faint(true),
 	}
 }
 
@@ -112,8 +115,13 @@ func listLines(st Styles, s Snapshot) (lines []listLine, rows []Row) {
 		}
 	}
 	if section("IN FLIGHT", len(s.Groups) == 0) {
-		for _, g := range s.Groups {
-			add(groupHeader(st, g))
+		for gi := range s.Groups {
+			g := &s.Groups[gi]
+			if g.Epic != nil {
+				addRow(groupHeader(st, *g), Row{Kind: RowEpic, ID: g.Epic.ID, IsEpic: true, Group: g})
+			} else {
+				add(groupHeader(st, *g))
+			}
 			for i := range g.Tasks {
 				t := &g.Tasks[i]
 				addRow(taskLine(st, *t), Row{Kind: RowTask, ID: t.ID, Task: t})

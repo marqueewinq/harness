@@ -136,21 +136,26 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 
 | key | action |
 |---|---|
-| `↑`/`↓`, `j`/`k` | select a row (`g`/`G` first/last) |
-| `enter`, `tab` | toggle the detail pane: state history, checks, review request and reviewer run, queue lease, live check log |
+| `↑`/`↓`, `j`/`k` | select a row: a review, a task, or an epic header under IN FLIGHT (`g`/`G` first/last) |
+| `enter`, `tab` | toggle the detail pane: state history, checks, review request and reviewer run, queue lease, live check log; `pgup`/`pgdn` scroll it |
 | `f` | refresh now |
 | `q`, `Ctrl-C` | quit |
-| `d` | on a review row: diff of exactly the requested commit (`git diff <base>...<sha>`, base is the task's base branch or main for an epic), with description, check results on that commit and previous review comments; `j`/`k`, `pgup`/`pgdn`, `g`/`G` scroll, `esc` closes |
-| `a` | on a review row: approve; optional comment, then type the task or epic ID to confirm |
-| `r` | on a review row: reject; a comment is required, then type the ID to confirm |
+| `d` | diff of any task or epic row; `j`/`k`, `pgup`/`pgdn`, `g`/`G` scroll, `esc` closes. With an open review request it is exactly the requested commit (`<base>...<sha>`, base is the task's base branch or main for an epic); otherwise the branch head (`<base>...<branch>`), or a note when there is nothing to diff (not started, branch deleted). The header names the range shown and lists the description, check results on that commit and previous review comments |
+| `x` | expand: show the full multi-line description and review comments in the open detail or diff pane, wrapped to its width; `x` again or moving the selection collapses |
+| `a` | on a row with an open review request: approve; optional comment, then type the task or epic ID to confirm |
+| `r` | on a row with an open review request: reject; a comment is required, then type the ID to confirm |
+
+Every hotkey letter is coloured inside its word; keys that do not apply to
+the selected row keep a faint coloured letter and a dimmed word.
 
 `esc` cancels an approve or reject at any step. The verdict goes through the
 same checks as `harness review approve|reject` (open request, branch head still
-at the requested commit for approve) and is recorded as
-`terminal:<user> (dashboard)`. Approve, reject and diff are enabled only when
-the dashboard runs on an interactive terminal and `HARNESS_REVIEW_TOKEN` is not
-set, so a reviewer agent cannot record a verdict labelled as a human's;
-otherwise they stay dimmed and pressing them says why.
+at the requested commit for approve), is pinned to the requested commit the
+dashboard showed, and is recorded as `terminal:<user> (dashboard)`. Approve and
+reject are enabled only when the dashboard runs on an interactive terminal and
+`HARNESS_REVIEW_TOKEN` is not set, so a reviewer agent cannot record a verdict
+labelled as a human's; otherwise they stay dimmed and pressing them says why.
+Diff is read-only and always available.
 
 The interactive view needs a terminal; from scripts and agents use `--once`,
 whose output has no colour when stdout is not a terminal. `NO_COLOR` turns

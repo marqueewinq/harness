@@ -148,7 +148,7 @@ func TestDiffPane(t *testing.T) {
 		t.Errorf("offset after pgdown = %d, want %d", m.ui.DiffOffset, 2+page)
 	}
 	m = press(t, m, "G")
-	last := ClampDiffOffset(m.snap, m.ui, m.height)
+	last := ClampDiffOffset(m.snap, m.ui, m.width, m.height)
 	if m.ui.DiffOffset != last || !strings.Contains(m.View(), "+line 99") {
 		t.Errorf("G: offset=%d last=%d\n%s", m.ui.DiffOffset, last, m.View())
 	}

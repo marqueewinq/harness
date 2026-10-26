@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -20,24 +21,43 @@ type RowKind int
 const (
 	RowReview RowKind = iota
 	RowTask
+	RowEpic
 )
 
-// Row is a selectable line: an AWAITING REVIEW entry or a task.
+// Row is a selectable line: an AWAITING REVIEW entry, a task, or an epic
+// header under IN FLIGHT.
 type Row struct {
 	Kind   RowKind
 	ID     string
 	IsEpic bool
 	Review *ReviewRow
 	Task   *TaskRow
+	Group  *EpicGroup
 }
 
 // Key identifies the row across snapshots; a task listed both under review
 // and in flight is two rows.
 func (r Row) Key() string {
-	if r.Kind == RowReview {
+	switch r.Kind {
+	case RowReview:
 		return "review:" + r.ID
+	case RowEpic:
+		return "epic:" + r.ID
 	}
 	return "task:" + r.ID
+}
+
+// RequestSHA is the commit of the row's open review request, or "".
+func (r Row) RequestSHA() string {
+	switch {
+	case r.Kind == RowReview && r.Review != nil:
+		return r.Review.CommitSHA
+	case r.Kind == RowTask && r.Task != nil && r.Task.Review != nil && !r.Task.Review.Resolved:
+		return r.Task.Review.CommitSHA
+	case r.Kind == RowEpic && r.Group != nil:
+		return r.Group.ReviewSHA
+	}
+	return ""
 }
 
 func Rows(s Snapshot) []Row {
@@ -45,40 +65,52 @@ func Rows(s Snapshot) []Row {
 	return rows
 }
 
+// Context is what decides whether an action applies right now.
+type Context struct {
+	Row *Row
+	// Expandable: the open detail or diff pane has user text to expand.
+	Expandable bool
+}
+
 // Action is a key bar entry. Start runs it on the selected row; built-in keys
-// (details, refresh, quit, select) have no Start and are handled by
+// (details, expand, refresh, quit, select) have no Start and are handled by
 // Model.Update.
 type Action struct {
 	Key string
 	// Hint is shown, accented, before Label when Key is not a letter of Label.
 	Hint    string
 	Label   string
-	Enabled func(row *Row) bool
+	Enabled func(c Context) bool
 	Start   func(m *Model, row Row) tea.Cmd
 }
 
-func (a Action) enabled(row *Row) bool {
-	return a.Enabled == nil || a.Enabled(row)
+func (a Action) enabled(c Context) bool {
+	return a.Enabled == nil || a.Enabled(c)
 }
 
-// Detail is the detail pane content for the row whose Key it carries.
+// Detail is the detail pane content for the row whose Key it carries. Full
+// is Lines with user text kept multi-line, shown when expanded.
 type Detail struct {
-	Key   string
-	Title string
-	Lines []string
+	Key        string
+	Title      string
+	Lines      []string
+	Full       []string
+	Expandable bool
 }
 
-// DiffView is the review pane: context lines, then the diff of exactly the
-// requested commit.
+// DiffView is the diff pane: context lines, then the diff.
 type DiffView struct {
 	Key string
-	// SHA is the request commit the diff shows; a verdict from this pane is
-	// pinned to it.
-	SHA    string
-	Title  string
-	Header []string
-	Diff   []string
-	Failed bool
+	// SHA is set only for a diff of an open review request's commit; a
+	// verdict from this pane is pinned to it. Branch-head diffs leave it empty.
+	SHA        string
+	Range      string
+	Title      string
+	Header     []string
+	FullHeader []string
+	Expandable bool
+	Diff       []string
+	Failed     bool
 }
 
 type ModalStep int
@@ -100,15 +132,18 @@ type Modal struct {
 }
 
 type UIState struct {
-	Selected   int
-	Offset     int
-	DetailOpen bool
-	Detail     *Detail
-	DiffOpen   bool
-	Diff       *DiffView
-	DiffKey    string
-	DiffOffset int
-	Modal      *Modal
+	Selected     int
+	Offset       int
+	DetailOpen   bool
+	Detail       *Detail
+	DetailOffset int
+	DiffOpen     bool
+	Diff         *DiffView
+	DiffKey      string
+	DiffOffset   int
+	// Expanded shows user text in full in the detail and diff panes.
+	Expanded bool
+	Modal    *Modal
 	// Status is shown above the key bar until the next key press.
 	Status    string
 	StatusErr bool
@@ -186,20 +221,41 @@ func ListOffset(s Snapshot, ui UIState, height int) int {
 	return clampOffset(ui.Offset, l.selLine, l.listH, len(l.lines))
 }
 
-func DiffPage(s Snapshot, ui UIState, height int) int {
-	h := computeLayout(NewStyles(false), s, ui, height).bodyH - 1
-	if h < 1 {
-		return 1
+func selectedRow(rows []Row, ui UIState) *Row {
+	if ui.Selected >= 0 && ui.Selected < len(rows) {
+		return &rows[ui.Selected]
 	}
-	return h
+	return nil
 }
 
-func ClampDiffOffset(s Snapshot, ui UIState, height int) int {
-	total := 0
-	if ui.Diff != nil {
-		total = len(ui.Diff.Header) + max(len(ui.Diff.Diff), 1)
-	}
+func DiffPage(s Snapshot, ui UIState, height int) int {
+	return max(computeLayout(NewStyles(false), s, ui, height).bodyH-1, 1)
+}
+
+func ClampDiffOffset(s Snapshot, ui UIState, width, height int) int {
+	total := len(diffBody(NewStyles(false), ui, width))
 	return clampOffset(ui.DiffOffset, -1, DiffPage(s, ui, height), total)
+}
+
+// DetailPage is how many lines the detail pane scrolls per page.
+func DetailPage(s Snapshot, ui UIState, height int) int {
+	return max(computeLayout(NewStyles(false), s, ui, height).detailH-1, 1)
+}
+
+func ClampDetailOffset(s Snapshot, ui UIState, width, height int) int {
+	st := NewStyles(false)
+	l := computeLayout(st, s, ui, height)
+	_, body := detailBody(st, ui, selectedRow(l.rows, ui), width)
+	return clampOffset(ui.DetailOffset, -1, l.detailH-1, len(body))
+}
+
+// Expandable reports whether the pane on screen has user text to expand.
+func Expandable(s Snapshot, ui UIState) bool {
+	if ui.DiffOpen {
+		return ui.Diff != nil && ui.Diff.Key == ui.DiffKey && ui.Diff.Expandable
+	}
+	sel := selectedRow(Rows(s), ui)
+	return ui.DetailOpen && sel != nil && ui.Detail != nil && ui.Detail.Key == sel.Key() && ui.Detail.Expandable
 }
 
 // Render draws the interactive dashboard as exactly height lines.
@@ -209,10 +265,7 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 		return st.Fail.Render(fmt.Sprintf("terminal too small (%dx%d, need %dx%d)", width, height, minWidth, minHeight))
 	}
 	l := computeLayout(st, s, ui, height)
-	var sel *Row
-	if ui.Selected >= 0 && ui.Selected < len(l.rows) {
-		sel = &l.rows[ui.Selected]
-	}
+	sel := selectedRow(l.rows, ui)
 
 	out := append([]string{}, l.header...)
 	if ui.DiffOpen {
@@ -230,7 +283,7 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 			}
 		}
 		if l.detailH > 0 {
-			out = append(out, detailPane(st, ui, sel, width, l.detailH)...)
+			out = append(out, detailPane(st, s, ui, sel, width, height, l.detailH)...)
 		}
 	}
 	out = append(out, modalLines(st, ui.Modal)...)
@@ -241,7 +294,7 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 		}
 		out = append(out, " "+style.Render(ui.Status))
 	}
-	out = append(out, keyBar(st, barActions(ui), sel))
+	out = append(out, keyBar(st, barActions(ui), Context{Row: sel, Expandable: Expandable(s, ui)}))
 	for i, line := range out {
 		out[i] = ansi.Truncate(line, width, "…")
 	}
@@ -261,7 +314,7 @@ func barActions(ui UIState) []Action {
 	}
 	var out []Action
 	for _, a := range actions {
-		if a.Key == "a" || a.Key == "r" {
+		if a.Key == "a" || a.Key == "r" || a.Key == "x" {
 			out = append(out, a)
 		}
 	}
@@ -295,60 +348,73 @@ func separator(st Styles, title string, width int) string {
 	return st.Dim.Render(sep)
 }
 
-func detailPane(st Styles, ui UIState, sel *Row, width, height int) []string {
-	title := "details"
-	var body []string
+func scrollNote(offset, page, total int) string {
+	if total <= page {
+		return ""
+	}
+	return fmt.Sprintf(" · lines %d-%d of %d", offset+1, min(offset+page, total), total)
+}
+
+func detailBody(st Styles, ui UIState, sel *Row, width int) (string, []string) {
 	switch {
 	case sel == nil:
-		body = []string{st.Dim.Render("nothing selected")}
+		return "details", []string{st.Dim.Render("nothing selected")}
 	case ui.Detail == nil || ui.Detail.Key != sel.Key():
-		title = sel.ID
-		body = []string{st.Dim.Render("loading…")}
-	default:
-		title = ui.Detail.Title
-		body = ui.Detail.Lines
+		return sel.ID, []string{st.Dim.Render("loading…")}
+	case ui.Expanded && ui.Detail.Expandable:
+		return ui.Detail.Title, wrapLines(ui.Detail.Full, width-1)
 	}
-	out := []string{separator(st, title, width)}
-	for i := 0; i < height-1; i++ {
+	return ui.Detail.Title, ui.Detail.Lines
+}
+
+func detailPane(st Styles, s Snapshot, ui UIState, sel *Row, width, height, paneH int) []string {
+	title, body := detailBody(st, ui, sel, width)
+	page := paneH - 1
+	offset := ClampDetailOffset(s, ui, width, height)
+	out := []string{separator(st, title+scrollNote(offset, page, len(body)), width)}
+	for i := offset; i < offset+page; i++ {
 		if i < len(body) {
 			out = append(out, " "+body[i])
 		} else {
 			out = append(out, "")
 		}
 	}
-	if len(body) > height-1 && height > 1 {
-		out[len(out)-1] = st.Dim.Render(fmt.Sprintf(" … %d more lines", len(body)-(height-2)))
-	}
 	return out
+}
+
+func diffBody(st Styles, ui UIState, width int) []string {
+	if ui.Diff == nil || ui.Diff.Key != ui.DiffKey {
+		return []string{st.Dim.Render("loading…")}
+	}
+	header := ui.Diff.Header
+	if ui.Expanded && ui.Diff.Expandable {
+		header = wrapLines(ui.Diff.FullHeader, width-1)
+	}
+	var body []string
+	for _, h := range header {
+		body = append(body, " "+h)
+	}
+	for _, d := range ui.Diff.Diff {
+		body = append(body, diffLineStyle(st, d))
+	}
+	if len(ui.Diff.Diff) == 0 && ui.Diff.Range != "" {
+		body = append(body, st.Dim.Render(" (empty diff)"))
+	}
+	return body
 }
 
 func diffPane(st Styles, s Snapshot, ui UIState, height, width, bodyH int) []string {
 	if bodyH <= 0 {
 		return nil
 	}
-	var title string
-	var body []string
-	if ui.Diff == nil || ui.Diff.Key != ui.DiffKey {
-		title = "diff"
-		body = []string{st.Dim.Render("loading…")}
-	} else {
+	title := "diff"
+	if ui.Diff != nil && ui.Diff.Key == ui.DiffKey {
 		title = ui.Diff.Title
-		for _, h := range ui.Diff.Header {
-			body = append(body, " "+h)
-		}
-		for _, d := range ui.Diff.Diff {
-			body = append(body, diffLineStyle(st, d))
-		}
-		if len(ui.Diff.Diff) == 0 {
-			body = append(body, st.Dim.Render(" (empty diff)"))
-		}
 	}
+	body := diffBody(st, ui, width)
 	page := bodyH - 1
-	offset := ClampDiffOffset(s, ui, height)
-	if total := len(body); total > page {
-		title += fmt.Sprintf(" · lines %d-%d of %d", offset+1, min(offset+page, total), total)
-	}
-	out := []string{separator(st, title, width)}
+	offset := ClampDiffOffset(s, ui, width, height)
+	out := []string{separator(st, title+scrollNote(offset, page, len(body)), width)}
 	for i := offset; i < offset+page; i++ {
 		if i < len(body) {
 			out = append(out, body[i])
@@ -399,28 +465,35 @@ func modalLines(st Styles, m *Modal) []string {
 	return lines
 }
 
-func keyBar(st Styles, actions []Action, sel *Row) string {
+// keyBar always colours each hotkey; a disabled action has the rest of its
+// word dimmed and its key in the faint accent.
+func keyBar(st Styles, actions []Action, c Context) string {
 	var parts []string
 	for _, a := range actions {
-		on := a.enabled(sel)
-		switch {
-		case !on && a.Hint != "":
-			parts = append(parts, st.Dim.Render(a.Hint+" "+a.Label))
-		case !on:
-			parts = append(parts, st.Dim.Render(a.Label))
-		case a.Hint != "":
-			parts = append(parts, st.Accent.Render(a.Hint)+" "+st.Plain.Render(a.Label))
-		default:
-			parts = append(parts, accentKey(st, a.Label, a.Key))
+		key, rest := st.Accent, st.Plain
+		if !a.enabled(c) {
+			key, rest = st.AccentDim, st.Dim
 		}
+		if a.Hint != "" {
+			parts = append(parts, key.Render(a.Hint)+" "+rest.Render(a.Label))
+			continue
+		}
+		parts = append(parts, accentKey(key, rest, a.Label, a.Key))
 	}
 	return " " + strings.Join(parts, "  ")
 }
 
-func accentKey(st Styles, label, key string) string {
-	i := strings.Index(label, key)
+func accentKey(key, rest lipgloss.Style, label, k string) string {
+	i := strings.Index(label, k)
 	if i < 0 {
-		return st.Accent.Render(key) + " " + st.Plain.Render(label)
+		return key.Render(k) + " " + rest.Render(label)
 	}
-	return st.Plain.Render(label[:i]) + st.Accent.Render(key) + st.Plain.Render(label[i+len(key):])
+	return renderNonEmpty(rest, label[:i]) + key.Render(k) + renderNonEmpty(rest, label[i+len(k):])
+}
+
+func renderNonEmpty(st lipgloss.Style, s string) string {
+	if s == "" {
+		return ""
+	}
+	return st.Render(s)
 }

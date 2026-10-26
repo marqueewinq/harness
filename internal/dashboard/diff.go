@@ -9,70 +9,106 @@ import (
 	"github.com/marqueewinq/harness/internal"
 )
 
-// BuildDiff shows what a reviewer judges: the diff of exactly the requested
-// commit against the subject's base, with its context.
-func BuildDiff(app *internal.App, row Row) (DiffView, error) {
-	var (
-		taskID, epicID, title, description, base string
-		reviews                                  []internal.Review
-		err                                      error
-	)
+type diffSubject struct {
+	taskID, epicID string
+	title, desc    string
+	base, branch   string
+	state          internal.TaskState
+	reviews        []internal.Review
+}
+
+func loadDiffSubject(app *internal.App, row Row) (diffSubject, error) {
 	if row.IsEpic {
 		e, err := app.DB.GetEpic(row.ID)
 		if err != nil {
-			return DiffView{}, err
+			return diffSubject{}, err
 		}
-		epicID, title, description, base = e.ID, e.Title, e.Description, app.Config.MainBranch
-		reviews, err = app.DB.GetEpicReviews(e.ID)
+		reviews, err := app.DB.GetEpicReviews(e.ID)
 		if err != nil {
-			return DiffView{}, err
+			return diffSubject{}, err
 		}
-	} else {
-		t, err := app.DB.GetTask(row.ID)
-		if err != nil {
-			return DiffView{}, err
-		}
-		taskID, title, description, base = t.ID, t.Title, t.Description, t.BaseBranch
-		reviews, err = app.DB.GetReviews(t.ID)
-		if err != nil {
-			return DiffView{}, err
-		}
+		return diffSubject{epicID: e.ID, title: e.Title, desc: e.Description, base: app.Config.MainBranch, branch: e.Branch, reviews: reviews}, nil
 	}
-	req, err := app.DB.GetOpenReviewRequest(taskID, epicID)
+	t, err := app.DB.GetTask(row.ID)
+	if err != nil {
+		return diffSubject{}, err
+	}
+	reviews, err := app.DB.GetReviews(t.ID)
+	if err != nil {
+		return diffSubject{}, err
+	}
+	return diffSubject{taskID: t.ID, title: t.Title, desc: t.Description, base: t.BaseBranch, branch: t.Branch, state: t.State, reviews: reviews}, nil
+}
+
+// BuildDiff shows the subject's diff. With an open review request it is
+// exactly the requested commit against the base (SHA set: what a verdict
+// judges); otherwise the branch head against the base, for information only.
+func BuildDiff(app *internal.App, row Row) (DiffView, error) {
+	sub, err := loadDiffSubject(app, row)
 	if err != nil {
 		return DiffView{}, err
 	}
-	if req == nil {
-		return DiffView{}, fmt.Errorf("%s has no open review request", row.ID)
+	req, err := app.DB.GetOpenReviewRequest(sub.taskID, sub.epicID)
+	if err != nil {
+		return DiffView{}, err
 	}
 
-	v := DiffView{Key: row.Key(), SHA: req.CommitSHA, Title: fmt.Sprintf("%s %s · %s...%s", row.ID, flatten(title), base, shortSHA(req.CommitSHA))}
-	add := func(format string, args ...interface{}) { v.Header = append(v.Header, fmt.Sprintf(format, args...)) }
-	add("Review of %s at %s (requested %s), base %s", row.ID, shortSHA(req.CommitSHA), req.CreatedAt.Local().Format("2006-01-02 15:04"), base)
-	if description != "" {
-		add("Description: %s", flatten(description))
+	v := DiffView{Key: row.Key()}
+	var b doc
+	var target string
+	switch {
+	case req != nil:
+		v.SHA, target = req.CommitSHA, req.CommitSHA
+		v.Range = sub.base + "..." + shortSHA(req.CommitSHA)
+		b.add("Requested commit %s (requested %s), base %s", shortSHA(req.CommitSHA), req.CreatedAt.Local().Format("2006-01-02 15:04"), sub.base)
+	case sub.epicID == "" && (sub.state == internal.StatePlanned || sub.branch == ""):
+		b.add("Not started; nothing to diff.")
+	case sub.epicID != "" && sub.branch == "":
+		b.add("Epic has no branch; nothing to diff.")
+	default:
+		head, err := app.Git.RevParse("refs/heads/" + sub.branch)
+		if err != nil {
+			if sub.state == internal.StateMerged || sub.state == internal.StateClosed {
+				b.add("Branch %s deleted (%s); nothing to diff.", sub.branch, sub.state)
+			} else {
+				b.add("Branch %s not found; nothing to diff.", sub.branch)
+			}
+			break
+		}
+		target = head
+		v.Range = fmt.Sprintf("%s...%s @ %s", sub.base, sub.branch, shortSHA(head))
+		b.add("Branch head %s...%s @ %s (no open review request)", sub.base, sub.branch, shortSHA(head))
 	}
-	if taskID != "" {
-		if err := checkLines(app, taskID, req.CommitSHA, add); err != nil {
+	v.Title = row.ID + " " + flatten(sub.title)
+	if v.Range != "" {
+		v.Title += " · " + v.Range
+	}
+	b.text("", "Description: ", sub.desc)
+	if sub.taskID != "" && target != "" {
+		if err := checkLines(app, sub.taskID, target, b.add); err != nil {
 			return DiffView{}, err
 		}
 	}
 	commented := false
-	for _, r := range reviews {
-		if r.Comment == "" {
+	for _, r := range sub.reviews {
+		if strings.TrimSpace(r.Comment) == "" {
 			continue
 		}
 		if !commented {
-			add("Previous comments:")
+			b.add("Previous comments:")
 			commented = true
 		}
-		add("  [%s at %s] %s", r.Decision, orDash(shortSHA(r.CommitSHA)), flatten(r.Comment))
+		b.text("  ", fmt.Sprintf("[%s at %s] ", r.Decision, orDash(shortSHA(r.CommitSHA))), r.Comment)
 	}
-	add("")
+	b.add("")
+	v.Header, v.FullHeader, v.Expandable = b.lines, b.full, b.expandable
 
-	diff, err := app.Git.Diff(base, req.CommitSHA)
+	if target == "" {
+		return v, nil
+	}
+	diff, err := app.Git.Diff(sub.base, target)
 	if err != nil {
-		return DiffView{}, fmt.Errorf("git diff %s...%s: %w", base, shortSHA(req.CommitSHA), err)
+		return DiffView{}, fmt.Errorf("git diff %s...%s: %w", sub.base, shortSHA(target), err)
 	}
 	if diff != "" {
 		for _, l := range strings.Split(diff, "\n") {
@@ -80,12 +116,6 @@ func BuildDiff(app *internal.App, row Row) (DiffView, error) {
 		}
 	}
 	return v, nil
-}
-
-// flatten makes user text safe for one pane line: no escapes or line breaks.
-func flatten(s string) string {
-	s = ansi.Strip(s)
-	return strings.Join(strings.Fields(s), " ")
 }
 
 func checkLines(app *internal.App, taskID, sha string, add func(string, ...interface{})) error {

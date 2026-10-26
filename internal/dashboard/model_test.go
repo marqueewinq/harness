@@ -22,6 +22,7 @@ type fakeLoader struct {
 	verdicts   []verdictCall
 	verdictErr error
 	diffErr    error
+	expandable bool
 }
 
 func (f *fakeLoader) loader() Loader {
@@ -32,14 +33,18 @@ func (f *fakeLoader) loader() Loader {
 		},
 		Detail: func(r Row, _ time.Time) (Detail, error) {
 			f.details = append(f.details, r.Key())
-			return Detail{Key: r.Key(), Title: r.ID, Lines: []string{"detail of " + r.ID}}, nil
+			return Detail{Key: r.Key(), Title: r.ID, Lines: []string{"detail of " + r.ID},
+				Full: []string{"detail of " + r.ID, "full text of " + r.ID}, Expandable: f.expandable}, nil
 		},
 		Diff: func(r Row) (DiffView, error) {
 			f.diffs = append(f.diffs, r.Key())
 			if f.diffErr != nil {
 				return DiffView{}, f.diffErr
 			}
-			v := DiffView{Key: r.Key(), SHA: r.Review.CommitSHA, Title: r.ID + " diff", Header: []string{"Review of " + r.ID + " at " + r.Review.CommitSHA}}
+			sha := r.RequestSHA()
+			v := DiffView{Key: r.Key(), SHA: sha, Range: "base..." + sha, Title: r.ID + " diff",
+				Header: []string{"Review of " + r.ID + " at " + sha}, Expandable: f.expandable,
+				FullHeader: []string{"Review of " + r.ID + " at " + sha, "full comments of " + r.ID}}
 			for i := 0; i < f.diffLines; i++ {
 				v.Diff = append(v.Diff, fmt.Sprintf("+line %d", i))
 			}
@@ -187,7 +192,7 @@ func TestModelDetailToggle(t *testing.T) {
 	if !strings.Contains(m.View(), "detail of epic-002") {
 		t.Errorf("view lacks detail:\n%s", m.View())
 	}
-	m = press(t, m, "j")
+	m = press(t, m, "j", "j")
 	if m.ui.Detail.Key != "task:task-025" {
 		t.Errorf("detail did not follow selection: %+v", m.ui.Detail)
 	}
@@ -198,6 +203,18 @@ func TestModelDetailToggle(t *testing.T) {
 	m = press(t, m, "j")
 	if got := f.details[len(f.details)-1]; got != "task:task-025" {
 		t.Errorf("detail loaded while closed: %v", f.details)
+	}
+}
+
+func TestEpicHeaderSelectable(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot()}
+	m := started(t, f)
+	m = press(t, m, "j", "j", "enter")
+	if r := m.selected(); r == nil || r.Key() != "epic:epic-002" || !r.IsEpic {
+		t.Fatalf("selected = %+v", r)
+	}
+	if !strings.Contains(m.View(), "›proj-001 › epic-002") || m.ui.Detail == nil || m.ui.Detail.Key != "epic:epic-002" {
+		t.Errorf("epic header not selected with detail:\n%s", m.View())
 	}
 }
 
@@ -268,7 +285,7 @@ func TestModelQuit(t *testing.T) {
 func TestModelActionsDisabledWhenNotAllowed(t *testing.T) {
 	f := &fakeLoader{snap: sampleSnapshot()}
 	m := startedWith(t, f, Options{Interval: time.Millisecond, DenyReason: "HARNESS_REVIEW_TOKEN is set"})
-	for _, k := range []string{"a", "r", "d"} {
+	for _, k := range []string{"a", "r"} {
 		next, cmd := step(t, m, key(k))
 		if cmd != nil || next.ui.Modal != nil || next.ui.DiffOpen {
 			t.Errorf("%s opened something while actions are not allowed", k)
@@ -280,20 +297,59 @@ func TestModelActionsDisabledWhenNotAllowed(t *testing.T) {
 			t.Errorf("status line not rendered:\n%s", next.View())
 		}
 	}
-	if len(f.verdicts)+len(f.diffs) != 0 {
-		t.Errorf("loader called: %v %v", f.verdicts, f.diffs)
+	if len(f.verdicts) != 0 {
+		t.Errorf("verdict recorded: %v", f.verdicts)
 	}
 	after := press(t, m, "a", "j")
 	if after.ui.Status != "" {
 		t.Errorf("status survived the next key: %q", after.ui.Status)
 	}
+	viewing := press(t, m, "d")
+	if !viewing.ui.DiffOpen || len(f.diffs) != 1 || viewing.ui.StatusErr {
+		t.Errorf("diff not available when actions are disallowed: open=%v loads=%v status=%q", viewing.ui.DiffOpen, f.diffs, viewing.ui.Status)
+	}
 }
 
-func TestModelActionsNeedAReviewRow(t *testing.T) {
-	m := started(t, &fakeLoader{snap: sampleSnapshot()})
-	m = press(t, m, "j", "j", "a")
-	if m.ui.Modal != nil || !strings.Contains(m.ui.Status, "AWAITING REVIEW") {
-		t.Errorf("approve on a task row: modal=%v status=%q", m.ui.Modal, m.ui.Status)
+func TestModelVerdictNeedsOpenRequest(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot()}
+	m := started(t, f)
+	m = press(t, m, "j", "j", "j", "a")
+	if m.ui.Modal != nil || !strings.Contains(m.ui.Status, "open review request") {
+		t.Errorf("approve on a task without a request: modal=%v status=%q", m.ui.Modal, m.ui.Status)
+	}
+	m = press(t, m, "d")
+	if !m.ui.DiffOpen || f.diffs[len(f.diffs)-1] != "task:task-025" {
+		t.Errorf("diff on an in-progress task row: open=%v loads=%v", m.ui.DiffOpen, f.diffs)
+	}
+	m = press(t, m, "esc", "k", "a")
+	if m.ui.Modal == nil || m.ui.Modal.Subject != "epic-002" || m.ui.Modal.SHA != "5d1c09aa999" {
+		t.Errorf("approve on epic header with an open request: %+v", m.ui.Modal)
+	}
+}
+
+func TestExpandToggle(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot()}
+	m := started(t, f)
+	m = press(t, m, "x")
+	if m.ui.Expanded || !strings.Contains(m.ui.Status, "expand applies") {
+		t.Errorf("x without an open pane: expanded=%v status=%q", m.ui.Expanded, m.ui.Status)
+	}
+	f.expandable = true
+	m = press(t, m, "enter", "x")
+	if !m.ui.Expanded || !strings.Contains(m.View(), "full text of task-026") {
+		t.Errorf("x did not expand:\n%s", m.View())
+	}
+	m = press(t, m, "x")
+	if m.ui.Expanded {
+		t.Error("second x did not collapse")
+	}
+	m = press(t, m, "x", "j")
+	if m.ui.Expanded {
+		t.Error("selection change did not collapse")
+	}
+	m = press(t, m, "k", "d", "x")
+	if !m.ui.Expanded || !strings.Contains(m.View(), "full comments of task-026") {
+		t.Errorf("x in diff pane did not expand the header:\n%s", m.View())
 	}
 }
 

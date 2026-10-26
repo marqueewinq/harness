@@ -88,19 +88,25 @@ func NewModel(load Loader, opts Options) Model {
 	}
 }
 
-func isReviewRow(r *Row) bool { return r != nil && r.Kind == RowReview }
-
+// DefaultActions: verdicts need an open review request and allowed actions;
+// viewing a diff is harmless, so it only needs a row.
 func DefaultActions(allowed bool) []Action {
-	review := func(r *Row) bool { return allowed && isReviewRow(r) }
+	verdict := func(c Context) bool { return allowed && c.Row != nil && c.Row.RequestSHA() != "" }
+	hasRow := func(c Context) bool { return c.Row != nil }
 	return []Action{
-		{Key: "a", Label: "approve", Enabled: review, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("approve", r) }},
-		{Key: "r", Label: "reject", Enabled: review, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("request_changes", r) }},
-		{Key: "d", Label: "diff", Enabled: review, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) }},
-		{Key: "enter", Hint: "enter", Label: "details", Enabled: func(r *Row) bool { return r != nil }},
+		{Key: "a", Label: "approve", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("approve", r) }},
+		{Key: "r", Label: "reject", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("request_changes", r) }},
+		{Key: "d", Label: "diff", Enabled: hasRow, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) }},
+		{Key: "x", Label: "expand", Enabled: func(c Context) bool { return c.Expandable }},
+		{Key: "enter", Hint: "enter", Label: "details", Enabled: hasRow},
 		{Key: "f", Label: "refresh"},
 		{Key: "q", Label: "quit"},
 		{Key: "up", Hint: "↑↓", Label: "select"},
 	}
+}
+
+func (m Model) context() Context {
+	return Context{Row: m.actionRow(), Expandable: Expandable(m.snap, m.ui)}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -160,7 +166,8 @@ func (m *Model) startRefresh() tea.Cmd {
 func (m *Model) fixOffset() {
 	if m.height > 0 {
 		m.ui.Offset = ListOffset(m.snap, m.ui, m.height)
-		m.ui.DiffOffset = ClampDiffOffset(m.snap, m.ui, m.height)
+		m.ui.DiffOffset = ClampDiffOffset(m.snap, m.ui, m.width, m.height)
+		m.ui.DetailOffset = ClampDetailOffset(m.snap, m.ui, m.width, m.height)
 	}
 }
 
@@ -174,6 +181,7 @@ func (m *Model) move(delta int) tea.Cmd {
 	}
 	m.ui.Selected = next
 	m.selKey = m.rows[next].Key()
+	m.ui.Expanded, m.ui.DetailOffset = false, 0
 	m.fixOffset()
 	return m.startDetail()
 }
@@ -203,27 +211,21 @@ func (m *Model) setStatus(text string, isErr bool) {
 	m.fixOffset()
 }
 
-func requestSHA(r Row) string {
-	if r.Review != nil {
-		return r.Review.CommitSHA
-	}
-	return ""
-}
-
-// shownDiff is the loaded diff of row r, if it is open on screen.
+// shownDiff is the loaded diff of row r's review request, if it is open on
+// screen; a branch-head diff is not what a verdict judges.
 func (m *Model) shownDiff(r Row) *DiffView {
 	d := m.ui.Diff
-	if !m.ui.DiffOpen || d == nil || d.Failed || d.Key != r.Key() {
+	if !m.ui.DiffOpen || d == nil || d.Failed || d.Key != r.Key() || d.SHA == "" {
 		return nil
 	}
 	return d
 }
 
 // openDiff reuses a loaded diff only while it is of the row's current
-// request commit; failed loads are retried.
+// request commit; branch-head diffs and failed loads are always reloaded.
 func (m *Model) openDiff(r Row) tea.Cmd {
 	m.ui.DiffOpen, m.ui.DiffKey, m.ui.DiffOffset = true, r.Key(), 0
-	if d := m.ui.Diff; d != nil && d.Key == r.Key() && !d.Failed && d.SHA == requestSHA(r) {
+	if d := m.ui.Diff; d != nil && d.Key == r.Key() && !d.Failed && d.SHA != "" && d.SHA == r.RequestSHA() {
 		return nil
 	}
 	m.ui.Diff = nil
@@ -244,7 +246,7 @@ func (m *Model) openDiff(r Row) tea.Cmd {
 // openModal pins the verdict to the commit the human saw: the open diff's,
 // else the row's request commit shown in the modal.
 func (m *Model) openModal(decision string, r Row) tea.Cmd {
-	sha := requestSHA(r)
+	sha := r.RequestSHA()
 	if d := m.shownDiff(r); d != nil {
 		sha = d.SHA
 	}
@@ -381,29 +383,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) runAction(key string) (tea.Model, tea.Cmd) {
-	row := m.selected()
+// actionRow is the row actions apply to: the diff's while it is open.
+func (m Model) actionRow() *Row {
 	if m.ui.DiffOpen {
 		for i := range m.rows {
 			if m.rows[i].Key() == m.ui.DiffKey {
-				row = &m.rows[i]
+				return &m.rows[i]
 			}
 		}
+		return nil
 	}
+	return m.selected()
+}
+
+func (m Model) disabledReason(key string) string {
+	switch key {
+	case "a", "r":
+		if !m.opts.AllowActions {
+			return "is disabled: " + m.opts.DenyReason
+		}
+		return "applies to a row with an open review request"
+	case "x":
+		return "applies to an open detail or diff pane with a description or review comments"
+	}
+	return "applies to a task or epic row"
+}
+
+func (m Model) runAction(key string) (tea.Model, tea.Cmd) {
+	ctx := m.context()
 	for _, a := range m.ui.Actions {
-		if a.Key != key || a.Start == nil {
+		if a.Key != key {
 			continue
 		}
-		if !a.enabled(row) {
-			switch {
-			case !m.opts.AllowActions:
-				m.setStatus(a.Label+" is disabled: "+m.opts.DenyReason, true)
-			default:
-				m.setStatus(a.Label+" applies to a row under AWAITING REVIEW", true)
-			}
+		if !a.enabled(ctx) {
+			m.setStatus(a.Label+" "+m.disabledReason(key), true)
 			return m, nil
 		}
-		cmd := a.Start(&m, *row)
+		if key == "x" {
+			m.ui.Expanded = !m.ui.Expanded
+			m.ui.DetailOffset = 0
+			m.fixOffset()
+			return m, nil
+		}
+		if a.Start == nil {
+			return m, nil
+		}
+		cmd := a.Start(&m, *ctx.Row)
 		return m, cmd
 	}
 	return m, nil
@@ -414,7 +439,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case "a", "r", "d":
+	case "a", "r", "d", "x":
 		if k == "d" && m.ui.DiffOpen {
 			return m, nil
 		}
@@ -436,8 +461,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.move(len(m.rows))
 	case "enter", "tab":
 		m.ui.DetailOpen = !m.ui.DetailOpen
+		m.ui.DetailOffset = 0
 		m.fixOffset()
 		return m, m.startDetail()
+	case "pgup", "pgdown":
+		if m.ui.DetailOpen {
+			page := DetailPage(m.snap, m.ui, m.height)
+			if k == "pgup" {
+				page = -page
+			}
+			m.ui.DetailOffset += page
+			m.fixOffset()
+		}
 	}
 	return m, nil
 }

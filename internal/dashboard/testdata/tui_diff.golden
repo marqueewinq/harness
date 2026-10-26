@@ -17,4 +17,4 @@ diff --git a/run.go b/run.go
  context 2
  context 3
  context 4
- approve  reject  ↑↓ pgup pgdn scroll  esc close  quit
+ approve  reject  expand  ↑↓ pgup pgdn scroll  esc close  quit

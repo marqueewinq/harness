@@ -26,7 +26,7 @@ func sampleSnapshot() Snapshot {
 			{SubjectID: "epic-002", IsEpic: true, Title: "Planning layer", CommitSHA: "5d1c09aa999", Age: 3 * time.Minute, Reviewer: ReviewerHuman, Attention: "awaiting human review"},
 		},
 		Groups: []EpicGroup{
-			{Project: proj, Epic: epic, Branch: "epic/planning", Done: 3, Total: 7, EpicReview: "review requested", Tasks: []TaskRow{
+			{Project: proj, Epic: epic, Branch: "epic/planning", Done: 3, Total: 7, EpicReview: "review requested", ReviewSHA: "5d1c09aa999", Tasks: []TaskRow{
 				{ID: "task-025", Title: "Reviewer run records", State: internal.StateChecksRunning, Age: 3 * time.Minute,
 					Checks: []CheckStatus{{Name: "test", Result: CheckRunning, Elapsed: 41 * time.Second, ElapsedKnown: true}, {Name: "lint", Result: CheckRunning}}},
 				{ID: "task-027", Title: "Sync epic branch", State: internal.StateMergeFailed, Age: time.Hour,

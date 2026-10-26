@@ -57,23 +57,83 @@ func TestBuildDiffTask(t *testing.T) {
 	}
 }
 
-func TestBuildDiffEpicAndMissingRequest(t *testing.T) {
+func TestBuildDiffEpic(t *testing.T) {
 	t.Parallel()
 	app := newRepo(t, humanConfig)
 	proj, _ := app.DB.CreateProject("P", "")
-	gitOut(t, app.RepoRoot, "branch", "epic/e")
-	epic, _ := app.DB.CreateEpic("E", "epic description", proj.ID, "epic/e")
-	if _, err := BuildDiff(app, Row{Kind: RowReview, ID: epic.ID, IsEpic: true}); err == nil || !strings.Contains(err.Error(), "no open review request") {
-		t.Errorf("err = %v", err)
-	}
-	head := gitOut(t, app.RepoRoot, "rev-parse", "epic/e")
-	app.DB.OpenReviewRequest("", epic.ID, head)
-	v, err := BuildDiff(app, Row{Kind: RowReview, ID: epic.ID, IsEpic: true})
+	wt := filepath.Join(app.RepoRoot, ".worktrees", "epic")
+	gitOut(t, app.RepoRoot, "worktree", "add", "-q", "-b", "epic/e", wt)
+	os.WriteFile(filepath.Join(wt, "epic.txt"), []byte("epic work\n"), 0644)
+	gitOut(t, wt, "add", ".")
+	gitOut(t, wt, "commit", "-q", "-m", "epic work")
+	head := gitOut(t, wt, "rev-parse", "HEAD")
+	epic, _ := app.DB.CreateEpic("E", "epic description\nsecond line", proj.ID, "epic/e")
+	row := Row{Kind: RowEpic, ID: epic.ID, IsEpic: true}
+
+	v, err := BuildDiff(app, row)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(v.Header, "\n"), "Description: epic description") || len(v.Diff) != 0 {
-		t.Errorf("epic diff view = %+v", v)
+	header := strings.Join(v.Header, "\n")
+	if v.SHA != "" || v.Range != "main...epic/e @ "+head[:8] || !strings.Contains(header, "Branch head main...epic/e") || !strings.Contains(strings.Join(v.Diff, "\n"), "+epic work") {
+		t.Errorf("epic branch-head diff = %+v", v)
+	}
+	if !strings.Contains(header, "Description: epic description second line") || !v.Expandable {
+		t.Errorf("collapsed description: %q", header)
+	}
+	full := strings.Join(v.FullHeader, "\n")
+	if !strings.Contains(full, "Description:\n  epic description\n  second line") {
+		t.Errorf("full header = %q", full)
+	}
+
+	app.DB.OpenReviewRequest("", epic.ID, head)
+	v, err = BuildDiff(app, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.SHA != head || !strings.Contains(strings.Join(v.Header, "\n"), "Requested commit "+head[:8]) {
+		t.Errorf("epic request diff = %+v", v)
+	}
+}
+
+func TestBuildDiffTaskStates(t *testing.T) {
+	t.Parallel()
+	app := newRepo(t, humanConfig)
+
+	wt := filepath.Join(app.RepoRoot, ".worktrees", "wip")
+	gitOut(t, app.RepoRoot, "worktree", "add", "-q", "-b", "wip", wt)
+	os.WriteFile(filepath.Join(wt, "wip.txt"), []byte("work in progress\n"), 0644)
+	gitOut(t, wt, "add", ".")
+	gitOut(t, wt, "commit", "-q", "-m", "wip")
+	head := gitOut(t, wt, "rev-parse", "HEAD")
+	wip := seedTaskAt(t, app, "wip", "", internal.StateInProgress, wt)
+	v, err := BuildDiff(app, Row{Kind: RowTask, ID: wip.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.SHA != "" || v.Range != "main...wip @ "+head[:8] || !strings.Contains(strings.Join(v.Diff, "\n"), "+work in progress") {
+		t.Errorf("in-progress diff = %+v", v)
+	}
+
+	planned := seedTask(t, app, "later", "", internal.StatePlanned)
+	merged := seedTask(t, app, "gone", "", internal.StateMerged)
+	for _, tc := range []struct {
+		id, want string
+	}{
+		{planned.ID, "Not started; nothing to diff."},
+		{merged.ID, "Branch gone deleted (MERGED); nothing to diff."},
+	} {
+		v, err := BuildDiff(app, Row{Kind: RowTask, ID: tc.id})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.id, err)
+		}
+		if !strings.Contains(strings.Join(v.Header, "\n"), tc.want) || v.Range != "" || len(v.Diff) != 0 {
+			t.Errorf("%s: view = %+v, want %q", tc.id, v, tc.want)
+		}
+		out := Render(Snapshot{Repo: "r", Now: fixedNow}, UIState{DiffOpen: true, DiffKey: v.Key, Diff: &v}, 100, 20)
+		if !strings.Contains(out, tc.want) || strings.Contains(out, "empty diff") {
+			t.Errorf("%s render:\n%s", tc.id, out)
+		}
 	}
 }
 

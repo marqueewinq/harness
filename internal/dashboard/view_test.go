@@ -33,20 +33,20 @@ func renderLines(t *testing.T, out string, height int) []string {
 }
 
 func TestRenderListGolden(t *testing.T) {
-	out := Render(sampleSnapshot(), UIState{Selected: 3}, 100, 30)
+	out := Render(sampleSnapshot(), UIState{Selected: 4}, 100, 30)
 	renderLines(t, out, 30)
 	checkGolden(t, "tui_list.golden", out+"\n")
 }
 
 func TestRenderDetailGolden(t *testing.T) {
-	ui := UIState{Selected: 3, DetailOpen: true, Detail: sampleDetail()}
+	ui := UIState{Selected: 4, DetailOpen: true, Detail: sampleDetail()}
 	out := Render(sampleSnapshot(), ui, 100, 30)
 	renderLines(t, out, 30)
 	checkGolden(t, "tui_detail.golden", out+"\n")
 }
 
 func TestRenderDetailFullHeightOnSmallTerminal(t *testing.T) {
-	ui := UIState{Selected: 3, DetailOpen: true, Detail: sampleDetail()}
+	ui := UIState{Selected: 4, DetailOpen: true, Detail: sampleDetail()}
 	out := Render(sampleSnapshot(), ui, 80, 14)
 	renderLines(t, out, 14)
 	checkGolden(t, "tui_detail_small.golden", out+"\n")
@@ -144,21 +144,58 @@ func TestModalKeyBarColor(t *testing.T) {
 	}
 }
 
-func TestReviewActionsEnabledOnlyOnReviewRowsWhenAllowed(t *testing.T) {
+func enabledKey(st Styles, label, key string) string {
+	return accentKey(st.Accent, st.Plain, label, key)
+}
+
+func disabledKey(st Styles, label, key string) string {
+	return accentKey(st.AccentDim, st.Dim, label, key)
+}
+
+func TestVerdictActionsNeedOpenRequestAndPermission(t *testing.T) {
 	st := NewStyles(true)
 	rows := Rows(sampleSnapshot())
-	review, task := rows[0], rows[2]
-	on := keyBar(st, DefaultActions(true), &review)
-	if !strings.Contains(on, st.Plain.Render("")+st.Accent.Render("a")+st.Plain.Render("pprove")) || !strings.Contains(on, st.Accent.Render("d")+st.Plain.Render("iff")) {
-		t.Errorf("approve/diff not enabled on a review row: %q", on)
+	review, epic, task := rows[0], rows[2], rows[3]
+	if epic.Kind != RowEpic || task.Kind != RowTask {
+		t.Fatalf("rows = %+v %+v", epic, task)
 	}
-	for _, bar := range []string{keyBar(st, DefaultActions(true), &task), keyBar(st, DefaultActions(false), &review)} {
-		for _, label := range []string{"approve", "reject", "diff"} {
-			if !strings.Contains(bar, st.Dim.Render(label)) {
-				t.Errorf("%s not dimmed: %q", label, bar)
-			}
+	for _, r := range []Row{review, epic} {
+		on := keyBar(st, DefaultActions(true), Context{Row: &r})
+		if !strings.Contains(on, enabledKey(st, "approve", "a")) || !strings.Contains(on, enabledKey(st, "reject", "r")) {
+			t.Errorf("%s: approve/reject not enabled with an open request: %q", r.Key(), on)
 		}
 	}
+	for name, bar := range map[string]string{
+		"no request":  keyBar(st, DefaultActions(true), Context{Row: &task}),
+		"not allowed": keyBar(st, DefaultActions(false), Context{Row: &review}),
+	} {
+		for _, k := range [][2]string{{"approve", "a"}, {"reject", "r"}} {
+			if !strings.Contains(bar, disabledKey(st, k[0], k[1])) {
+				t.Errorf("%s: %s not shown disabled: %q", name, k[0], bar)
+			}
+		}
+		if !strings.Contains(bar, enabledKey(st, "diff", "d")) {
+			t.Errorf("%s: diff not enabled on a row: %q", name, bar)
+		}
+	}
+}
+
+func TestRenderExpandedDescriptionGolden(t *testing.T) {
+	d := sampleDetail()
+	d.Expandable = true
+	d.Full = append([]string{d.Lines[0], d.Lines[1], "Description:",
+		"  Sync the epic branch onto main before merging.",
+		"",
+		"  Steps:",
+		"    1. rebase epic/planning onto main, keeping each task's merge commit so that the history stays readable for reviewers",
+		"    2. re-run checks"}, d.Lines[2:]...)
+	ui := UIState{Selected: 4, DetailOpen: true, Detail: d, Expanded: true, Actions: DefaultActions(true)}
+	out := Render(sampleSnapshot(), ui, 100, 30)
+	renderLines(t, out, 30)
+	if !strings.Contains(out, "    1. rebase epic/planning") || !strings.Contains(out, "\n     readable for reviewers") {
+		t.Errorf("expanded description missing or not wrapped:\n%s", out)
+	}
+	checkGolden(t, "tui_expanded.golden", out+"\n")
 }
 
 func TestRenderTooSmallGolden(t *testing.T) {
@@ -183,7 +220,7 @@ func TestRenderStaleAndLoadingHeader(t *testing.T) {
 }
 
 func TestRenderWidthBound(t *testing.T) {
-	ui := UIState{Selected: 3, DetailOpen: true, Detail: sampleDetail(), Color: true}
+	ui := UIState{Selected: 4, DetailOpen: true, Detail: sampleDetail(), Color: true}
 	for _, line := range strings.Split(Render(sampleSnapshot(), ui, 60, 30), "\n") {
 		if w := lipgloss.Width(line); w > 60 {
 			t.Errorf("line width %d > 60: %q", w, line)
@@ -194,26 +231,40 @@ func TestRenderWidthBound(t *testing.T) {
 func TestKeyBarColor(t *testing.T) {
 	st := NewStyles(true)
 	sel := Rows(sampleSnapshot())[0]
-	bar := keyBar(st, DefaultActions(false), &sel)
-	refresh := st.Plain.Render("re") + st.Accent.Render("f") + st.Plain.Render("resh")
-	if !strings.Contains(bar, refresh) {
-		t.Errorf("refresh hotkey not accented inside its word: %q", bar)
+	if st.AccentDim.Render("a") == st.Dim.Render("a") || st.AccentDim.Render("a") == "a" {
+		t.Fatalf("disabled accent is not coloured: %q", st.AccentDim.Render("a"))
 	}
-	if !strings.Contains(bar, st.Accent.Render("q")+st.Plain.Render("uit")) {
-		t.Errorf("quit hotkey not accented: %q", bar)
+
+	off := keyBar(st, DefaultActions(false), Context{Row: &sel})
+	if !strings.Contains(off, enabledKey(st, "refresh", "f")) {
+		t.Errorf("refresh hotkey not accented inside its word: %q", off)
 	}
-	for _, label := range []string{"approve", "reject", "diff"} {
-		if !strings.Contains(bar, st.Dim.Render(label)) {
-			t.Errorf("%s not dimmed: %q", label, bar)
+	if !strings.Contains(off, enabledKey(st, "quit", "q")) {
+		t.Errorf("quit hotkey not accented: %q", off)
+	}
+	for _, k := range [][2]string{{"approve", "a"}, {"reject", "r"}, {"expand", "x"}} {
+		if !strings.Contains(off, disabledKey(st, k[0], k[1])) {
+			t.Errorf("disabled %s lacks its coloured key: %q", k[0], off)
 		}
 	}
-	if !strings.Contains(bar, st.Accent.Render("enter")) {
-		t.Errorf("enter hint not accented with a row selected: %q", bar)
+	if !strings.Contains(off, enabledKey(st, "diff", "d")) {
+		t.Errorf("diff not enabled without permission: %q", off)
 	}
-	if noRow := keyBar(st, DefaultActions(false), nil); !strings.Contains(noRow, st.Dim.Render("enter details")) {
-		t.Errorf("details not dimmed without a row: %q", noRow)
+
+	on := keyBar(st, DefaultActions(true), Context{Row: &sel, Expandable: true})
+	for _, k := range [][2]string{{"approve", "a"}, {"reject", "r"}, {"diff", "d"}, {"expand", "x"}} {
+		if !strings.Contains(on, enabledKey(st, k[0], k[1])) {
+			t.Errorf("enabled %s lacks its accented key: %q", k[0], on)
+		}
 	}
-	if plain := keyBar(NewStyles(false), DefaultActions(false), &sel); plain != " approve  reject  diff  enter details  refresh  quit  ↑↓ select" {
+
+	if !strings.Contains(off, st.Accent.Render("enter")) {
+		t.Errorf("enter hint not accented with a row selected: %q", off)
+	}
+	if noRow := keyBar(st, DefaultActions(false), Context{}); !strings.Contains(noRow, st.AccentDim.Render("enter")+" "+st.Dim.Render("details")) {
+		t.Errorf("details hint not coloured+dimmed without a row: %q", noRow)
+	}
+	if plain := keyBar(NewStyles(false), DefaultActions(false), Context{Row: &sel}); plain != " approve  reject  diff  expand  enter details  refresh  quit  ↑↓ select" {
 		t.Errorf("plain key bar = %q", plain)
 	}
 }

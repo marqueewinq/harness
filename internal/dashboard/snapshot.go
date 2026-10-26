@@ -57,7 +57,9 @@ type EpicGroup struct {
 	Done       int
 	Total      int
 	EpicReview string
-	Tasks      []TaskRow
+	// ReviewSHA is the commit of the epic's open review request, if any.
+	ReviewSHA string
+	Tasks     []TaskRow
 }
 
 type CheckStatus struct {
@@ -261,6 +263,9 @@ func BuildSnapshot(app *internal.App, now time.Time, all bool) (Snapshot, error)
 			g.Epic, g.Project, g.Branch = e, projByID[e.ProjectID], e.Branch
 			g.Done, g.Total = internal.CountDone(byEpic[epicID])
 			g.EpicReview = b.epicReview(e.ID, openByEpic[e.ID])
+			if req := openByEpic[e.ID]; req != nil {
+				g.ReviewSHA = req.CommitSHA
+			}
 		}
 		m[epicID] = g
 		return g

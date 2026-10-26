@@ -33,8 +33,8 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	d := Detail{Key: row.Key(), Title: t.ID + " " + flatten(t.Title)}
-	add := func(format string, args ...interface{}) { d.Lines = append(d.Lines, fmt.Sprintf(format, args...)) }
+	var b doc
+	add := b.add
 
 	trs, err := app.DB.GetTaskTransitions(t.ID)
 	if err != nil {
@@ -52,9 +52,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	}
 	add("State: %s · branch %s · base %s", state, orDash(t.Branch), orDash(t.BaseBranch))
 	add("Worktree: %s", orDash(t.WorktreePath))
-	if t.Description != "" {
-		add("Description: %s", flatten(t.Description))
-	}
+	b.text("", "Description: ", t.Description)
 
 	if len(trs) > 0 {
 		add("History:")
@@ -105,7 +103,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	verdictLines(add, reviews)
+	verdictLines(&b, reviews)
 
 	entries, err := app.DB.ListQueue()
 	if err != nil {
@@ -130,7 +128,11 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 			}
 		}
 	}
-	return d, nil
+	return b.detail(row.Key(), t.ID+" "+flatten(t.Title)), nil
+}
+
+func (b *doc) detail(key, title string) Detail {
+	return Detail{Key: key, Title: title, Lines: b.lines, Full: b.full, Expandable: b.expandable}
 }
 
 func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
@@ -138,12 +140,10 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	d := Detail{Key: row.Key(), Title: e.ID + " " + flatten(e.Title)}
-	add := func(format string, args ...interface{}) { d.Lines = append(d.Lines, fmt.Sprintf(format, args...)) }
+	var b doc
+	add := b.add
 	add("Epic: %s · project %s · branch %s", e.Status, e.ProjectID, orDash(e.Branch))
-	if e.Description != "" {
-		add("Description: %s", flatten(e.Description))
-	}
+	b.text("", "Description: ", e.Description)
 	tasks, err := app.DB.ListTasksByEpic(e.ID)
 	if err != nil {
 		return Detail{}, err
@@ -159,8 +159,8 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	verdictLines(add, reviews)
-	return d, nil
+	verdictLines(&b, reviews)
+	return b.detail(row.Key(), e.ID+" "+flatten(e.Title)), nil
 }
 
 func reviewLines(add func(string, ...interface{}), req *internal.ReviewRequest, now time.Time) {
@@ -179,7 +179,7 @@ func reviewLines(add func(string, ...interface{}), req *internal.ReviewRequest, 
 	}
 }
 
-func verdictLines(add func(string, ...interface{}), reviews []internal.Review) {
+func verdictLines(b *doc, reviews []internal.Review) {
 	if len(reviews) == 0 {
 		return
 	}
@@ -188,10 +188,8 @@ func verdictLines(add func(string, ...interface{}), reviews []internal.Review) {
 	if r.Reviewer != "" {
 		line += " by " + r.Reviewer
 	}
-	add("%s", line)
-	if r.Comment != "" {
-		add("  %s", flatten(r.Comment))
-	}
+	b.add("%s", line)
+	b.text("  ", "", r.Comment)
 }
 
 // liveLogTail returns the most recently written check log of the run that
