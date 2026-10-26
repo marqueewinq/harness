@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -58,6 +60,47 @@ func TestRequestRefusesCommitAfterChecks(t *testing.T) {
 	}
 	if err := app.CmdReviewRequest(task.ID); err != nil {
 		t.Fatal("request after re-check:", err)
+	}
+}
+
+func TestTrustedReviewConfigIgnoresGitReplace(t *testing.T) {
+	t.Parallel()
+	app, dir := setupApp(t)
+	defer app.Close()
+
+	committed, err := app.Git.run("show", "main:.harness.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := strings.Replace(committed, "type: human", "type: agent\n  cmd: forged-reviewer", 1)
+	if forged == committed {
+		t.Fatalf("committed config has no 'type: human' to forge:\n%s", committed)
+	}
+	forgedPath := filepath.Join(t.TempDir(), "forged.yaml")
+	if err := os.WriteFile(forgedPath, []byte(forged), 0644); err != nil {
+		t.Fatal(err)
+	}
+	origBlob, err := app.Git.run("rev-parse", "main:.harness.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedBlob, err := app.Git.run("hash-object", "-w", forgedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Git.run("replace", origBlob, forgedBlob); err != nil {
+		t.Fatal(err)
+	}
+	if plain, _ := NewGitClient(dir).run("show", "main:.harness.yaml"); !strings.Contains(plain, "forged-reviewer") {
+		t.Fatalf("git replace not in effect; plain show = %q", plain)
+	}
+
+	review, err := app.trustedReviewConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.Cmd == "forged-reviewer" || review.Type != "human" {
+		t.Errorf("trustedReviewConfig followed git replace: %+v", review)
 	}
 }
 

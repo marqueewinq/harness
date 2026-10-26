@@ -14,13 +14,26 @@ type App struct {
 	DB       *DB
 	Git      *GitClient
 	RepoRoot string
+	// WorkDir is where the command runs; it may be a task worktree whose
+	// branch differs from RepoRoot's.
+	WorkDir string
 }
 
-// FindRepoRoot walks up from cwd to find .harness.yaml.
+// FindRepoRoot resolves the harness repo root from cwd.
 func FindRepoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
+	}
+	return resolveRepoRoot(dir)
+}
+
+// resolveRepoRoot prefers the main worktree when dir is inside a linked task
+// worktree: the worktree has its own checked-out .harness.yaml, but the DB
+// lives only under the main root.
+func resolveRepoRoot(dir string) (string, error) {
+	if root := mainHarnessRoot(dir); root != "" {
+		return root, nil
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, ".harness.yaml")); err == nil {
@@ -34,8 +47,24 @@ func FindRepoRoot() (string, error) {
 	}
 }
 
-// LoadApp creates an App from the repo root.
-func LoadApp(repoRoot string) (*App, error) {
+func mainHarnessRoot(dir string) string {
+	root, err := NewGitClient(dir).MainWorktreeRoot()
+	if err != nil || root == "" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(root, ".harness.yaml")); err != nil {
+		return ""
+	}
+	return root
+}
+
+// LoadApp creates an App from the repo root. Given a task worktree, it loads
+// the main root's config and DB and keeps the worktree as WorkDir.
+func LoadApp(dir string) (*App, error) {
+	repoRoot := dir
+	if root := mainHarnessRoot(dir); root != "" {
+		repoRoot = root
+	}
 	cfg, err := LoadConfig(filepath.Join(repoRoot, ".harness.yaml"))
 	if err != nil {
 		return nil, err
@@ -61,7 +90,7 @@ func LoadApp(repoRoot string) (*App, error) {
 		}
 	}
 
-	return &App{Config: cfg, DB: db, Git: git, RepoRoot: repoRoot}, nil
+	return &App{Config: cfg, DB: db, Git: git, RepoRoot: repoRoot, WorkDir: dir}, nil
 }
 
 func (a *App) Close() {
@@ -154,7 +183,11 @@ func (a *App) ResolveTaskID(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
-	branch, err := a.Git.CurrentBranch()
+	git := a.Git
+	if a.WorkDir != "" {
+		git = NewGitClient(a.WorkDir)
+	}
+	branch, err := git.CurrentBranch()
 	if err != nil {
 		return "", fmt.Errorf("cannot detect task: %w", err)
 	}

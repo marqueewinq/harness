@@ -22,6 +22,10 @@ func TestMain(m *testing.M) {
 	// into test repos.
 	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	os.Setenv("GIT_AUTHOR_NAME", "test")
+	os.Setenv("GIT_AUTHOR_EMAIL", "test@test")
+	os.Setenv("GIT_COMMITTER_NAME", "test")
+	os.Setenv("GIT_COMMITTER_EMAIL", "test@test")
 	// In-process tests act as the human at a terminal; token enforcement is
 	// exercised through the real binary in review_token_test.go.
 	os.Unsetenv(ReviewTokenEnv)
@@ -461,6 +465,81 @@ func TestCommit(t *testing.T) {
 	}
 	if !strings.Contains(out, "test commit") {
 		t.Errorf("commit message = %q, want to contain %q", out, "test commit")
+	}
+}
+
+func TestCommitKeepsUserIdentity(t *testing.T) {
+	t.Parallel()
+	dir := initTestRepo(t)
+	git := NewGitClient(dir)
+
+	os.WriteFile(filepath.Join(dir, "who.txt"), []byte("me\n"), 0644)
+	if _, err := git.run("add", "who.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := git.Commit("identity"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := git.run("log", "-1", "--format=%an <%ae> | %cn <%ce>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "test <test@test> | test <test@test>"; out != want {
+		t.Errorf("identity = %q, want %q", out, want)
+	}
+}
+
+func TestRunSeparatesStderr(t *testing.T) {
+	t.Parallel()
+	dir := initTestRepo(t)
+	git := NewGitClient(dir)
+
+	out, err := git.run("rev-parse", "--verify", "--quiet", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 40 {
+		t.Errorf("stdout = %q, want bare SHA", out)
+	}
+
+	out, err = git.run("rev-parse", "--verify", "no-such-ref")
+	if err == nil {
+		t.Fatal("expected error for missing ref")
+	}
+	if strings.Contains(out, "fatal") {
+		t.Errorf("stderr leaked into stdout: %q", out)
+	}
+	if !strings.Contains(err.Error(), "fatal") {
+		t.Errorf("error should carry stderr: %v", err)
+	}
+}
+
+func TestMainWorktreeRoot(t *testing.T) {
+	t.Parallel()
+	dir := initTestRepo(t)
+	git := NewGitClient(dir)
+
+	root, err := git.MainWorktreeRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != "" {
+		t.Errorf("MainWorktreeRoot in main checkout = %q, want empty", root)
+	}
+
+	wtPath := filepath.Join(dir, ".worktrees", "feature-x")
+	git.CreateBranch("feature-x", "main")
+	if err := git.CreateWorktree("feature-x", wtPath); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(wtPath, "sub")
+	os.MkdirAll(sub, 0755)
+	root, err = NewGitClient(sub).MainWorktreeRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != dir {
+		t.Errorf("MainWorktreeRoot in worktree = %q, want %q", root, dir)
 	}
 }
 

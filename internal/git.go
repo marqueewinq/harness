@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,12 +20,37 @@ func NewGitClient(dir string) *GitClient {
 func (g *GitClient) run(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = g.dir
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=harness", "GIT_AUTHOR_EMAIL=harness@local", "GIT_COMMITTER_NAME=harness", "GIT_COMMITTER_EMAIL=harness@local")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("git %s: %w\n%s", strings.Join(args, " "), err, out)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("git %s: %w\n%s%s", strings.Join(args, " "), err, stdout.String(), stderr.String())
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+// ShowCommitted reads <ref>:<path> with replace refs disabled, so a local
+// `git replace` cannot substitute the committed content.
+func (g *GitClient) ShowCommitted(ref, path string) (string, error) {
+	return g.run("--no-replace-objects", "show", ref+":"+path)
+}
+
+// MainWorktreeRoot returns the main worktree's root when dir is inside a
+// linked worktree, and "" otherwise.
+func (g *GitClient) MainWorktreeRoot() (string, error) {
+	out, err := g.run("rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	dirs := strings.Split(out, "\n")
+	if len(dirs) != 2 {
+		return "", fmt.Errorf("unexpected rev-parse output: %q", out)
+	}
+	gitDir, commonDir := dirs[0], dirs[1]
+	if gitDir == commonDir || filepath.Base(commonDir) != ".git" {
+		return "", nil
+	}
+	return filepath.Dir(commonDir), nil
 }
 
 func (g *GitClient) CreateBranch(name, from string) error {

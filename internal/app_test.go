@@ -1,6 +1,78 @@
 package internal
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadAppFromTaskWorktree(t *testing.T) {
+	t.Parallel()
+	app, dir, task := setupTask(t)
+	defer app.Close()
+
+	wtApp, err := LoadApp(task.WorktreePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wtApp.Close()
+
+	if wtApp.RepoRoot != dir {
+		t.Errorf("RepoRoot = %q, want main root %q", wtApp.RepoRoot, dir)
+	}
+	if _, err := os.Stat(filepath.Join(task.WorktreePath, ".harness")); !os.IsNotExist(err) {
+		t.Errorf("LoadApp created .harness inside the worktree (stat err = %v)", err)
+	}
+	id, err := wtApp.ResolveTaskID("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != task.ID {
+		t.Errorf("ResolveTaskID from worktree = %q, want %q", id, task.ID)
+	}
+}
+
+// Not parallel: t.Chdir changes the process cwd.
+func TestFindRepoRootFromTaskWorktree(t *testing.T) {
+	app, dir, task := setupTask(t)
+	defer app.Close()
+
+	sub := filepath.Join(task.WorktreePath, "sub")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+
+	root, err := FindRepoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != dir {
+		t.Errorf("FindRepoRoot from worktree = %q, want main root %q", root, dir)
+	}
+	if _, err := os.Stat(filepath.Join(task.WorktreePath, ".harness")); !os.IsNotExist(err) {
+		t.Errorf("worktree .harness should not exist (stat err = %v)", err)
+	}
+}
+
+func TestFindRepoRootFromMainSubdir(t *testing.T) {
+	app, dir := setupApp(t)
+	defer app.Close()
+
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+
+	root, err := FindRepoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != dir {
+		t.Errorf("FindRepoRoot from main subdir = %q, want %q", root, dir)
+	}
+}
 
 func TestSlugify(t *testing.T) {
 	t.Parallel()

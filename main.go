@@ -57,6 +57,9 @@ func withApp(fn func(*internal.App, *cobra.Command, []string) error) func(*cobra
 			return err
 		}
 		defer app.Close()
+		if cwd, err := os.Getwd(); err == nil {
+			app.WorkDir = cwd
+		}
 		return fn(app, cmd, args)
 	}
 }
