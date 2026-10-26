@@ -1,9 +1,6 @@
 package internal
 
-import (
-	"database/sql"
-	"time"
-)
+import "time"
 
 type QueueEntry struct {
 	Position  int
@@ -26,8 +23,24 @@ func (db *DB) EnqueueTask(taskID string, pid int) (int, error) {
 	return db.GetQueuePosition(taskID)
 }
 
-func (db *DB) Heartbeat(taskID string) error {
-	_, err := db.conn.Exec(`UPDATE merge_queue SET heartbeat_unix = ? WHERE task_id = ?`, time.Now().Unix(), taskID)
+func (db *DB) Heartbeat(taskID string, pid int) error {
+	_, err := db.conn.Exec(`UPDATE merge_queue SET heartbeat_unix = ? WHERE task_id = ? AND owner_pid = ?`,
+		time.Now().Unix(), taskID, pid)
+	return err
+}
+
+// OwnsQueueEntry reports whether taskID is still queued under pid's lease; a
+// row removed or re-enqueued by another process belongs to someone else.
+func (db *DB) OwnsQueueEntry(taskID string, pid int) (bool, error) {
+	var n int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM merge_queue WHERE task_id = ? AND owner_pid = ?`, taskID, pid).Scan(&n)
+	return n > 0, err
+}
+
+// DequeueOwned removes taskID only while pid holds its lease, so a merger
+// that lost its slot cannot delete a newer enqueue of the same task.
+func (db *DB) DequeueOwned(taskID string, pid int) error {
+	_, err := db.conn.Exec(`DELETE FROM merge_queue WHERE task_id = ? AND owner_pid = ?`, taskID, pid)
 	return err
 }
 
@@ -97,8 +110,5 @@ func (db *DB) GetQueuePosition(taskID string) (int, error) {
 		WHERE position <= (SELECT position FROM merge_queue WHERE task_id = ?)`,
 		taskID,
 	).Scan(&pos)
-	if err == sql.ErrNoRows {
-		return 0, nil
-	}
 	return pos, err
 }

@@ -99,6 +99,41 @@ func TestMergeWaitsForLiveLeaseThenTimesOut(t *testing.T) {
 	}
 }
 
+func TestWaiterExitsWhenItsEntryIsCleared(t *testing.T) {
+	t.Parallel()
+	app, task := approvedTask(t)
+	app.Config.Merge.QueueTimeout = 60
+	insertQueueRow(t, app, "task-999", os.Getppid(), time.Now())
+
+	done := make(chan error, 1)
+	go func() { done <- app.CmdWorkMerge(task.ID) }()
+	for i := 0; ; i++ {
+		if pos, _ := app.DB.GetQueuePosition(task.ID); pos == 2 {
+			break
+		}
+		if i > 100 {
+			t.Fatal("waiter never enqueued")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err := app.CmdQueueClear(task.ID, true); err != nil {
+		t.Fatal("clear:", err)
+	}
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "removed from the merge queue") {
+			t.Errorf("err = %v, want removed from the merge queue", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("waiter did not notice its entry was cleared")
+	}
+	entries, _ := app.DB.ListQueue()
+	if len(entries) != 1 || entries[0].TaskID != "task-999" {
+		t.Errorf("queue = %+v, want only the foreign entry", entries)
+	}
+}
+
 func TestQueueClearRespectsLiveLease(t *testing.T) {
 	t.Parallel()
 	app, _ := setupApp(t)

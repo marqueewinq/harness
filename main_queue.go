@@ -19,16 +19,16 @@ func queueCmd() *cobra.Command {
 		}),
 	})
 
-	clear := &cobra.Command{
+	clearCmd := &cobra.Command{
 		Use:   "clear <task-id>",
 		Short: "Remove a stale entry from the merge queue",
 		Args:  cobra.ExactArgs(1),
 	}
 	var force bool
-	clear.Flags().BoolVar(&force, "force", false, "Remove even if its owner process is alive")
-	clear.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
+	clearCmd.Flags().BoolVar(&force, "force", false, "Remove even if its owner process is alive")
+	clearCmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
 		return app.CmdQueueClear(args[0], force)
 	})
-	cmd.AddCommand(clear)
+	cmd.AddCommand(clearCmd)
 	return cmd
 }

@@ -24,8 +24,8 @@ func pidAlive(pid int) bool {
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
-// leaseStale: the owner process is gone, or it stopped renewing (hung, or on
-// another machine sharing the repo).
+// PIDs are checked on this machine, so all mergers must share one host (the
+// DB lives in the local checkout). A live PID that stopped renewing is hung.
 func leaseStale(e QueueEntry, now time.Time) bool {
 	if e.PID == os.Getpid() {
 		return false
@@ -33,25 +33,28 @@ func leaseStale(e QueueEntry, now time.Time) bool {
 	return !pidAlive(e.PID) || now.Sub(e.Heartbeat) > QueueLeaseTTL
 }
 
-// startHeartbeat renews taskID's lease until the returned stop is called.
 func (a *App) startHeartbeat(taskID string) (stop func()) {
 	done := make(chan struct{})
+	pid := os.Getpid()
 	go func() {
 		t := time.NewTicker(queueHeartbeatEvery)
 		defer t.Stop()
+		warned := false
 		for {
 			select {
 			case <-done:
 				return
 			case <-t.C:
-				a.DB.Heartbeat(taskID)
+				if err := a.DB.Heartbeat(taskID, pid); err != nil && !warned {
+					fmt.Fprintf(os.Stderr, "Warning: renewing merge queue lease for %s failed: %v\n", taskID, err)
+					warned = true
+				}
 			}
 		}
 	}()
 	return func() { close(done) }
 }
 
-// reclaimStaleHead removes a dead or expired head entry and fails its task.
 func (a *App) reclaimStaleHead() error {
 	head, err := a.DB.queueHead()
 	if err != nil || head == nil || !leaseStale(*head, time.Now()) {

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,13 +13,17 @@ import (
 // failMerge leaves the queue and marks the task MERGE_FAILED; the returned
 // error carries cause so the command exits non-zero.
 func (a *App) failMerge(id string, cause error) error {
-	a.DB.DequeueTask(id)
+	a.DB.DequeueOwned(id, os.Getpid())
 	if err := a.DB.UpdateTaskState(id, StateMergeFailed); err != nil {
 		return fmt.Errorf("%w (also failed to mark %s MERGE_FAILED: %v)", cause, id, err)
 	}
 	fmt.Printf("\nTask %s is now MERGE_FAILED.\n", id)
 	return cause
 }
+
+// errQueueEntryLost: someone else removed (and may have re-enqueued) this
+// task, so its state is no longer ours to change.
+var errQueueEntryLost = errors.New("removed from the merge queue by another process")
 
 // waitForQueueHead returns once id is first in the queue, reclaiming dead or
 // expired leases ahead of it. Ctrl-C while waiting gives up the slot.
@@ -28,6 +33,13 @@ func (a *App) waitForQueueHead(id string) error {
 	deadline := time.Now().Add(time.Duration(a.Config.Merge.QueueTimeout) * time.Second)
 	lastShown := ""
 	for {
+		owned, err := a.DB.OwnsQueueEntry(id, os.Getpid())
+		if err != nil {
+			return fmt.Errorf("reading merge queue: %w", err)
+		}
+		if !owned {
+			return errQueueEntryLost
+		}
 		if err := a.reclaimStaleHead(); err != nil {
 			return fmt.Errorf("reclaiming stale queue entry: %w", err)
 		}
@@ -37,9 +49,6 @@ func (a *App) waitForQueueHead(id string) error {
 		}
 		if first == id {
 			return nil
-		}
-		if first == "" {
-			return fmt.Errorf("%s was removed from the merge queue", id)
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("merge queue timeout after %ds (waiting for %s)", a.Config.Merge.QueueTimeout, first)
@@ -101,6 +110,9 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	fmt.Printf("Queued for merge (position #%d).\n", pos)
 
 	if err := a.waitForQueueHead(id); err != nil {
+		if errors.Is(err, errQueueEntryLost) {
+			return fmt.Errorf("%s: %w", id, err)
+		}
 		return a.failMerge(id, err)
 	}
 
@@ -120,7 +132,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	fmt.Printf("Preparing %s for %s merge into %s...\n", task.Branch, strategy.Name(), targetBranch)
 	if err := strategy.Prepare(wtGit, targetBranch); err != nil {
 		wtGit.RebaseAbort()
-		fmt.Println("Fix the conflicts, then run: harness check")
+		fmt.Println("Fix the conflicts, then run: harness work check")
 		return a.failMerge(id, fmt.Errorf("prepare failed: %w", err))
 	}
 
@@ -132,7 +144,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 			return a.failMerge(id, fmt.Errorf("check execution error: %w", err))
 		}
 		if !PrintCheckResults(results) {
-			fmt.Println("Fix the failures, then run: harness check")
+			fmt.Println("Fix the failures, then run: harness work check")
 			return a.failMerge(id, fmt.Errorf("checks failed after rebase"))
 		}
 	}
@@ -158,11 +170,11 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Title)
 
 	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, mergeMessage); err != nil {
-		fmt.Println("Fix the conflicts, then run: harness check")
+		fmt.Println("Fix the conflicts, then run: harness work check")
 		return a.failMerge(id, fmt.Errorf("merge failed: %w", err))
 	}
 
-	a.DB.DequeueTask(id)
+	a.DB.DequeueOwned(id, os.Getpid())
 	if err := a.DB.UpdateTaskState(id, StateMerged); err != nil {
 		return err
 	}
