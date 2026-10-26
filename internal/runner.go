@@ -3,10 +3,12 @@ package internal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -27,7 +29,6 @@ type CheckResult struct {
 type CheckRunner struct {
 	checks map[string]CheckConfig
 	dir    string
-	// LogDir, if set, receives <check>.log with live combined output.
 	LogDir string
 }
 
@@ -40,6 +41,11 @@ func (cr *CheckRunner) RunAll() ([]CheckResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid check DAG: %w", err)
 	}
+
+	// Checks run in their own process groups, so a terminal Ctrl-C or a
+	// group kill of harness no longer reaches them; forward it by cancelling.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	completed := map[string]bool{}
 	failed := map[string]bool{}
@@ -93,7 +99,7 @@ func (cr *CheckRunner) RunAll() ([]CheckResult, error) {
 			wg.Add(1)
 			go func(n string) {
 				defer wg.Done()
-				result := cr.runOne(n)
+				result := cr.runOne(ctx, n)
 				mu.Lock()
 				results[n] = result
 				if result.ExitCode == 0 {
@@ -116,15 +122,18 @@ func (cr *CheckRunner) RunAll() ([]CheckResult, error) {
 	return ordered, nil
 }
 
-// TimeoutExitCode mirrors coreutils timeout(1).
-const TimeoutExitCode = 124
+// Exit codes mirror coreutils timeout(1) and shells' 128+SIGINT.
+const (
+	TimeoutExitCode     = 124
+	InterruptedExitCode = 130
+)
 
-func (cr *CheckRunner) runOne(name string) CheckResult {
+func (cr *CheckRunner) runOne(parent context.Context, name string) CheckResult {
 	check := cr.checks[name]
 	timeout := check.TimeoutDuration()
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", check.Run)
 	cmd.Dir = cr.dir
@@ -138,14 +147,13 @@ func (cr *CheckRunner) runOne(name string) CheckResult {
 	var outW, errW io.Writer = &stdout, &stderr
 	var logNote string
 	if cr.LogDir != "" {
-		if err := os.MkdirAll(cr.LogDir, 0755); err == nil {
-			if f, err := os.Create(filepath.Join(cr.LogDir, name+".log")); err == nil {
-				defer f.Close()
-				outW = io.MultiWriter(&stdout, f)
-				errW = io.MultiWriter(&stderr, f)
-			} else {
-				logNote = fmt.Sprintf("harness: could not create log file: %v\n", err)
-			}
+		f, err := createLog(cr.LogDir, name)
+		if err != nil {
+			logNote = fmt.Sprintf("harness: no live log: %v\n", err)
+		} else {
+			defer f.Close()
+			outW = io.MultiWriter(&stdout, f)
+			errW = io.MultiWriter(&stderr, f)
 		}
 	}
 	cmd.Stdout = outW
@@ -155,10 +163,18 @@ func (cr *CheckRunner) runOne(name string) CheckResult {
 	finish := time.Now()
 
 	exitCode := 0
-	if ctx.Err() == context.DeadlineExceeded {
+	switch {
+	case parent.Err() != nil:
+		exitCode = InterruptedExitCode
+		fmt.Fprintf(errW, "\nharness: check %q interrupted\n", name)
+	case ctx.Err() == context.DeadlineExceeded:
 		exitCode = TimeoutExitCode
 		fmt.Fprintf(errW, "\nharness: check %q timed out after %s\n", name, timeout)
-	} else if err != nil {
+	case errors.Is(err, exec.ErrWaitDelay):
+		// The check itself exited 0; only a leftover background child kept
+		// its output open.
+		fmt.Fprintf(errW, "\nharness: check %q left a background process holding its output\n", name)
+	case err != nil:
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
@@ -176,4 +192,11 @@ func (cr *CheckRunner) runOne(name string) CheckResult {
 		FinishedAt: finish,
 		Duration:   finish.Sub(start),
 	}
+}
+
+func createLog(dir, check string) (*os.File, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+	return os.Create(filepath.Join(dir, check+".log"))
 }
