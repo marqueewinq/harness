@@ -14,6 +14,74 @@ func TestOpenDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+
+	var mode string
+	if err := db.conn.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "wal" {
+		t.Errorf("journal_mode = %q, want wal", mode)
+	}
+	var timeout int
+	if err := db.conn.QueryRow(`PRAGMA busy_timeout`).Scan(&timeout); err != nil {
+		t.Fatal(err)
+	}
+	if timeout == 0 {
+		t.Error("busy_timeout should be set")
+	}
+}
+
+func TestNextIDPast999(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	defer db.Close()
+
+	for _, id := range []string{"task-999", "task-1000", "task-002"} {
+		if _, err := db.conn.Exec(`INSERT INTO tasks (id, title, state) VALUES (?, 't', 'PLANNED')`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task, err := db.CreatePlannedTask("next", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.ID != "task-1001" {
+		t.Errorf("ID = %q, want task-1001", task.ID)
+	}
+}
+
+func TestConcurrentCreateTask(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "harness.db")
+	first, err := OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+
+	const n = 20
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			db, err := OpenDB(path)
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer db.Close()
+			_, err = db.CreatePlannedTask("t", "", "")
+			errs <- err
+		}()
+	}
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("concurrent create: %v", err)
+		}
+	}
+	tasks, _ := first.ListTasks()
+	if len(tasks) != n {
+		t.Errorf("tasks = %d, want %d", len(tasks), n)
+	}
 }
 
 func TestTaskCRUD(t *testing.T) {

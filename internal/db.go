@@ -29,7 +29,11 @@ type DB struct {
 }
 
 func OpenDB(path string) (*DB, error) {
-	conn, err := sql.Open("sqlite", path+"?_journal_mode=WAL")
+	// Several agents share one DB: WAL lets readers proceed during a write,
+	// busy_timeout waits on locks instead of failing, and immediate tx locking
+	// avoids SQLITE_BUSY on read->write lock upgrades inside WithTx.
+	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate"
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -47,14 +51,15 @@ func (db *DB) Close() error {
 }
 
 func nextID(ex dbExecer, table, prefix string, width int) (string, error) {
-	var maxID sql.NullString
-	err := ex.QueryRow(fmt.Sprintf(`SELECT MAX(id) FROM %s`, table)).Scan(&maxID)
-	if err != nil || !maxID.Valid {
-		return fmt.Sprintf("%s-%0*d", prefix, width, 1), nil
+	var maxNum int
+	err := ex.QueryRow(
+		fmt.Sprintf(`SELECT COALESCE(MAX(CAST(SUBSTR(id, ?) AS INTEGER)), 0) FROM %s WHERE id LIKE ?`, table),
+		len(prefix)+2, prefix+"-%",
+	).Scan(&maxNum)
+	if err != nil {
+		return "", fmt.Errorf("computing next %s id: %w", prefix, err)
 	}
-	var num int
-	fmt.Sscanf(maxID.String, prefix+"-%d", &num)
-	return fmt.Sprintf("%s-%0*d", prefix, width, num+1), nil
+	return fmt.Sprintf("%s-%0*d", prefix, width, maxNum+1), nil
 }
 
 func createSchema(conn *sql.DB) error {
