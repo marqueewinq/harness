@@ -179,27 +179,11 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		}
 	}
 
-	// A task-branch target is checked out in its own worktree; anything else
-	// (main, epic branches) is merged in the main checkout.
-	mergeGit := a.Git
-	if targetBranch != a.Config.MainBranch {
-		if parentTask, err := a.DB.GetTaskByBranch(targetBranch); err == nil {
-			mergeGit = NewGitClient(parentTask.WorktreePath)
-		} else if err := a.Git.Checkout(targetBranch); err != nil {
-			return a.failMerge(id, fmt.Errorf("checkout %s: %w", targetBranch, err))
-		}
-	}
-
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", task.Branch, targetBranch, strategy.Name())
-	if targetBranch == a.Config.MainBranch {
-		if err := a.Git.Checkout(targetBranch); err != nil {
-			return a.failMerge(id, fmt.Errorf("checkout %s: %w", targetBranch, err))
-		}
-	}
 	epicID, projID := a.resolveTaskHierarchy(task)
 	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Title)
 
-	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, mergeMessage); err != nil {
+	if err := a.mergeIntoTarget(strategy, task.Branch, targetBranch, mergeMessage, id); err != nil {
 		fmt.Println("Fix the conflicts, then run: harness work check")
 		return a.failMerge(id, fmt.Errorf("merge failed: %w", err))
 	}

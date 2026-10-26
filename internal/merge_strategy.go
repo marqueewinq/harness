@@ -11,7 +11,7 @@ type MergeStrategy interface {
 	// Returns nil if no preparation is needed.
 	Prepare(wtGit *GitClient, targetBranch string) error
 
-	// Merge performs the actual merge on the main repo (already checked out to target).
+	// Merge runs in a worktree that has targetBranch checked out.
 	Merge(repoGit *GitClient, taskBranch, targetBranch, description string) error
 }
 

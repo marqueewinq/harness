@@ -1,6 +1,9 @@
 package internal
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 func (a *App) CmdEpicMerge(epicID string) error {
 	e, err := a.DB.GetEpic(epicID)
@@ -48,13 +51,12 @@ func (a *App) CmdEpicMerge(epicID string) error {
 		return err
 	}
 
-	// Create temp worktree for epic branch
-	tmpWorktree := fmt.Sprintf("%s/.worktrees/_epic-merge-%s", a.RepoRoot, epicID)
+	tmpWorktree := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, "_epic-merge-"+epicID)
+	a.Git.RemoveWorktree(tmpWorktree)
 	if err := a.Git.CreateWorktree(e.Branch, tmpWorktree); err != nil {
 		return fmt.Errorf("creating temp worktree: %w", err)
 	}
 
-	// Prepare (rebase onto main)
 	wtGit := NewGitClient(tmpWorktree)
 	fmt.Printf("Preparing %s for %s merge into %s...\n", e.Branch, strategy.Name(), a.Config.MainBranch)
 	if err := strategy.Prepare(wtGit, a.Config.MainBranch); err != nil {
@@ -78,19 +80,15 @@ func (a *App) CmdEpicMerge(epicID string) error {
 		}
 	}
 
-	// Merge into main
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", e.Branch, a.Config.MainBranch, strategy.Name())
-	if err := a.Git.Checkout(a.Config.MainBranch); err != nil {
-		a.Git.RemoveWorktree(tmpWorktree)
-		return fmt.Errorf("checkout %s: %w", a.Config.MainBranch, err)
-	}
-	if err := strategy.Merge(a.Git, e.Branch, a.Config.MainBranch, e.Title); err != nil {
-		a.Git.RemoveWorktree(tmpWorktree)
+	// The epic branch is checked out in tmpWorktree; free it so the branch can
+	// be deleted, and so mergeIntoTarget doesn't mistake it for the target.
+	a.Git.RemoveWorktree(tmpWorktree)
+	message := BuildCommitMessage(a.Config.Commit.Message, "", epicID, e.ProjectID, e.Title)
+	if err := a.mergeIntoTarget(strategy, e.Branch, a.Config.MainBranch, message, epicID); err != nil {
 		return fmt.Errorf("merge failed: %w", err)
 	}
 
-	// Cleanup
-	a.Git.RemoveWorktree(tmpWorktree)
 	a.Git.DeleteBranch(e.Branch)
 	a.DB.UpdateEpicBranch(epicID, "")
 	a.DB.UpdateEpicStatus(epicID, EpicStatusClosed)
