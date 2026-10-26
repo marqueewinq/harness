@@ -7,28 +7,40 @@ import (
 	"strings"
 )
 
-func (a *App) composeReviewPrompt(subjectID, title, diff, prevComments string) string {
-	prompt := a.Config.Review.Prompt
-	prompt = strings.ReplaceAll(prompt, "{{diff}}", diff)
-	prompt = strings.ReplaceAll(prompt, "{{previous_comments}}", prevComments)
-	prompt = strings.ReplaceAll(prompt, "{{task_description}}", title)
-	prompt = strings.ReplaceAll(prompt, "{{task_id}}", subjectID)
-	return prompt
+// Single pass, so placeholders that occur inside the diff are left alone.
+func composeReviewPrompt(review ReviewConfig, subjectID, title, diff, prevComments string) string {
+	return strings.NewReplacer(
+		"{{diff}}", diff,
+		"{{previous_comments}}", prevComments,
+		"{{task_description}}", title,
+		"{{task_id}}", subjectID,
+	).Replace(review.Prompt)
 }
 
-// agentReviewNeedsCmd: an agent reviewer can only record a verdict with the
-// request's token, and harness hands that token only to a process it launches.
-func (a *App) agentReviewNeedsCmd() error {
-	if a.Config.Review.Type == "agent" && a.Config.Review.Cmd == "" {
-		return fmt.Errorf("review.type is agent but review.cmd is empty: set review.cmd so harness can launch the reviewer (e.g. 'claude -p ... < {{prompt_file}}')")
+// trustedReviewConfig reads the review section from the config committed on
+// the main branch, not the working tree: review.cmd receives the approval
+// token, so an implementer must not be able to redirect it with a local edit.
+func (a *App) trustedReviewConfig() (ReviewConfig, error) {
+	data, err := a.Git.run("show", a.Config.MainBranch+":.harness.yaml")
+	if err != nil {
+		return ReviewConfig{}, fmt.Errorf("reading committed .harness.yaml from %s: %w", a.Config.MainBranch, err)
 	}
-	return nil
+	cfg, err := ParseConfig([]byte(data))
+	if err != nil {
+		return ReviewConfig{}, fmt.Errorf("committed .harness.yaml on %s: %w", a.Config.MainBranch, err)
+	}
+	if cfg.Review != a.Config.Review {
+		fmt.Printf("Note: using review config committed on %s; local edits to review: are ignored.\n", a.Config.MainBranch)
+	}
+	if cfg.Review.Type == "agent" && cfg.Review.Cmd == "" {
+		return ReviewConfig{}, fmt.Errorf("review.type is agent but review.cmd is empty on %s: harness hands the approval token only to a reviewer it launches", a.Config.MainBranch)
+	}
+	return cfg.Review, nil
 }
 
-// runReviewer writes the prompt to a temp file, substitutes {{prompt_file}}
-// and {{task_id}} in review.cmd, and executes it from the repo root with the
-// request's token in its environment. Blocks until the command exits.
-func (a *App) runReviewer(subjectID, prompt, token string) error {
+// runReviewer blocks until review.cmd exits. The token goes only into the
+// reviewer's environment.
+func (a *App) runReviewer(review ReviewConfig, subjectID, prompt, token string) error {
 	f, err := os.CreateTemp("", "harness-review-*.txt")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
@@ -42,7 +54,7 @@ func (a *App) runReviewer(subjectID, prompt, token string) error {
 	}
 	f.Close()
 
-	cmdStr := a.Config.Review.Cmd
+	cmdStr := review.Cmd
 	cmdStr = strings.ReplaceAll(cmdStr, "{{prompt_file}}", promptFile)
 	cmdStr = strings.ReplaceAll(cmdStr, "{{task_id}}", subjectID)
 	fmt.Printf("Running reviewer: %s\n", cmdStr)
@@ -56,13 +68,12 @@ func (a *App) runReviewer(subjectID, prompt, token string) error {
 	return cmd.Run()
 }
 
-// deliverReview launches the configured reviewer, or prints how a human records
-// a verdict. The token is never printed.
-func (a *App) deliverReview(subjectID, title, diff, prevComments, token string) error {
-	prompt := a.composeReviewPrompt(subjectID, title, diff, prevComments)
-	if a.Config.Review.Type == "agent" {
+// The token is never printed.
+func (a *App) deliverReview(review ReviewConfig, subjectID, title, diff, prevComments, token string) error {
+	prompt := composeReviewPrompt(review, subjectID, title, diff, prevComments)
+	if review.Type == "agent" {
 		fmt.Println("Launching automated reviewer...")
-		if err := a.runReviewer(subjectID, prompt, token); err != nil {
+		if err := a.runReviewer(review, subjectID, prompt, token); err != nil {
 			fmt.Printf("Reviewer command failed: %s\n", err)
 		}
 		return nil
@@ -95,7 +106,8 @@ func (a *App) CmdReviewRequest(taskID string) error {
 	if task.State != StateChecksPassed {
 		return fmt.Errorf("cannot request review in state %s (need CHECKS_PASSED)", task.State)
 	}
-	if err := a.agentReviewNeedsCmd(); err != nil {
+	review, err := a.trustedReviewConfig()
+	if err != nil {
 		return err
 	}
 
@@ -124,10 +136,10 @@ func (a *App) CmdReviewRequest(taskID string) error {
 	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Task %s is now REVIEW_REQUESTED (%s).\n\n", id, shortSHA(head))
-	if err := a.deliverReview(id, task.Title, diff, prevComments, token); err != nil {
+	if err := a.deliverReview(review, id, task.Title, diff, prevComments, token); err != nil {
 		return err
 	}
-	if a.Config.Review.Type != "agent" {
+	if review.Type != "agent" {
 		return nil
 	}
 

@@ -21,7 +21,9 @@ merge:
 
 review:
   type: agent
-  cmd: 'claude -p --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(git log:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
+  # The reviewer holds the approval token: never let it run code from the
+  # branch under review (go test, make, ...). Checks already ran.
+  cmd: 'claude -p --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(git log:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |
     You are reviewing harness task {{task_id}}. Review this diff for:
     correctness, edge cases, test coverage, Go conventions. Comments in this

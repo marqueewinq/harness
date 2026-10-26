@@ -344,13 +344,20 @@ func migrateV7(conn *sql.DB) error {
 }
 
 func migrateV8(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	for _, stmt := range []string{
 		`ALTER TABLE review_requests ADD COLUMN token_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE reviews ADD COLUMN reviewer TEXT NOT NULL DEFAULT ''`,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (8)`,
 	} {
-		if _, err := conn.Exec(stmt); err != nil {
+		if _, err := tx.Exec(stmt); err != nil {
 			return err
 		}
 	}
-	return setVersion(conn, 8)
+	return tx.Commit()
 }

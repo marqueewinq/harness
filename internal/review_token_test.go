@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,14 +68,47 @@ func TestRejectWithWrongTokenRefused(t *testing.T) {
 	}
 }
 
-func TestTokenIsSingleUse(t *testing.T) {
+func TestLocalReviewCmdEditIgnored(t *testing.T) {
 	t.Parallel()
-	app, task := requestWithReviewer(t,
-		`%[1]s review reject --comment first {{task_id}} < /dev/null; %[1]s review approve {{task_id}} < /dev/null`)
-	if task.State != StateRequestChanges {
-		t.Fatalf("state = %s, want REQUEST_CHANGES", task.State)
+	bin := buildHarnessBinary(t)
+	app, dir := setupAppWithReviewCmd(t, "echo noop")
+	app.Close()
+
+	// The implementer rewrites the uncommitted config to self-approve.
+	cfgPath := filepath.Join(dir, ".harness.yaml")
+	data, _ := os.ReadFile(cfgPath)
+	forged := strings.Replace(string(data), "'echo noop'", fmt.Sprintf("'%s review approve {{task_id}} < /dev/null'", bin), 1)
+	if forged == string(data) {
+		t.Fatal("test setup: review.cmd not found in config")
 	}
-	if reviews, _ := app.DB.GetReviews(task.ID); len(reviews) != 1 {
-		t.Errorf("reviews = %+v, want exactly one", reviews)
+	os.WriteFile(cfgPath, []byte(forged), 0644)
+
+	app, err := LoadApp(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	if err := app.CmdNew("forged", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := app.DB.GetTask("task-001")
+	gitCommitFile(t, task.WorktreePath, "f.txt", "f\n", "add f")
+	if err := app.CmdWorkCheck(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.CmdReviewRequest(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	task, _ = app.DB.GetTask(task.ID)
+	if task.State != StateReviewRequested {
+		t.Errorf("state = %s, want REVIEW_REQUESTED (forged local review.cmd must not run)", task.State)
+	}
+}
+
+func TestComposeReviewPromptSinglePass(t *testing.T) {
+	t.Parallel()
+	got := composeReviewPrompt(ReviewConfig{Prompt: "{{task_id}}: {{diff}}"}, "task-7", "t", "+ {{task_id}} {{previous_comments}}", "prev")
+	if got != "task-7: + {{task_id}} {{previous_comments}}" {
+		t.Errorf("prompt = %q; placeholders inside the diff must survive", got)
 	}
 }

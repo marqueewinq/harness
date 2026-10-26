@@ -220,7 +220,9 @@ func TestReviewTokenNotStoredInPlaintext(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	db.conn.QueryRow(`SELECT COUNT(*) FROM review_requests WHERE token_hash = ?`, token).Scan(&n)
+	if err := db.conn.QueryRow(`SELECT COUNT(*) FROM review_requests WHERE token_hash = ? OR commit_sha = ?`, token, token).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 0 {
 		t.Error("raw token must not be stored")
 	}

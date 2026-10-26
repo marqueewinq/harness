@@ -12,7 +12,7 @@ import (
 // reviewer process it launches. It is never printed or stored in plaintext.
 const ReviewTokenEnv = "HARNESS_REVIEW_TOKEN"
 
-// confirmVerdict asks a human at a terminal to type expect; tests replace it.
+// Replaced in tests, which play the human at the terminal.
 var confirmVerdict = terminalConfirm
 
 func terminalConfirm(question, expect string) bool {
@@ -77,7 +77,6 @@ func (a *App) openReviewRequestFor(taskID, epicID, branch string, requireHead bo
 	return req, nil
 }
 
-// recordVerdict validates and records a verdict on the subject's open request.
 func (a *App) recordVerdict(taskID, epicID, branch, decision, comment string) (*ReviewRequest, error) {
 	subject := taskID
 	if epicID != "" {

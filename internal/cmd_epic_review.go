@@ -10,7 +10,8 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	if e.Branch == "" {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}
-	if err := a.agentReviewNeedsCmd(); err != nil {
+	review, err := a.trustedReviewConfig()
+	if err != nil {
 		return err
 	}
 
@@ -28,7 +29,7 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Review requested for epic %s (%s).\n\n", epicID, shortSHA(head))
-	return a.deliverReview(epicID, e.Title, diff, prevComments, token)
+	return a.deliverReview(review, epicID, e.Title, diff, prevComments, token)
 }
 
 func (a *App) cmdEpicReviewApprove(epicID, comment string) error {
