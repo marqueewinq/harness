@@ -127,7 +127,7 @@ func TestBuildOpencodeConfigKeepsUnrelatedKeys(t *testing.T) {
 		"npm publish":                   "deny",
 		"git push":                      "deny",
 		"harness review approve task-1": "deny",
-		"ls":                            "allow",
+		"ls":                            "ask",
 	} {
 		if got := opencodeAction(t, bash, cmd); got != want {
 			t.Errorf("%q -> %q, want %q", cmd, got, want)
