@@ -10,8 +10,9 @@ import (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "harness",
-		Short: "Local workflow enforcement for AI coding agents",
+		Use:           "harness",
+		Short:         "Local workflow enforcement for AI coding agents",
+		SilenceErrors: true,
 	}
 
 	rootCmd.AddCommand(initCmd())
@@ -30,13 +31,15 @@ func main() {
 	rootCmd.AddCommand(aliasStatusCmd())
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
 
 func withApp(fn func(*internal.App, *cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		// Args parsed fine; a failure from here on is not a usage problem.
+		cmd.SilenceUsage = true
 		root, err := internal.FindRepoRoot()
 		if err != nil {
 			return err

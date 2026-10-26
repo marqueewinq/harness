@@ -29,10 +29,9 @@ func (a *App) CmdEpicMerge(epicID string) error {
 		return fmt.Errorf("cannot get HEAD of %s: %w", e.Branch, err)
 	}
 	if latestApproval.CommitSHA != "" && currentHead != latestApproval.CommitSHA {
-		fmt.Printf("Review is stale: approved commit %s but branch is now at %s\n",
-			latestApproval.CommitSHA[:8], currentHead[:8])
 		fmt.Printf("Run: harness review request %s\n", epicID)
-		return nil
+		return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
+			shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
 	}
 
 	// Warn about open tasks
@@ -61,8 +60,7 @@ func (a *App) CmdEpicMerge(epicID string) error {
 	if err := strategy.Prepare(wtGit, a.Config.MainBranch); err != nil {
 		wtGit.RebaseAbort()
 		a.Git.RemoveWorktree(tmpWorktree)
-		fmt.Printf("Prepare failed: %s\n", err)
-		return nil
+		return fmt.Errorf("prepare failed: %w", err)
 	}
 
 	// Rerun checks if configured
@@ -74,11 +72,9 @@ func (a *App) CmdEpicMerge(epicID string) error {
 			a.Git.RemoveWorktree(tmpWorktree)
 			return fmt.Errorf("check execution error: %w", err)
 		}
-		allPassed := PrintCheckResults(results)
-		if !allPassed {
+		if !PrintCheckResults(results) {
 			a.Git.RemoveWorktree(tmpWorktree)
-			fmt.Println("Checks failed. Fix and retry.")
-			return nil
+			return fmt.Errorf("checks failed after rebase; fix and retry")
 		}
 	}
 
@@ -90,8 +86,7 @@ func (a *App) CmdEpicMerge(epicID string) error {
 	}
 	if err := strategy.Merge(a.Git, e.Branch, a.Config.MainBranch, e.Title); err != nil {
 		a.Git.RemoveWorktree(tmpWorktree)
-		fmt.Printf("Merge failed: %s\n", err)
-		return nil
+		return fmt.Errorf("merge failed: %w", err)
 	}
 
 	// Cleanup

@@ -542,8 +542,9 @@ func TestE2ECheckFailFix(t *testing.T) {
 	gitRun(t, task.WorktreePath, "add", "code.txt")
 	gitRun(t, task.WorktreePath, "commit", "-m", "add code")
 
-	// Check -> should fail (Makefile exits 1)
-	app.CmdWorkCheck(task.ID)
+	if err := app.CmdWorkCheck(task.ID); err == nil || !strings.Contains(err.Error(), "checks failed") {
+		t.Errorf("failing check: err = %v, want checks failed", err)
+	}
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateChecksFailed {
 		t.Errorf("state after failing check = %s, want CHECKS_FAILED", task.State)
@@ -697,10 +698,9 @@ func TestE2EStaleReviewBlocksMerge(t *testing.T) {
 	gitRun(t, task.WorktreePath, "add", "extra.txt")
 	gitRun(t, task.WorktreePath, "commit", "-m", "add extra after approval")
 
-	// CmdMerge should NOT error, but task goes to IN_PROGRESS (stale review)
 	err := app.CmdWorkMerge(task.ID)
-	if err != nil {
-		t.Fatal("merge should not error on stale review:", err)
+	if err == nil || !strings.Contains(err.Error(), "review is stale") {
+		t.Fatalf("merge on stale review: err = %v, want review is stale", err)
 	}
 	task, _ = app.DB.GetTask(task.ID)
 	if task.State != StateInProgress {

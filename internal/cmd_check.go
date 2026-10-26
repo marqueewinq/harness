@@ -42,19 +42,26 @@ func (a *App) CmdWorkCheck(taskID string) error {
 		if r.Skipped {
 			exitCode = -1
 		}
-		a.DB.RecordCheckRun(id, r.Name, exitCode, r.Stdout, r.Stderr, runGroup, r.StartedAt, r.FinishedAt, commitSHA)
+		if err := a.DB.RecordCheckRun(id, r.Name, exitCode, r.Stdout, r.Stderr, runGroup, r.StartedAt, r.FinishedAt, commitSHA); err != nil {
+			a.DB.UpdateTaskState(id, StateChecksFailed)
+			return fmt.Errorf("recording check %s: %w", r.Name, err)
+		}
 	}
 
 	allPassed := PrintCheckResults(results)
 
-	if allPassed {
-		a.DB.UpdateTaskState(id, StateChecksPassed)
-		fmt.Println("\nAll checks passed.")
-		fmt.Println("Next: run harness review request")
-	} else {
-		a.DB.UpdateTaskState(id, StateChecksFailed)
+	if !allPassed {
+		if err := a.DB.UpdateTaskState(id, StateChecksFailed); err != nil {
+			return err
+		}
 		fmt.Println("\nChecks failed.")
 		fmt.Println("Next: fix the failures, then run: harness check")
+		return fmt.Errorf("checks failed for %s", id)
 	}
+	if err := a.DB.UpdateTaskState(id, StateChecksPassed); err != nil {
+		return err
+	}
+	fmt.Println("\nAll checks passed.")
+	fmt.Println("Next: run harness review request")
 	return nil
 }

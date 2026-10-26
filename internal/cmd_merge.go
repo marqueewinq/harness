@@ -5,6 +5,17 @@ import (
 	"time"
 )
 
+// failMerge leaves the queue and marks the task MERGE_FAILED; the returned
+// error carries cause so the command exits non-zero.
+func (a *App) failMerge(id string, cause error) error {
+	a.DB.DequeueTask(id)
+	if err := a.DB.UpdateTaskState(id, StateMergeFailed); err != nil {
+		return fmt.Errorf("%w (also failed to mark %s MERGE_FAILED: %v)", cause, id, err)
+	}
+	fmt.Printf("\nTask %s is now MERGE_FAILED.\n", id)
+	return cause
+}
+
 func (a *App) CmdWorkMerge(taskID string) error {
 	id, err := a.ResolveTaskID(taskID)
 	if err != nil {
@@ -18,16 +29,23 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		return fmt.Errorf("cannot merge in state %s (need APPROVED)", task.State)
 	}
 
-	// Check if review is still valid (approved commit matches current HEAD)
 	latestApproval, err := a.DB.GetLatestApproval(id)
-	if err == nil && latestApproval != nil && latestApproval.CommitSHA != "" {
+	if err != nil {
+		return err
+	}
+	if latestApproval != nil && latestApproval.CommitSHA != "" {
 		currentHead, err := a.Git.RevParse(task.Branch)
-		if err == nil && currentHead != latestApproval.CommitSHA {
-			a.DB.UpdateTaskState(id, StateInProgress)
-			fmt.Printf("Review is stale: approved commit %s but branch is now at %s\n", latestApproval.CommitSHA[:8], currentHead[:8])
+		if err != nil {
+			return fmt.Errorf("resolving %s: %w", task.Branch, err)
+		}
+		if currentHead != latestApproval.CommitSHA {
+			if err := a.DB.UpdateTaskState(id, StateInProgress); err != nil {
+				return err
+			}
 			fmt.Printf("Task %s is now IN_PROGRESS.\n", id)
 			fmt.Println("Next: run harness check")
-			return nil
+			return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
+				shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
 		}
 	}
 
@@ -43,9 +61,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	deadline := time.Now().Add(time.Duration(a.Config.Merge.QueueTimeout) * time.Second)
 	for {
 		if time.Now().After(deadline) {
-			a.DB.DequeueTask(id)
-			a.DB.UpdateTaskState(id, StateMergeFailed)
-			return fmt.Errorf("merge queue timeout after %ds", a.Config.Merge.QueueTimeout)
+			return a.failMerge(id, fmt.Errorf("merge queue timeout after %ds", a.Config.Merge.QueueTimeout))
 		}
 		first, err := a.DB.PeekQueue()
 		if err != nil {
@@ -65,24 +81,17 @@ func (a *App) CmdWorkMerge(taskID string) error {
 
 	strategy, err := NewMergeStrategy(a.Config.Merge.Strategy)
 	if err != nil {
-		a.DB.DequeueTask(id)
-		a.DB.UpdateTaskState(id, StateMergeFailed)
-		return err
+		return a.failMerge(id, err)
 	}
 
 	targetBranch := task.BaseBranch
 
-	// Prepare (e.g., rebase)
 	wtGit := NewGitClient(task.WorktreePath)
 	fmt.Printf("Preparing %s for %s merge into %s...\n", task.Branch, strategy.Name(), targetBranch)
 	if err := strategy.Prepare(wtGit, targetBranch); err != nil {
 		wtGit.RebaseAbort()
-		a.DB.DequeueTask(id)
-		a.DB.UpdateTaskState(id, StateMergeFailed)
-		fmt.Printf("Prepare failed: %s\n", err)
-		fmt.Printf("\nTask %s is now MERGE_FAILED.\n", id)
 		fmt.Println("Fix the conflicts, then run: harness check")
-		return nil
+		return a.failMerge(id, fmt.Errorf("prepare failed: %w", err))
 	}
 
 	if a.Config.Merge.RerunChecks {
@@ -90,71 +99,56 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		runner := NewCheckRunner(a.Config.Checks, task.WorktreePath)
 		results, err := runner.RunAll()
 		if err != nil {
-			a.DB.DequeueTask(id)
-			a.DB.UpdateTaskState(id, StateMergeFailed)
-			return fmt.Errorf("check execution error: %w", err)
+			return a.failMerge(id, fmt.Errorf("check execution error: %w", err))
 		}
-		allPassed := PrintCheckResults(results)
-		if !allPassed {
-			a.DB.DequeueTask(id)
-			a.DB.UpdateTaskState(id, StateMergeFailed)
-			fmt.Printf("\nChecks failed.\n")
-			fmt.Printf("Task %s is now MERGE_FAILED.\n", id)
+		if !PrintCheckResults(results) {
 			fmt.Println("Fix the failures, then run: harness check")
-			return nil
+			return a.failMerge(id, fmt.Errorf("checks failed after rebase"))
 		}
 	}
 
-	// Merge
-	// Determine which git client to use for the merge.
-	// If target is a task's branch checked out in a worktree, merge there.
-	// If target is an epic branch (not in a worktree), checkout in main repo.
-	// If target is main, checkout in main repo.
+	// A task-branch target is checked out in its own worktree; anything else
+	// (main, epic branches) is merged in the main checkout.
 	mergeGit := a.Git
 	if targetBranch != a.Config.MainBranch {
 		if parentTask, err := a.DB.GetTaskByBranch(targetBranch); err == nil {
-			// Target is a task branch in a worktree
 			mergeGit = NewGitClient(parentTask.WorktreePath)
-		} else {
-			// Target is not a task branch (e.g. epic branch) - checkout in main repo
-			if err := a.Git.Checkout(targetBranch); err != nil {
-				a.DB.DequeueTask(id)
-				a.DB.UpdateTaskState(id, StateMergeFailed)
-				return fmt.Errorf("checkout %s: %w", targetBranch, err)
-			}
+		} else if err := a.Git.Checkout(targetBranch); err != nil {
+			return a.failMerge(id, fmt.Errorf("checkout %s: %w", targetBranch, err))
 		}
 	}
 
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", task.Branch, targetBranch, strategy.Name())
 	if targetBranch == a.Config.MainBranch {
 		if err := a.Git.Checkout(targetBranch); err != nil {
-			a.DB.DequeueTask(id)
-			a.DB.UpdateTaskState(id, StateMergeFailed)
-			return fmt.Errorf("checkout %s: %w", targetBranch, err)
+			return a.failMerge(id, fmt.Errorf("checkout %s: %w", targetBranch, err))
 		}
 	}
-	// Render commit message through template
 	epicID, projID := a.resolveTaskHierarchy(task)
 	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Title)
 
 	if err := strategy.Merge(mergeGit, task.Branch, targetBranch, mergeMessage); err != nil {
-		a.DB.DequeueTask(id)
-		a.DB.UpdateTaskState(id, StateMergeFailed)
-		fmt.Printf("Merge failed: %s\n", err)
-		fmt.Printf("\nTask %s is now MERGE_FAILED.\n", id)
 		fmt.Println("Fix the conflicts, then run: harness check")
-		return nil
+		return a.failMerge(id, fmt.Errorf("merge failed: %w", err))
 	}
 
-	a.Git.RemoveWorktree(task.WorktreePath)
-	a.Git.DeleteBranch(task.Branch)
 	a.DB.DequeueTask(id)
-	a.DB.UpdateTaskState(id, StateMerged)
-
+	if err := a.DB.UpdateTaskState(id, StateMerged); err != nil {
+		return err
+	}
 	fmt.Println("Merge successful.")
+
 	fmt.Printf("\nCleaned up:\n")
-	fmt.Printf("  Worktree: %s (removed)\n", task.WorktreePath)
-	fmt.Printf("  Branch: %s (deleted)\n", task.Branch)
+	if err := a.Git.RemoveWorktree(task.WorktreePath); err != nil {
+		fmt.Printf("  Worktree: %s (NOT removed: %v)\n", task.WorktreePath, err)
+	} else {
+		fmt.Printf("  Worktree: %s (removed)\n", task.WorktreePath)
+	}
+	if err := a.Git.DeleteBranch(task.Branch); err != nil {
+		fmt.Printf("  Branch: %s (NOT deleted: %v)\n", task.Branch, err)
+	} else {
+		fmt.Printf("  Branch: %s (deleted)\n", task.Branch)
+	}
 	fmt.Printf("\nTask %s is now MERGED.\n", id)
 	return nil
 }
