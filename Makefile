@@ -7,7 +7,7 @@ test: lint
 	go test ./...
 
 build: test
-	go build -o harness ./main.go
+	go build -o harness .
 
 install: test
 	go install ./...
