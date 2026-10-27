@@ -76,19 +76,28 @@ func (a *App) reclaimStaleEntries() error {
 		}
 		fmt.Printf("Reclaimed stale merge queue entry %s (pid %d, last heartbeat %s).\n",
 			e.TaskID, e.PID, e.Heartbeat.Format(time.RFC3339))
-		a.markAbandonedMerge(e.TaskID)
+		a.markAbandonedMerge(e.TaskID, fmt.Sprintf("stale merge queue lease reclaimed (merger pid %d %s, last heartbeat %s ago)",
+			e.PID, leaseState(e.PID), now.Sub(e.Heartbeat).Truncate(time.Second)))
 	}
 	return nil
 }
 
-func (a *App) markAbandonedMerge(taskID string) {
+func leaseState(pid int) string {
+	if pidAlive(pid) {
+		return "hung"
+	}
+	return "gone"
+}
+
+func (a *App) markAbandonedMerge(taskID, reason string) {
 	task, err := a.DB.GetTask(taskID)
 	if err != nil {
 		return
 	}
 	if task.State == StateQueued || task.State == StateMerging {
-		if err := a.DB.UpdateTaskState(taskID, StateMergeFailed); err == nil {
-			fmt.Printf("Task %s is now MERGE_FAILED. If its worktree has an unfinished rebase, run: harness work sync --abort %s; then: harness work check %s\n", taskID, taskID, taskID)
+		a.mergeLogf(taskID, "MERGE FAILED: %s", reason)
+		if err := a.DB.UpdateTaskStateNote(taskID, StateMergeFailed, reason); err == nil {
+			fmt.Printf("Task %s is now MERGE_FAILED: %s. If its worktree has an unfinished rebase, run: harness work sync --abort %s; then: harness work check %s\n", taskID, reason, taskID, taskID)
 		}
 	}
 }
@@ -117,7 +126,7 @@ func (a *App) recoverAbandonedMerge(id string) error {
 			return fmt.Errorf("%s is already being merged (its lease was just renewed)", id)
 		}
 	}
-	a.markAbandonedMerge(id)
+	a.markAbandonedMerge(id, "abandoned merge recovered: the merging process is gone")
 	return fmt.Errorf("recovered abandoned merge of %s (its merger is gone); re-run checks, then merge again", id)
 }
 
@@ -164,12 +173,12 @@ func (a *App) CmdQueueClear(taskID string, force bool) error {
 			return err
 		}
 		fmt.Printf("Removed %s from the merge queue.\n", taskID)
-		a.markAbandonedMerge(taskID)
+		a.markAbandonedMerge(taskID, fmt.Sprintf("removed from the merge queue by harness queue clear (owner pid %d)", e.PID))
 		return nil
 	}
 	if task, err := a.DB.GetTask(taskID); err == nil && (task.State == StateQueued || task.State == StateMerging) {
 		fmt.Printf("%s is not in the merge queue but is stuck in %s.\n", taskID, task.State)
-		a.markAbandonedMerge(taskID)
+		a.markAbandonedMerge(taskID, fmt.Sprintf("released by harness queue clear: stuck in %s with no queue entry", task.State))
 		return nil
 	}
 	return fmt.Errorf("%s is not in the merge queue", taskID)

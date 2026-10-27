@@ -177,6 +177,10 @@ func (db *DB) UpdateTaskState(id string, state TaskState) error {
 }
 
 func updateTaskStateTx(tx *sql.Tx, id string, state TaskState) error {
+	return updateTaskStateNoteTx(tx, id, state, "")
+}
+
+func updateTaskStateNoteTx(tx *sql.Tx, id string, state TaskState, note string) error {
 	var current string
 	if err := tx.QueryRow(`SELECT state FROM tasks WHERE id = ?`, id).Scan(&current); err != nil {
 		return fmt.Errorf("reading current state for %s: %w", id, err)
@@ -191,7 +195,7 @@ func updateTaskStateTx(tx *sql.Tx, id string, state TaskState) error {
 	if err != nil {
 		return err
 	}
-	return recordTransition(tx, "task_state_transitions", "task_id", id, current, string(state))
+	return recordTransitionNote(tx, "task_state_transitions", "task_id", id, current, string(state), note)
 }
 
 func (db *DB) CreatePlannedTask(title, description, epicID string, review ReviewSetting) (*Task, error) {

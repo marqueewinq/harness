@@ -141,6 +141,7 @@ func TestInterruptedMergeReleasesQueue(t *testing.T) {
 	if task, _ = app.DB.GetTask(task.ID); task.State != StateMergeFailed {
 		t.Errorf("state = %s, want MERGE_FAILED", task.State)
 	}
+	assertMergeFailure(t, app, task.ID, "interrupted")
 }
 
 func TestQueueClearRecoversTaskWithoutQueueRow(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/marqueewinq/harness/internal"
 )
 
@@ -25,6 +26,10 @@ const (
 )
 
 const recentWindow = 24 * time.Hour
+
+// mergeReasonWidth caps the reason in a row's attention text; the detail
+// pane shows it in full.
+const mergeReasonWidth = 60
 
 type Snapshot struct {
 	Repo       string
@@ -82,6 +87,8 @@ type TaskRow struct {
 	QueueStale bool
 	GitOp      string
 	Attention  string
+	// MergeFailure is the recorded reason of a MERGE_FAILED task.
+	MergeFailure string
 }
 
 type QueueRow struct {
@@ -106,7 +113,10 @@ func attention(r TaskRow) string {
 	case r.GitOp != "":
 		return "unfinished " + r.GitOp
 	case r.State == internal.StateMergeFailed:
-		return "merge failed"
+		if r.MergeFailure == "" {
+			return "merge failed"
+		}
+		return "merge failed: " + ansi.Truncate(r.MergeFailure, mergeReasonWidth, "…")
 	case r.State == internal.StateChecksFailed:
 		return "checks failed"
 	case r.QueueStale:
@@ -359,6 +369,13 @@ func (b *builder) taskRow(t *internal.Task) TaskRow {
 			if op, err := internal.NewGitClient(t.WorktreePath).OperationInProgress(); err == nil && op != "" {
 				row.GitOp = gitOpNames[op]
 			}
+		}
+	}
+	if t.State == internal.StateMergeFailed {
+		if m, err := b.app.LastMergeFailure(t.ID); err != nil {
+			b.warn("reading merge failure of %s: %v", t.ID, err)
+		} else if m != nil {
+			row.MergeFailure = m.Reason
 		}
 	}
 	row.Attention = attention(row)

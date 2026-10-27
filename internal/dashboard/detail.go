@@ -120,6 +120,16 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 		add("Queue: #%d · pid %d · heartbeat %s ago · %s", i+1, e.PID, fmtAge(now.Sub(e.Heartbeat)), status)
 	}
 
+	if t.State == internal.StateMergeFailed {
+		m, err := app.LastMergeFailure(t.ID)
+		if err != nil {
+			return Detail{}, err
+		}
+		if m != nil {
+			mergeFailureLines(&b, m)
+		}
+	}
+
 	if t.State == internal.StateChecksRunning {
 		if name, tail := liveLogTail(app, t.ID, since); name != "" {
 			add("Live log %s:", name)
@@ -160,7 +170,44 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 		return Detail{}, err
 	}
 	verdictLines(&b, reviews)
+	m, err := app.LastEpicMergeFailure(e.ID)
+	if err != nil {
+		return Detail{}, err
+	}
+	if m != nil {
+		mergeFailureLines(&b, m)
+	}
 	return b.detail(row.Key(), e.ID+" "+flatten(e.Title)), nil
+}
+
+func mergeFailureLines(b *doc, m *internal.MergeFailure) {
+	start := len(b.lines)
+	b.add("Merge failed at %s:", m.At.Local().Format("01-02 15:04:05"))
+	reason := m.Reason
+	if reason == "" {
+		reason = "no reason recorded"
+	}
+	b.textUnder(start, "  ", reason)
+	if m.LogPath == "" {
+		return
+	}
+	b.add("Merge log %s:", m.LogPath)
+	for _, l := range fileTail(m.LogPath) {
+		b.add("  %s", l)
+	}
+}
+
+func fileTail(path string) []string {
+	f, err := os.Open(path)
+	if err != nil {
+		return []string{"-"}
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err == nil && fi.Size() > logTailBytes {
+		f.Seek(-logTailBytes, io.SeekEnd)
+	}
+	data, _ := io.ReadAll(f)
+	return lastLines(string(data), logTailLines)
 }
 
 func reviewLines(add func(string, ...interface{}), req *internal.ReviewRequest, now time.Time) {
@@ -209,16 +256,7 @@ func liveLogTail(app *internal.App, taskID string, since time.Time) (string, []s
 	if name == "" {
 		return "", nil
 	}
-	f, err := os.Open(filepath.Join(dir, name))
-	if err != nil {
-		return name, []string{"-"}
-	}
-	defer f.Close()
-	if fi, err := f.Stat(); err == nil && fi.Size() > logTailBytes {
-		f.Seek(-logTailBytes, io.SeekEnd)
-	}
-	data, _ := io.ReadAll(f)
-	return name, lastLines(string(data), logTailLines)
+	return name, fileTail(filepath.Join(dir, name))
 }
 
 func lastLines(s string, n int) []string {

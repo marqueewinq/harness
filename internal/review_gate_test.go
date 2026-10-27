@@ -256,12 +256,41 @@ func TestHumanEpicReviewRequestLaunchesNoReviewer(t *testing.T) {
 }
 
 func TestWorkStatusNextHintPerReviewType(t *testing.T) {
-	app, _, task := checkedNoneTask(t)
-	out, err := captureStdout(t, func() error { return app.CmdWorkStatus(task.ID) })
+	app, _, _ := checkedNoneTask(t)
+	for _, rt := range []string{"default", "human"} {
+		if err := app.CmdNew("feature "+rt, "", "", "", rt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"task-002", "task-003"} {
+		task, _ := app.DB.GetTask(id)
+		gitCommitFile(t, task.WorktreePath, "f.txt", "f\n", "add f")
+		if err := app.CmdWorkCheck(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, want := range map[string]string{
+		"task-001": "Next: run harness work merge (review type none",
+		"task-002": "Next: run harness review request\n",
+		"task-003": "Next: run harness review request; then a human approves or rejects",
+	} {
+		out, err := captureStdout(t, func() error { return app.CmdWorkStatus(id) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("%s status lacks %q:\n%s", id, want, out)
+		}
+	}
+
+	if err := app.CmdReviewRequest("task-003"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdout(t, func() error { return app.CmdWorkStatus("task-003") })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Next: run harness work merge") {
-		t.Errorf("none task status hint:\n%s", out)
+	if !strings.Contains(out, "Next: waiting for a human verdict (review type human)") {
+		t.Errorf("human REVIEW_REQUESTED hint:\n%s", out)
 	}
 }

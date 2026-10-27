@@ -23,6 +23,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	fmt.Printf("Branch: %s\n", task.Branch)
 	fmt.Printf("Worktree: %s\n", task.WorktreePath)
 	fmt.Printf("State: %s\n", task.State)
+	a.printMergeFailure(task)
 	fmt.Printf("Review type: %s\n", FormatReviewType(task.ReviewType, task.ReviewTypeSetBy, task.ReviewTypeSetAt))
 
 	fmt.Printf("Base: %s\n", task.BaseBranch)

@@ -97,6 +97,9 @@ func (a *App) CmdEpicView(epicID string) error {
 	fmt.Printf("Epic: %s %q\n", e.ID, e.Title)
 	fmt.Printf("Project: %s %q\n", p.ID, p.Title)
 	fmt.Printf("Status: %s\n", e.Status)
+	if m, err := a.LastEpicMergeFailure(e.ID); err == nil && m != nil {
+		fmt.Printf("Merge failed: %s\n", m)
+	}
 	fmt.Printf("Review type: %s\n", FormatReviewType(e.ReviewType, e.ReviewTypeSetBy, e.ReviewTypeSetAt))
 	if e.Branch != "" {
 		fmt.Printf("Branch: %s\n", e.Branch)

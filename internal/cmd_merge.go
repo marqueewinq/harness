@@ -15,10 +15,13 @@ import (
 // error carries cause so the command exits non-zero.
 func (a *App) failMerge(id string, cause error) error {
 	a.DB.DequeueOwned(id, os.Getpid())
-	if err := a.DB.UpdateTaskState(id, StateMergeFailed); err != nil {
+	reason := mergeFailureReason(cause)
+	a.mergeLogf(id, "MERGE FAILED: %v", cause)
+	if err := a.DB.UpdateTaskStateNote(id, StateMergeFailed, reason); err != nil {
 		return fmt.Errorf("%w (also failed to mark %s MERGE_FAILED: %v)", cause, id, err)
 	}
-	fmt.Printf("\nTask %s is now MERGE_FAILED.\n", id)
+	fmt.Printf("\nTask %s is now MERGE_FAILED: %s\n", id, reason)
+	fmt.Printf("Merge log: %s\n", MergeLogPath(a.RepoRoot, id))
 	return cause
 }
 
@@ -65,9 +68,10 @@ func (a *App) waitForQueueHead(ctx context.Context, id string) error {
 }
 
 // requireChecksAt enforces merge.require.checks against the latest check run
-// on exactly the approved commit, so an approval cannot carry checks that ran
-// on different code.
-func (a *App) requireChecksAt(id, sha string) error {
+// on exactly the commit the merge is pinned to (the approved one, or for
+// review type none the checked head), so the merge cannot carry checks that
+// ran on different code. pinned names that commit in the error.
+func (a *App) requireChecksAt(id, sha, pinned, retry string) error {
 	required := a.Config.Merge.Require.Checks
 	if len(required) == 0 {
 		return nil
@@ -83,8 +87,8 @@ func (a *App) requireChecksAt(id, sha string) error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("required checks not passed on approved commit %s: %s (run: harness work check %s, then request review again)",
-			shortSHA(sha), strings.Join(missing, ", "), id)
+		return fmt.Errorf("required checks not passed on %s commit %s: %s (run: harness work check %s%s)",
+			pinned, shortSHA(sha), strings.Join(missing, ", "), id, retry)
 	}
 	return nil
 }
@@ -101,7 +105,6 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	if task.State == StateQueued || task.State == StateMerging {
 		return a.recoverAbandonedMerge(id)
 	}
-	// Only review type none may skip the approval; any type may merge once APPROVED.
 	unreviewed := task.State == StateChecksPassed && task.ReviewType == ReviewNone
 	if task.State != StateApproved && !unreviewed {
 		if task.ReviewType == ReviewNone {
@@ -112,7 +115,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 
 	unreviewedNote := ""
 	if unreviewed {
-		if _, err := a.unreviewedMergeCommit(task); err != nil {
+		if err := a.requireCheckedHead(task); err != nil {
 			return err
 		}
 		unreviewedNote = unreviewedMergeNote(task.ReviewSummary())
@@ -138,7 +141,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 			return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
 				shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
 		}
-		if err := a.requireChecksAt(id, latestApproval.CommitSHA); err != nil {
+		if err := a.requireChecksAt(id, latestApproval.CommitSHA, "approved", ", then request review again"); err != nil {
 			return err
 		}
 	}
@@ -148,6 +151,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	// children), and every exit path releases the lease.
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
+	a.startMergeLog(id)
 	// The lease row exists before the task reads QUEUED, so a concurrent
 	// recoverAbandonedMerge always sees a live owner.
 	if _, err := a.DB.EnqueueTask(id, os.Getpid()); err != nil {
@@ -163,27 +167,31 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	}
 	pos, err := a.DB.GetQueuePosition(id)
 	if err != nil {
-		return a.failMerge(id, err)
+		return a.failMerge(id, fmt.Errorf("reading merge queue position: %w", err))
 	}
 	stopHeartbeat := a.startHeartbeat(id)
 	defer stopHeartbeat()
 	defer func() {
 		if owned, err := a.DB.OwnsQueueEntry(id, os.Getpid()); err == nil && owned {
-			a.failMerge(id, errors.New("merge did not finish"))
+			a.failMerge(id, errors.New("merge did not finish (harness exited mid-merge)"))
 		}
 	}()
 	fmt.Printf("Queued for merge (position #%d).\n", pos)
 
+	a.mergeLogf(id, "queued at position #%d", pos)
+
 	if err := a.waitForQueueHead(ctx, id); err != nil {
 		if errors.Is(err, errQueueEntryLost) {
+			a.mergeLogf(id, "%v", err)
 			return fmt.Errorf("%s: %w", id, err)
 		}
 		return a.failMerge(id, err)
 	}
 
 	fmt.Printf("\nNow processing merge for %s...\n", id)
+	a.mergeLogf(id, "reached the head of the merge queue")
 	if err := a.DB.UpdateTaskState(id, StateMerging); err != nil {
-		return a.failMerge(id, err)
+		return a.failMerge(id, fmt.Errorf("marking %s MERGING: %w", id, err))
 	}
 
 	strategy, err := NewMergeStrategy(a.Config.Merge.Strategy)
@@ -195,34 +203,42 @@ func (a *App) CmdWorkMerge(taskID string) error {
 
 	wtGit := NewGitClient(task.WorktreePath)
 	fmt.Printf("Preparing %s for %s merge into %s...\n", task.Branch, strategy.Name(), targetBranch)
+	a.mergeLogf(id, "preparing %s for %s merge into %s", task.Branch, strategy.Name(), targetBranch)
 	if err := strategy.Prepare(wtGit, targetBranch); err != nil {
 		wtGit.RebaseAbort()
 		fmt.Println("Next: harness work sync (rebase onto the latest base and resolve conflicts), then harness work check")
-		return a.failMerge(id, fmt.Errorf("prepare failed: %w", err))
+		return a.failMerge(id, fmt.Errorf("prepare failed (%s onto %s): %w", strategy.Name(), targetBranch, err))
 	}
 
 	if ctx.Err() != nil {
-		return a.failMerge(id, errors.New("interrupted"))
+		return a.failMerge(id, errors.New("interrupted after prepare"))
 	}
 
 	if a.Config.Merge.RerunChecks {
 		fmt.Println("Re-running checks...")
+		a.mergeLogf(id, "re-running checks")
 		runner := NewCheckRunner(a.Config.Checks, task.WorktreePath)
 		results, err := runner.RunAll()
 		if err != nil {
 			return a.failMerge(id, fmt.Errorf("check execution error: %w", err))
 		}
+		a.mergeLogChecks(id, results)
 		if !PrintCheckResults(results) {
+			if ctx.Err() != nil {
+				// The interrupt killed the checks; their failure is not the reason.
+				return a.failMerge(id, errors.New("interrupted while re-running checks"))
+			}
 			fmt.Println("Fix the failures, then run: harness work check")
-			return a.failMerge(id, fmt.Errorf("checks failed after rebase"))
+			return a.failMerge(id, fmt.Errorf("checks failed after rebase: %s", failedCheckNames(results)))
 		}
 	}
 
 	if ctx.Err() != nil {
-		return a.failMerge(id, errors.New("interrupted"))
+		return a.failMerge(id, errors.New("interrupted after checks"))
 	}
 
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", task.Branch, targetBranch, strategy.Name())
+	a.mergeLogf(id, "merging %s into %s (strategy: %s)", task.Branch, targetBranch, strategy.Name())
 	epicID, projID := a.resolveTaskHierarchy(task)
 	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Title)
 	if unreviewedNote != "" {
@@ -231,7 +247,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 
 	if err := a.mergeIntoTarget(strategy, task.Branch, targetBranch, mergeMessage, id); err != nil {
 		fmt.Println("Next: harness work sync (rebase onto the latest base and resolve conflicts), then harness work check")
-		return a.failMerge(id, fmt.Errorf("merge failed: %w", err))
+		return a.failMerge(id, fmt.Errorf("merge failed (into %s): %w", targetBranch, err))
 	}
 
 	// MERGED before releasing the lease: a leaseless MERGING task would look
@@ -240,6 +256,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		return err
 	}
 	a.DB.DequeueOwned(id, os.Getpid())
+	a.mergeLogf(id, "merged")
 	fmt.Println("Merge successful.")
 
 	fmt.Printf("\nCleaned up:\n")

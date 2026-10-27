@@ -129,6 +129,13 @@ passed on exactly the approved commit, and refuses otherwise. At the head, it:
 3. merges into the task's base branch,
 4. removes the worktree and branch.
 
+A failed merge leaves the task `MERGE_FAILED` with its reason recorded (rebase
+conflict and the conflicting files, which checks failed after the rebase,
+queue timeout, interrupt, reclaimed lease, ...). `harness work status`,
+`harness task view` and the dashboard show it; the full output of the latest
+attempt is in `.harness/logs/<task>/merge.log`. A failed epic merge is recorded
+the same way and shown by `harness epic view`.
+
 The merge happens in the target branch's own worktree, or in a temporary one.
 It never switches the branch of your main checkout.
 

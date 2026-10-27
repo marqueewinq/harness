@@ -53,37 +53,42 @@ func (a *App) CmdEpicMerge(epicID string) error {
 	if err != nil {
 		return err
 	}
+	a.startMergeLog(epicID)
 
 	tmpWorktree := filepath.Join(a.RepoRoot, a.Config.WorktreeDir, "_epic-merge-"+epicID)
 	a.Git.RemoveWorktree(tmpWorktree)
 	if err := a.Git.CreateWorktree(e.Branch, tmpWorktree); err != nil {
-		return fmt.Errorf("creating temp worktree: %w", err)
+		return a.failEpicMerge(epicID, fmt.Errorf("creating temp worktree: %w", err))
 	}
 
 	wtGit := NewGitClient(tmpWorktree)
 	fmt.Printf("Preparing %s for %s merge into %s...\n", e.Branch, strategy.Name(), a.Config.MainBranch)
+	a.mergeLogf(epicID, "preparing %s for %s merge into %s", e.Branch, strategy.Name(), a.Config.MainBranch)
 	if err := strategy.Prepare(wtGit, a.Config.MainBranch); err != nil {
 		wtGit.RebaseAbort()
 		a.Git.RemoveWorktree(tmpWorktree)
-		return fmt.Errorf("prepare failed: %w", err)
+		return a.failEpicMerge(epicID, fmt.Errorf("prepare failed (%s onto %s): %w", strategy.Name(), a.Config.MainBranch, err))
 	}
 
 	// Rerun checks if configured
 	if a.Config.Merge.RerunChecks {
 		fmt.Println("Re-running checks...")
+		a.mergeLogf(epicID, "re-running checks")
 		runner := NewCheckRunner(a.Config.Checks, tmpWorktree)
 		results, err := runner.RunAll()
 		if err != nil {
 			a.Git.RemoveWorktree(tmpWorktree)
-			return fmt.Errorf("check execution error: %w", err)
+			return a.failEpicMerge(epicID, fmt.Errorf("check execution error: %w", err))
 		}
+		a.mergeLogChecks(epicID, results)
 		if !PrintCheckResults(results) {
 			a.Git.RemoveWorktree(tmpWorktree)
-			return fmt.Errorf("checks failed after rebase; fix and retry")
+			return a.failEpicMerge(epicID, fmt.Errorf("checks failed after rebase: %s; fix and retry", failedCheckNames(results)))
 		}
 	}
 
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", e.Branch, a.Config.MainBranch, strategy.Name())
+	a.mergeLogf(epicID, "merging %s into %s (strategy: %s)", e.Branch, a.Config.MainBranch, strategy.Name())
 	// The epic branch is checked out in tmpWorktree; free it so the branch can
 	// be deleted, and so mergeIntoTarget doesn't mistake it for the target.
 	a.Git.RemoveWorktree(tmpWorktree)
@@ -92,8 +97,9 @@ func (a *App) CmdEpicMerge(epicID string) error {
 		message += "\n\n" + unreviewedNote
 	}
 	if err := a.mergeIntoTarget(strategy, e.Branch, a.Config.MainBranch, message, epicID); err != nil {
-		return fmt.Errorf("merge failed: %w", err)
+		return a.failEpicMerge(epicID, fmt.Errorf("merge failed (into %s): %w", a.Config.MainBranch, err))
 	}
+	a.mergeLogf(epicID, "merged")
 
 	a.Git.DeleteBranch(e.Branch)
 	a.DB.UpdateEpicBranch(epicID, "")

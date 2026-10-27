@@ -94,6 +94,7 @@ func (a *App) CmdTaskView(taskID string) error {
 		fmt.Printf("Description: %s\n", task.Description)
 	}
 	fmt.Printf("State: %s\n", task.State)
+	a.printMergeFailure(task)
 	fmt.Printf("Review type: %s\n", FormatReviewType(task.ReviewType, task.ReviewTypeSetBy, task.ReviewTypeSetAt))
 	if task.EpicID != "" {
 		if epic, err := a.DB.GetEpic(task.EpicID); err == nil {
