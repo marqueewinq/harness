@@ -15,18 +15,25 @@ type Epic struct {
 	Branch      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+
+	ReviewType      ReviewType
+	ReviewTypeSetBy string
+	ReviewTypeSetAt time.Time // zero when never set (pre-review-types rows)
 }
 
-const epicColumns = `id, project_id, title, description, status, branch, created_at, updated_at`
+const epicColumns = `id, project_id, title, description, status, branch, created_at, updated_at, review_type, review_type_set_by, review_type_set_at`
 
 func scanEpic(s rowScanner) (*Epic, error) {
 	e := &Epic{}
 	var branch sql.NullString
 	var status string
-	err := s.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &status, &branch, &e.CreatedAt, &e.UpdatedAt)
+	var reviewSetAt sql.NullTime
+	err := s.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &status, &branch, &e.CreatedAt, &e.UpdatedAt,
+		&e.ReviewType, &e.ReviewTypeSetBy, &reviewSetAt)
 	if err != nil {
 		return nil, err
 	}
+	e.ReviewTypeSetAt = reviewSetAt.Time
 	e.Status = EpicStatus(status)
 	e.Branch = branch.String
 	return e, nil
@@ -58,7 +65,7 @@ func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, e
 		if err := recordTransition(tx, "epic_state_transitions", "epic_id", id, "", string(EpicStatusOpen)); err != nil {
 			return err
 		}
-		epic = &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: EpicStatusOpen, Branch: branch, CreatedAt: now, UpdatedAt: now}
+		epic = &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: EpicStatusOpen, Branch: branch, CreatedAt: now, UpdatedAt: now, ReviewType: ReviewDefault}
 		return nil
 	})
 	if err != nil {

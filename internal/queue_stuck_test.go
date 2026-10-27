@@ -95,7 +95,7 @@ func TestInterruptedMergeReleasesQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer app.Close()
-	if err := app.CmdNew("slow", "", "", ""); err != nil {
+	if err := app.CmdNew("slow", "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, _ := app.DB.GetTask("task-001")

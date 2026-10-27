@@ -23,6 +23,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	fmt.Printf("Branch: %s\n", task.Branch)
 	fmt.Printf("Worktree: %s\n", task.WorktreePath)
 	fmt.Printf("State: %s\n", task.State)
+	fmt.Printf("Review type: %s\n", FormatReviewType(task.ReviewType, task.ReviewTypeSetBy, task.ReviewTypeSetAt))
 
 	fmt.Printf("Base: %s\n", task.BaseBranch)
 	if task.ParentTaskID != "" {
@@ -131,7 +132,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		}
 		fmt.Printf("  %s Work in worktree\n", mark(task.WorktreePath != ""))
 		fmt.Printf("  %s All checks pass\n", mark(checksOK))
-		if a.Config.Merge.Require.Review == "approved" {
+		if task.ReviewType != ReviewNone {
 			fmt.Printf("  %s Review approved\n", mark(reviewOK))
 		}
 	}

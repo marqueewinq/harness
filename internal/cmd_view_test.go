@@ -34,10 +34,10 @@ func TestCmdProjectViewPrintsTaskTitle(t *testing.T) {
 	if err := app.CmdProjectNew("P", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdEpicNew("E", "", "proj-001", "", true); err != nil {
+	if err := app.CmdEpicNew("E", "", "proj-001", "", true, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdTaskNew("the title", "the description", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("the title", "the description", "epic-001", ""); err != nil {
 		t.Fatal(err)
 	}
 	out, err := captureStdout(t, func() error { return app.CmdProjectView("proj-001") })
@@ -56,7 +56,7 @@ func TestCmdEpicViewMissingProject(t *testing.T) {
 	if err := app.CmdProjectNew("P", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdEpicNew("E", "", "proj-001", "", true); err != nil {
+	if err := app.CmdEpicNew("E", "", "proj-001", "", true, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.DB.conn.Exec(`UPDATE epics SET project_id = 'proj-999' WHERE id = 'epic-001'`); err != nil {
@@ -76,7 +76,7 @@ func TestCmdEpicEditProject(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := app.CmdEpicNew("E", "", "proj-001", "", true); err != nil {
+	if err := app.CmdEpicNew("E", "", "proj-001", "", true, ""); err != nil {
 		t.Fatal(err)
 	}
 

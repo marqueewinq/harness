@@ -84,14 +84,22 @@ func newCmd() *cobra.Command {
 		Short: "Create a new task with branch and worktree",
 		Args:  cobra.ExactArgs(1),
 	}
-	var baseBranch, epicID, description string
+	var baseBranch, epicID, description, review string
 	cmd.Flags().StringVar(&baseBranch, "base", "", "Base branch to fork from and merge into (default: main branch)")
 	cmd.Flags().StringVar(&epicID, "epic", "", "Parent epic ID")
 	cmd.Flags().StringVar(&description, "description", "", "Task description / notes")
+	addReviewFlag(cmd, &review)
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		return app.CmdNew(args[0], baseBranch, epicID, description)
+		return app.CmdNew(args[0], baseBranch, epicID, description, review)
 	})
 	return cmd
+}
+
+// Only creation commands get --review: after creation the type changes only
+// through the dashboard.
+func addReviewFlag(cmd *cobra.Command, review *string) {
+	cmd.Flags().StringVar(review, "review", string(internal.ReviewDefault),
+		"Review gate: default (configured reviewer), human (human verdict only), or none (no review; needs review.allow_none: true committed on main). Cannot be changed later from the CLI")
 }
 
 // --- work group ---
@@ -272,11 +280,12 @@ func taskNewCmd() *cobra.Command {
 		Short: "Create a new task",
 		Args:  cobra.ExactArgs(1),
 	}
-	var epicID, description string
+	var epicID, description, review string
 	cmd.Flags().StringVar(&epicID, "epic", "", "Parent epic ID")
 	cmd.Flags().StringVar(&description, "description", "", "Task description / notes")
+	addReviewFlag(cmd, &review)
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		return app.CmdTaskNew(args[0], description, epicID)
+		return app.CmdTaskNew(args[0], description, epicID, review)
 	})
 	return cmd
 }
@@ -466,12 +475,13 @@ func epicNewCmd() *cobra.Command {
 		Short: "Create a new epic",
 		Args:  cobra.ExactArgs(1),
 	}
-	var epicDesc, epicProject, epicBranch string
+	var epicDesc, epicProject, epicBranch, review string
 	cmd.Flags().StringVar(&epicProject, "project", "", "Parent project ID")
 	cmd.Flags().StringVar(&epicDesc, "description", "", "Epic description")
 	cmd.Flags().StringVar(&epicBranch, "branch", "", "Branch for epic (default: epic/<slug>)")
+	addReviewFlag(cmd, &review)
 	cmd.RunE = withApp(func(app *internal.App, c *cobra.Command, args []string) error {
-		return app.CmdEpicNew(args[0], epicDesc, epicProject, epicBranch, c.Flags().Changed("branch"))
+		return app.CmdEpicNew(args[0], epicDesc, epicProject, epicBranch, c.Flags().Changed("branch"), review)
 	})
 	return cmd
 }

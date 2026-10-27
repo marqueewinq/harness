@@ -2,9 +2,13 @@ package internal
 
 import "fmt"
 
-func (a *App) CmdEpicNew(title, description, projectID, branchFlag string, branchFlagSet bool) error {
+func (a *App) CmdEpicNew(title, description, projectID, branchFlag string, branchFlagSet bool, review string) error {
 	if projectID == "" {
 		return fmt.Errorf("--project is required")
+	}
+	reviewType, reviewSetBy, err := a.creationReviewType(review)
+	if err != nil {
+		return err
 	}
 	p, err := a.DB.GetProject(projectID)
 	if err != nil {
@@ -42,7 +46,10 @@ func (a *App) CmdEpicNew(title, description, projectID, branchFlag string, branc
 		}
 		return err
 	}
-	fmt.Printf("Created %s: %q (%s)\n", e.ID, e.Title, projectID)
+	if err := a.DB.SetReviewType(e.ID, reviewType, reviewSetBy); err != nil {
+		return fmt.Errorf("created %s, but its review type stays default: %w", e.ID, err)
+	}
+	fmt.Printf("Created %s: %q (%s, review: %s)\n", e.ID, e.Title, projectID, reviewType)
 	if branch != "" {
 		fmt.Printf("Branch: %s\n", branch)
 	}
@@ -93,6 +100,7 @@ func (a *App) CmdEpicView(epicID string) error {
 	fmt.Printf("Epic: %s %q\n", e.ID, e.Title)
 	fmt.Printf("Project: %s %q\n", p.ID, p.Title)
 	fmt.Printf("Status: %s\n", e.Status)
+	fmt.Printf("Review type: %s\n", FormatReviewType(e.ReviewType, e.ReviewTypeSetBy, e.ReviewTypeSetAt))
 	if e.Branch != "" {
 		fmt.Printf("Branch: %s\n", e.Branch)
 	}
@@ -106,7 +114,7 @@ func (a *App) CmdEpicView(epicID string) error {
 	}
 	fmt.Println("\nTasks:")
 	for _, t := range tasks {
-		fmt.Printf("  %-10s %-20s %s\n", t.ID, t.State, t.Title)
+		fmt.Printf("  %-10s %-20s %-8s %s\n", t.ID, t.State, t.ReviewType, t.Title)
 	}
 	return nil
 }

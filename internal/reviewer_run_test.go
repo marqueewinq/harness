@@ -126,7 +126,7 @@ func TestEpicReviewerNoVerdictReturnsError(t *testing.T) {
 	if err := app.CmdProjectNew("P", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdEpicNew("E", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("E", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal(err)
 	}
 	err := app.cmdEpicReviewRequest("epic-001")
@@ -149,7 +149,7 @@ func startRequestSubprocess(t *testing.T, reviewCmd, extraReview string, stdin i
 	}
 	app, dir := setupAppWithReviewConfig(t, reviewCmd, extraReview)
 	t.Cleanup(func() { app.Close() })
-	if err := app.CmdNew("subprocess", "", "", ""); err != nil {
+	if err := app.CmdNew("subprocess", "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, _ := app.DB.GetTask("task-001")

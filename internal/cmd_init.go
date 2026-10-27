@@ -31,7 +31,6 @@ checks:
 merge:
   require:
     checks: [test]
-    review: approved
   strategy: merge
   rerun_checks: true
 
@@ -42,6 +41,10 @@ review:
   # cmd gets no terminal: its stdin is /dev/null, so read the prompt from
   # {{prompt_file}}. It is killed after timeout (default 30m).
   type: human
+  # Per task/epic review type is chosen at creation with --review=default|human|none.
+  # allow_none lets creators self-declare --review=none; only the value
+  # committed on the main branch counts.
+  # allow_none: false
   # timeout: 30m
   # cmd: 'claude -p --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |

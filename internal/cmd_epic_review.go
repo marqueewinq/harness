@@ -69,6 +69,11 @@ func (a *App) epicVerdictReport(epicID, decision, comment, expectSHA string, aut
 }
 
 func (a *App) cmdEpicReviewHistory(epicID string) error {
+	e, err := a.DB.GetEpic(epicID)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Review type: %s\n\n", FormatReviewType(e.ReviewType, e.ReviewTypeSetBy, e.ReviewTypeSetAt))
 	reviews, err := a.DB.GetEpicReviews(epicID)
 	if err != nil {
 		return err

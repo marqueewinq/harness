@@ -76,7 +76,7 @@ branch onto its base inside the worktree (commit or discard local changes first)
 |---|---|
 | `harness task list --status=all` | List all tasks |
 | `harness work status [task-id]` | Task state, checks, reviews, history, next action |
-| `harness new "title"` | Create task + branch + worktree |
+| `harness new "title" [--review default\|human\|none]` | Create task + branch + worktree; review type is fixed at creation (`none` needs `review.allow_none: true` on main) |
 | `harness work check [task-id]` | Run checks (DAG-ordered, parallel) |
 | `harness work diff [task-id]` | Show diff vs base branch |
 | `harness work commit -m "msg"` | Commit with message template |

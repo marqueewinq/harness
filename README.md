@@ -93,6 +93,22 @@ task back to `IN_PROGRESS` from `CHECKS_FAILED`, `CHECKS_PASSED`,
 Do not let the reviewer run code from the branch under review (`go test`,
 `make`, ...). It holds the approval token, and the checks have already run.
 
+### Review types
+
+Every task and epic has a review type, chosen at creation with
+`--review=default|human|none` on `harness new`, `harness task new` and
+`harness epic new` (default `default`; `task start` keeps the planned task's
+type):
+
+- `default`: the reviewer configured in `review:` on main.
+- `human`: only a human verdict counts.
+- `none`: no review gate. Refused unless `.harness.yaml` committed on main has
+  `review.allow_none: true` (default false); a local edit does not count.
+
+There is no CLI path to change the type afterwards. Each type records who set
+it and when, e.g. `none · self-declared (allow_none) · 2026-10-27 10:12`;
+`work status`, `task list`, `epic view` and `review history` show it.
+
 ## Merge queue
 
 `harness work merge` puts the task in a queue in SQLite and blocks until the
@@ -214,13 +230,13 @@ checks:
 merge:
   require:
     checks: [build]            # a terminal node implies its dependencies
-    review: approved
   strategy: merge              # merge (rebase + fast-forward) | squash
   rerun_checks: true           # re-run checks on the rebased branch before merging
   queue_timeout: 300           # seconds to wait in the queue
 
 review:
   type: agent                  # agent | human
+  allow_none: false            # default; true lets creators self-declare --review=none
   timeout: 30m                 # default 30m; review.cmd is killed after this
   cmd: 'claude -p --setting-sources user --allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(harness review approve:*)" "Bash(harness review reject:*)" < {{prompt_file}}'
   prompt: |
@@ -232,6 +248,9 @@ review:
 The `cmd` placeholders are `{{prompt_file}}` and `{{task_id}}`. The `prompt`
 placeholders are `{{diff}}`, `{{previous_comments}}`, `{{task_description}}`
 and `{{task_id}}`.
+
+`merge.require.review` was removed: a config that still sets it fails to load.
+Use review types and `review.allow_none` instead.
 
 ## Known limits
 

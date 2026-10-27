@@ -2,7 +2,11 @@ package internal
 
 import "fmt"
 
-func (a *App) CmdNew(title, baseBranch, epicID, description string) error {
+func (a *App) CmdNew(title, baseBranch, epicID, description, review string) error {
+	reviewType, reviewSetBy, err := a.creationReviewType(review)
+	if err != nil {
+		return err
+	}
 	baseBranch = a.resolveBaseBranch(baseBranch, epicID)
 	slug := Slugify(title)
 	branch, worktreePath, parentTaskID, err := a.createTaskBranch(slug, baseBranch)
@@ -16,8 +20,12 @@ func (a *App) CmdNew(title, baseBranch, epicID, description string) error {
 		a.Git.DeleteBranch(branch)
 		return fmt.Errorf("creating task: %w", err)
 	}
+	if err := a.DB.SetReviewType(task.ID, reviewType, reviewSetBy); err != nil {
+		return fmt.Errorf("created %s, but its review type stays default: %w", task.ID, err)
+	}
 
 	fmt.Printf("Created %s: %q\n", task.ID, title)
+	fmt.Printf("Review type: %s\n", reviewType)
 	fmt.Printf("Branch: %s\n", branch)
 	baseInfo := baseBranch
 	if parentTaskID != "" {

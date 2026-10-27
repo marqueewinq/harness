@@ -3,6 +3,7 @@ package internal
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,7 +22,6 @@ checks:
 merge:
   require:
     checks: [lint]
-    review: approved
   strategy: squash
   rerun_checks: true
 review:
@@ -195,6 +195,51 @@ checks:
 	}
 	if cfg.Commit.Message != "[{{proj}}] [{{epic}}] [{{task}}] {{message}}" {
 		t.Errorf("Commit.Message = %q", cfg.Commit.Message)
+	}
+}
+
+func TestParseConfigRejectsMergeRequireReview(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"approved", "none", "''"} {
+		_, err := ParseConfig([]byte("merge:\n  require:\n    review: " + value + "\n"))
+		if err == nil {
+			t.Errorf("merge.require.review: %s accepted", value)
+			continue
+		}
+		for _, want := range []string{"merge.require.review", "review.allow_none", "--review"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %s", err, want)
+			}
+		}
+	}
+}
+
+func TestParseConfigAllowNone(t *testing.T) {
+	t.Parallel()
+	cfg, err := ParseConfig([]byte("review:\n  type: human\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Review.AllowNone {
+		t.Error("allow_none should default to false")
+	}
+	cfg, err = ParseConfig([]byte("review:\n  allow_none: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Review.AllowNone {
+		t.Error("allow_none: true not parsed")
+	}
+}
+
+func TestInitScaffoldParses(t *testing.T) {
+	t.Parallel()
+	dir := initTestRepo(t)
+	if err := RunInit(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(filepath.Join(dir, ".harness.yaml")); err != nil {
+		t.Errorf("init scaffold does not load: %v", err)
 	}
 }
 

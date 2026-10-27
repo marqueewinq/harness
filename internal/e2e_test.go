@@ -66,7 +66,7 @@ func TestE2EWorkflow(t *testing.T) {
 	defer app.Close()
 
 	// harness new
-	err = app.CmdNew("add hello feature", "", "", "")
+	err = app.CmdNew("add hello feature", "", "", "", "")
 	if err != nil {
 		t.Fatal("new:", err)
 	}
@@ -223,7 +223,7 @@ func TestE2EFeatureBranch(t *testing.T) {
 	defer app.Close()
 
 	// Create parent feature task
-	err = app.CmdNew("big feature", "", "", "")
+	err = app.CmdNew("big feature", "", "", "", "")
 	if err != nil {
 		t.Fatal("new parent:", err)
 	}
@@ -233,7 +233,7 @@ func TestE2EFeatureBranch(t *testing.T) {
 	}
 
 	// Create subtask targeting parent's branch
-	err = app.CmdNew("subtask one", parent.Branch, "", "")
+	err = app.CmdNew("subtask one", parent.Branch, "", "", "")
 	if err != nil {
 		t.Fatal("new subtask:", err)
 	}
@@ -307,7 +307,7 @@ func setupApp(t *testing.T) (*App, string) {
 func setupTask(t *testing.T) (*App, string, *Task) {
 	t.Helper()
 	app, dir := setupApp(t)
-	if err := app.CmdNew("test feature", "", "", ""); err != nil {
+	if err := app.CmdNew("test feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -332,7 +332,7 @@ func setupTaskInState(t *testing.T, state TaskState) (*App, *Task) {
 		task.State = state
 	}
 	app := &App{
-		Config:   &Config{MainBranch: "main", Merge: MergeConfig{Require: MergeRequire{Review: "approved"}}},
+		Config:   &Config{MainBranch: "main"},
 		DB:       db,
 		Git:      NewGitClient(t.TempDir()),
 		RepoRoot: t.TempDir(),
@@ -532,7 +532,7 @@ func TestE2ECheckFailFix(t *testing.T) {
 	}
 	defer app.Close()
 
-	if err := app.CmdNew("fix tests", "", "", ""); err != nil {
+	if err := app.CmdNew("fix tests", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -620,7 +620,7 @@ func TestE2ESquashMerge(t *testing.T) {
 	}
 	defer app.Close()
 
-	if err := app.CmdNew("squash feature", "", "", ""); err != nil {
+	if err := app.CmdNew("squash feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -783,7 +783,7 @@ func TestE2ECustomReviewType(t *testing.T) {
 		t.Errorf("review type = %q, want %q", app.Config.Review.Type, "agent")
 	}
 
-	if err := app.CmdNew("agent reviewed feature", "", "", ""); err != nil {
+	if err := app.CmdNew("agent reviewed feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -817,16 +817,16 @@ func TestE2EPlanningWorkflow(t *testing.T) {
 	if err := app.CmdProjectNew("Test Project", "project description"); err != nil {
 		t.Fatal("project new:", err)
 	}
-	if err := app.CmdEpicNew("Test Epic", "epic description", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("Test Epic", "epic description", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic new:", err)
 	}
-	if err := app.CmdTaskNew("task A", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task A", "", "epic-001", ""); err != nil {
 		t.Fatal("plan A:", err)
 	}
-	if err := app.CmdTaskNew("task B", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task B", "", "epic-001", ""); err != nil {
 		t.Fatal("plan B:", err)
 	}
-	if err := app.CmdTaskNew("task C", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task C", "", "epic-001", ""); err != nil {
 		t.Fatal("plan C:", err)
 	}
 
@@ -944,7 +944,7 @@ func TestE2EClosePlannedTask(t *testing.T) {
 	defer app.Close()
 
 	// Plan a task without starting
-	if err := app.CmdTaskNew("planned only", "", ""); err != nil {
+	if err := app.CmdTaskNew("planned only", "", "", ""); err != nil {
 		t.Fatal("plan:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -971,7 +971,7 @@ func TestE2EClosePlannedTask(t *testing.T) {
 	// Close with cleanup should also work (no-op on branch/worktree)
 	app2, _ := setupApp(t)
 	defer app2.Close()
-	if err := app2.CmdTaskNew("planned only 2", "", ""); err != nil {
+	if err := app2.CmdTaskNew("planned only 2", "", "", ""); err != nil {
 		t.Fatal("plan2:", err)
 	}
 	if err := app2.CmdWorkClose("task-001", true); err != nil {
@@ -989,10 +989,10 @@ func TestE2EStartBlockedTask(t *testing.T) {
 	defer app.Close()
 
 	// Plan A and B
-	if err := app.CmdTaskNew("blocker task", "", ""); err != nil {
+	if err := app.CmdTaskNew("blocker task", "", "", ""); err != nil {
 		t.Fatal("plan A:", err)
 	}
-	if err := app.CmdTaskNew("blocked task", "", ""); err != nil {
+	if err := app.CmdTaskNew("blocked task", "", "", ""); err != nil {
 		t.Fatal("plan B:", err)
 	}
 
@@ -1023,7 +1023,7 @@ func TestE2EOrphanPlannedTask(t *testing.T) {
 	defer app.Close()
 
 	// Plan without epic
-	if err := app.CmdTaskNew("orphan task", "", ""); err != nil {
+	if err := app.CmdTaskNew("orphan task", "", "", ""); err != nil {
 		t.Fatal("plan:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -1077,7 +1077,7 @@ func TestE2EMixedWorkflow(t *testing.T) {
 	defer app.Close()
 
 	// Old style: CmdNew
-	if err := app.CmdNew("old style task", "", "", ""); err != nil {
+	if err := app.CmdNew("old style task", "", "", "", ""); err != nil {
 		t.Fatal("CmdNew:", err)
 	}
 	oldTask, _ := app.DB.GetTask("task-001")
@@ -1089,10 +1089,10 @@ func TestE2EMixedWorkflow(t *testing.T) {
 	if err := app.CmdProjectNew("Mixed Project", ""); err != nil {
 		t.Fatal("project:", err)
 	}
-	if err := app.CmdEpicNew("Mixed Epic", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("Mixed Epic", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic:", err)
 	}
-	if err := app.CmdTaskNew("planned task", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("planned task", "", "epic-001", ""); err != nil {
 		t.Fatal("plan:", err)
 	}
 	plannedTask, _ := app.DB.GetTask("task-002")
@@ -1138,7 +1138,7 @@ func TestE2EEpicFeatureBranch(t *testing.T) {
 	if err := app.CmdProjectNew("Feature Project", ""); err != nil {
 		t.Fatal("project:", err)
 	}
-	if err := app.CmdEpicNew("Big Feature", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("Big Feature", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic new:", err)
 	}
 
@@ -1153,7 +1153,7 @@ func TestE2EEpicFeatureBranch(t *testing.T) {
 	}
 
 	// Create a task under epic (should auto-resolve base from epic branch)
-	if err := app.CmdTaskNew("subtask one", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("subtask one", "", "epic-001", ""); err != nil {
 		t.Fatal("plan subtask:", err)
 	}
 
@@ -1232,7 +1232,7 @@ func TestE2EEpicBranchFlag(t *testing.T) {
 	}
 
 	// --branch=main -> store main, no new branch
-	if err := app.CmdEpicNew("No Branch Epic", "", "proj-001", "main", true); err != nil {
+	if err := app.CmdEpicNew("No Branch Epic", "", "proj-001", "main", true, ""); err != nil {
 		t.Fatal("epic new:", err)
 	}
 	epic, _ := app.DB.GetEpic("epic-001")
@@ -1241,7 +1241,7 @@ func TestE2EEpicBranchFlag(t *testing.T) {
 	}
 
 	// Tasks under this epic should use main as base
-	if err := app.CmdTaskNew("task A", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task A", "", "epic-001", ""); err != nil {
 		t.Fatal("plan:", err)
 	}
 	if err := app.CmdTaskStart("task-001", ""); err != nil {
@@ -1287,7 +1287,7 @@ func TestE2EEpicDisabledFeatureBranches(t *testing.T) {
 	}
 
 	// Epic without --branch and epic_feature_branches=false -> no branch
-	if err := app.CmdEpicNew("No Branch Epic", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("No Branch Epic", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic new:", err)
 	}
 	epic, _ := app.DB.GetEpic("epic-001")
@@ -1296,7 +1296,7 @@ func TestE2EEpicDisabledFeatureBranches(t *testing.T) {
 	}
 
 	// Tasks under this epic should use main as base
-	if err := app.CmdTaskNew("task A", "", "epic-001"); err != nil {
+	if err := app.CmdTaskNew("task A", "", "epic-001", ""); err != nil {
 		t.Fatal("plan:", err)
 	}
 	if err := app.CmdTaskStart("task-001", ""); err != nil {
@@ -1316,7 +1316,7 @@ func TestE2EEpicReviewHistory(t *testing.T) {
 	if err := app.CmdProjectNew("Test Project", ""); err != nil {
 		t.Fatal("project:", err)
 	}
-	if err := app.CmdEpicNew("Review Epic", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("Review Epic", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic new:", err)
 	}
 
@@ -1369,7 +1369,7 @@ func TestE2EEpicMergeNoApproval(t *testing.T) {
 	if err := app.CmdProjectNew("Test Project", ""); err != nil {
 		t.Fatal("project:", err)
 	}
-	if err := app.CmdEpicNew("Merge Epic", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("Merge Epic", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic new:", err)
 	}
 
@@ -1415,7 +1415,7 @@ func TestE2EEpicNewWithCmdNew(t *testing.T) {
 	if err := app.CmdProjectNew("Test Project", ""); err != nil {
 		t.Fatal("project:", err)
 	}
-	if err := app.CmdEpicNew("Feature", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("Feature", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic:", err)
 	}
 
@@ -1425,7 +1425,7 @@ func TestE2EEpicNewWithCmdNew(t *testing.T) {
 	}
 
 	// CmdNew with --epic should resolve to epic branch
-	if err := app.CmdNew("subtask via new", "", "epic-001", ""); err != nil {
+	if err := app.CmdNew("subtask via new", "", "epic-001", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -1442,7 +1442,7 @@ func TestE2EEpicDiff(t *testing.T) {
 	if err := app.CmdProjectNew("Test Project", ""); err != nil {
 		t.Fatal("project:", err)
 	}
-	if err := app.CmdEpicNew("Diff Epic", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("Diff Epic", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal("epic:", err)
 	}
 
@@ -1467,7 +1467,7 @@ func TestE2EEpicBranchWithExistingBranch(t *testing.T) {
 	}
 
 	// --branch=custom-epic -> use existing branch
-	if err := app.CmdEpicNew("Custom", "", "proj-001", "custom-epic", true); err != nil {
+	if err := app.CmdEpicNew("Custom", "", "proj-001", "custom-epic", true, ""); err != nil {
 		t.Fatal("epic new:", err)
 	}
 
@@ -1487,7 +1487,7 @@ func TestE2EEpicBranchNonexistent(t *testing.T) {
 	}
 
 	// --branch=nonexistent -> error
-	err := app.CmdEpicNew("Bad", "", "proj-001", "nonexistent-branch", true)
+	err := app.CmdEpicNew("Bad", "", "proj-001", "nonexistent-branch", true, "")
 	if err == nil {
 		t.Error("expected error for nonexistent branch")
 	}
@@ -1534,7 +1534,6 @@ checks:
 merge:
   require:
     checks: [test]
-    review: approved
   strategy: merge
 review:
   type: agent
@@ -1570,7 +1569,7 @@ func TestE2EAutomatedReviewerApprove(t *testing.T) {
 	app, _ := setupAppWithReviewCmd(t, reviewCmd)
 	defer app.Close()
 
-	if err := app.CmdNew("auto-reviewed feature", "", "", ""); err != nil {
+	if err := app.CmdNew("auto-reviewed feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -1615,7 +1614,7 @@ func TestE2EAutomatedReviewerReject(t *testing.T) {
 	app, _ := setupAppWithReviewCmd(t, reviewCmd)
 	defer app.Close()
 
-	if err := app.CmdNew("rejected feature", "", "", ""); err != nil {
+	if err := app.CmdNew("rejected feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -1652,7 +1651,7 @@ func TestE2EAutomatedReviewerNoVerdict(t *testing.T) {
 	app, _ := setupAppWithReviewCmd(t, "echo noop")
 	defer app.Close()
 
-	if err := app.CmdNew("no-verdict feature", "", "", ""); err != nil {
+	if err := app.CmdNew("no-verdict feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -1686,7 +1685,7 @@ func TestE2EAutomatedReviewerPromptFile(t *testing.T) {
 	app, _ := setupAppWithReviewCmd(t, reviewCmd)
 	defer app.Close()
 
-	if err := app.CmdNew("prompt-test feature", "", "", ""); err != nil {
+	if err := app.CmdNew("prompt-test feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")

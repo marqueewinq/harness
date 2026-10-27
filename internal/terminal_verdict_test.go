@@ -149,7 +149,7 @@ func TestRecordTerminalVerdictEpic(t *testing.T) {
 	if err := app.CmdProjectNew("P", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdEpicNew("E", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("E", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {

@@ -25,7 +25,6 @@ func (c CheckConfig) TimeoutDuration() time.Duration {
 
 type MergeRequire struct {
 	Checks []string `yaml:"checks"`
-	Review string   `yaml:"review"`
 }
 
 type MergeConfig struct {
@@ -44,6 +43,9 @@ type ReviewConfig struct {
 	Cmd     string `yaml:"cmd"`
 	Prompt  string `yaml:"prompt"`
 	Timeout string `yaml:"timeout,omitempty"` // Go duration for review.cmd; default 30m
+	// Read only from the committed config: lets a creator self-declare
+	// --review=none.
+	AllowNone bool `yaml:"allow_none"`
 }
 
 func (r ReviewConfig) TimeoutDuration() time.Duration {
@@ -88,6 +90,20 @@ func ParseConfig(data []byte) (*Config, error) {
 	cfg := &Config{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	// yaml ignores unknown keys, so a removed key would otherwise be dropped
+	// silently while its author believes it still applies.
+	var legacy struct {
+		Merge struct {
+			Require map[string]yaml.Node `yaml:"require"`
+		} `yaml:"merge"`
+	}
+	if err := yaml.Unmarshal(data, &legacy); err == nil {
+		if _, ok := legacy.Merge.Require["review"]; ok {
+			return nil, fmt.Errorf("merge.require.review is no longer supported: the review gate is set per task and epic " +
+				"with --review=default|human|none at creation (harness new / task new / epic new); " +
+				"to let creators self-declare --review=none, set review.allow_none: true in .harness.yaml on the main branch")
+		}
 	}
 
 	// MainBranch default is resolved at LoadApp time via git detection

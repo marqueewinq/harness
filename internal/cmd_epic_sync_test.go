@@ -14,7 +14,7 @@ func epicWithCommit(t *testing.T, file, content string) (*App, string, *Epic) {
 	if err := app.CmdProjectNew("P", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdEpicNew("E", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("E", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal(err)
 	}
 	e, _ := app.DB.GetEpic("epic-001")
@@ -107,7 +107,7 @@ func TestEpicSyncNothingInProgress(t *testing.T) {
 func TestEpicSyncRefusedWhileTaskMerging(t *testing.T) {
 	t.Parallel()
 	app, _, e := epicWithCommit(t, "epic.txt", "epic\n")
-	if err := app.CmdTaskNew("t", "", e.ID); err != nil {
+	if err := app.CmdTaskNew("t", "", e.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.CmdTaskStart("task-001", ""); err != nil {

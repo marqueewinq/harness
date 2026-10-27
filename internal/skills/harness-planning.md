@@ -35,12 +35,12 @@ Use when decomposing work into projects, epics, and tasks.
 | `harness project list` | List projects with progress |
 | `harness project view <id>` | Project details + epics + tasks |
 | `harness project close <id>` | Close a project |
-| `harness epic new "title" --project <id>` | Create epic under project |
+| `harness epic new "title" --project <id> [--review default\|human\|none]` | Create epic under project; review type is fixed at creation (`none` needs `review.allow_none: true` on main) |
 | `harness epic list [--project <id>]` | List epics |
 | `harness epic view <id>` | Epic details + tasks |
 | `harness epic close <id>` | Close an epic |
 | `harness epic sync <id> [--continue\|--abort]` | Rebase the epic branch onto main (then `work sync` its in-flight tasks) |
-| `harness task new "title" [--epic <id>] [--description "..."]` | Create planned task |
+| `harness task new "title" [--epic <id>] [--description "..."] [--review default\|human\|none]` | Create planned task; review type is fixed at creation |
 | `harness task start <task-id> [--base <branch>]` | Start a planned task |
 | `harness task list --ready` | List unblocked planned tasks |
 | `harness task dep add <from> <to>` | Add blocker dependency |

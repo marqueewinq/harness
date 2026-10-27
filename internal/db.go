@@ -130,8 +130,41 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v11: %w", err)
 		}
 	}
+	if version < 12 {
+		if err := migrateV12(conn); err != nil {
+			return fmt.Errorf("migration v12: %w", err)
+		}
+	}
 
 	return nil
+}
+
+// Existing tasks and epics keep today's review gate (default) with no
+// recorded setter.
+func migrateV12(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var stmts []string
+	for _, table := range []string{"tasks", "epics"} {
+		stmts = append(stmts,
+			`ALTER TABLE `+table+` ADD COLUMN review_type TEXT NOT NULL DEFAULT 'default'`,
+			`ALTER TABLE `+table+` ADD COLUMN review_type_set_by TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE `+table+` ADD COLUMN review_type_set_at TIMESTAMP NULL`,
+		)
+	}
+	stmts = append(stmts,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (12)`,
+	)
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // The dashboard reads the latest run group of every task on each refresh.

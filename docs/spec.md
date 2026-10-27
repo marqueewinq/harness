@@ -82,13 +82,13 @@ checks:
 merge:
   require:
     checks: [build]         # terminal DAG node — implies full dependency chain
-    review: approved
   strategy: merge            # merge (rebase + fast-forward) | squash
   rerun_checks: true         # re-run checks at merge time before merging
 
 # Review configuration
 review:
   type: agent                # agent | human
+  allow_none: false          # true lets creators self-declare --review=none (read from main only)
   prompt: |
     Review this change for: correctness, test coverage, project conventions.
     You have access to the full codebase via Read/Grep/Glob tools.
@@ -103,6 +103,12 @@ review:
       harness record-review approve
       harness record-review request-changes --comment "your comments here"
 ```
+
+The review gate itself is per task and epic: `--review=default|human|none`
+at creation (`harness new`, `harness task new`, `harness epic new`), with no
+CLI path to change it afterwards. `none` is refused unless the config
+committed on main has `review.allow_none: true`. The former
+`merge.require.review` key is rejected at load time.
 
 ### `.harness/` directory (gitignored)
 
@@ -125,6 +131,9 @@ Sqlite database in WAL mode for concurrent access from parallel agents.
 | branch | TEXT | Git branch name |
 | worktree_path | TEXT | Path to the worktree directory |
 | state | TEXT | Current state in the state machine |
+| review_type | TEXT | `default`, `human` or `none` (same three columns on `epics`) |
+| review_type_set_by | TEXT | Who set the type, e.g. `creator`, `self-declared (allow_none)` |
+| review_type_set_at | TIMESTAMP | When the type was set; NULL for rows predating review types |
 | created_at | TIMESTAMP | When the task was created |
 | updated_at | TIMESTAMP | Last state transition |
 

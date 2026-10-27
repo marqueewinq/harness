@@ -15,7 +15,6 @@ checks:
 merge:
   require:
     checks: [build]
-    review: approved
   strategy: merge
   rerun_checks: true
 

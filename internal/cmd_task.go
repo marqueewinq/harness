@@ -5,7 +5,11 @@ import (
 	"strings"
 )
 
-func (a *App) CmdTaskNew(title, description, epicID string) error {
+func (a *App) CmdTaskNew(title, description, epicID, review string) error {
+	reviewType, reviewSetBy, err := a.creationReviewType(review)
+	if err != nil {
+		return err
+	}
 	if epicID != "" {
 		e, err := a.DB.GetEpic(epicID)
 		if err != nil {
@@ -19,11 +23,14 @@ func (a *App) CmdTaskNew(title, description, epicID string) error {
 	if err != nil {
 		return err
 	}
+	if err := a.DB.SetReviewType(task.ID, reviewType, reviewSetBy); err != nil {
+		return fmt.Errorf("created %s, but its review type stays default: %w", task.ID, err)
+	}
 	epicInfo := ""
 	if epicID != "" {
 		epicInfo = fmt.Sprintf(", %s", epicID)
 	}
-	fmt.Printf("Created %s: %q (PLANNED%s)\n", task.ID, title, epicInfo)
+	fmt.Printf("Created %s: %q (PLANNED%s, review: %s)\n", task.ID, title, epicInfo, reviewType)
 	if description != "" {
 		fmt.Printf("Description: %s\n", description)
 	}
@@ -90,6 +97,7 @@ func (a *App) CmdTaskView(taskID string) error {
 		fmt.Printf("Description: %s\n", task.Description)
 	}
 	fmt.Printf("State: %s\n", task.State)
+	fmt.Printf("Review type: %s\n", FormatReviewType(task.ReviewType, task.ReviewTypeSetBy, task.ReviewTypeSetAt))
 	if task.EpicID != "" {
 		if epic, err := a.DB.GetEpic(task.EpicID); err == nil {
 			fmt.Printf("Epic: %s %q\n", epic.ID, epic.Title)
@@ -192,7 +200,7 @@ func (a *App) CmdTaskList(filterEpic, filterProject, filterStatus string, readyO
 		}
 	}
 
-	fmt.Printf("%-10s %-20s %-10s %-10s %s\n", "ID", "State", "Project", "Epic", "Title")
+	fmt.Printf("%-10s %-20s %-8s %-10s %-10s %s\n", "ID", "State", "Review", "Project", "Epic", "Title")
 	for _, t := range filtered {
 		projInfo := ""
 		epicInfo := ""
@@ -200,7 +208,7 @@ func (a *App) CmdTaskList(filterEpic, filterProject, filterStatus string, readyO
 			epicInfo = t.EpicID
 			projInfo = projectByEpic[t.EpicID]
 		}
-		fmt.Printf("%-10s %-20s %-10s %-10s %s\n", t.ID, t.State, projInfo, epicInfo, t.Title)
+		fmt.Printf("%-10s %-20s %-8s %-10s %-10s %s\n", t.ID, t.State, t.ReviewType, projInfo, epicInfo, t.Title)
 	}
 	return nil
 }

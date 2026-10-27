@@ -18,22 +18,29 @@ type Task struct {
 	EpicID       string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+
+	ReviewType      ReviewType
+	ReviewTypeSetBy string
+	ReviewTypeSetAt time.Time // zero when never set (pre-review-types rows)
 }
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
 }
 
-const taskColumns = `id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at`
+const taskColumns = `id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at, review_type, review_type_set_by, review_type_set_at`
 
 func scanTask(s rowScanner) (*Task, error) {
 	t := &Task{}
 	var parentID, epicID, branch, worktreePath sql.NullString
+	var reviewSetAt sql.NullTime
 	err := s.Scan(&t.ID, &t.Title, &t.Description, &branch, &worktreePath,
-		&t.State, &t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt)
+		&t.State, &t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt,
+		&t.ReviewType, &t.ReviewTypeSetBy, &reviewSetAt)
 	if err != nil {
 		return nil, err
 	}
+	t.ReviewTypeSetAt = reviewSetAt.Time
 	t.Branch = branch.String
 	t.WorktreePath = worktreePath.String
 	t.ParentTaskID = parentID.String
@@ -72,7 +79,7 @@ func (db *DB) CreateTask(title, description, branch, worktreePath, baseBranch, p
 			ID: id, Title: title, Description: description, Branch: branch,
 			WorktreePath: worktreePath, State: StateInProgress,
 			BaseBranch: baseBranch, ParentTaskID: parentTaskID, EpicID: epicID,
-			CreatedAt: now, UpdatedAt: now,
+			CreatedAt: now, UpdatedAt: now, ReviewType: ReviewDefault,
 		}
 		return nil
 	})
@@ -207,7 +214,7 @@ func (db *DB) CreatePlannedTask(title, description, epicID string) (*Task, error
 		task = &Task{
 			ID: id, Title: title, Description: description,
 			State: StatePlanned, EpicID: epicID,
-			CreatedAt: now, UpdatedAt: now,
+			CreatedAt: now, UpdatedAt: now, ReviewType: ReviewDefault,
 		}
 		return nil
 	})

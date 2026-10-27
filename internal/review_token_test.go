@@ -26,7 +26,7 @@ func requestWithReviewerConfig(t *testing.T, reviewCmd, extraReview string) (*Ap
 	app, _ := setupAppWithReviewConfig(t, cmd, extraReview)
 	t.Cleanup(func() { app.Close() })
 
-	if err := app.CmdNew("token feature", "", "", ""); err != nil {
+	if err := app.CmdNew("token feature", "", "", "", ""); err != nil {
 		t.Fatal("new:", err)
 	}
 	task, _ := app.DB.GetTask("task-001")
@@ -109,7 +109,7 @@ func TestLocalReviewCmdEditIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer app.Close()
-	if err := app.CmdNew("forged", "", "", ""); err != nil {
+	if err := app.CmdNew("forged", "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, _ := app.DB.GetTask("task-001")
