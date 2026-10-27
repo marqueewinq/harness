@@ -169,6 +169,36 @@ func TestEditRowsAndPermission(t *testing.T) {
 	}
 }
 
+func TestEditStaleShowsError(t *testing.T) {
+	ed := &fakeEditor{edit: replaceLine("Title: Title of task-030", "Title: Mine")}
+	f := &fakeLoader{snap: sampleSnapshot(), editErr: errors.New("task-030 changed since the editor was opened (notes); nothing saved, re-open it to edit the current text")}
+	m := press(t, editModel(t, ed, f, rowTask030), "e", "y")
+	if !m.ui.StatusErr || !strings.Contains(m.ui.Status, "re-open") {
+		t.Errorf("status = %q", m.ui.Status)
+	}
+}
+
+func TestSecondEditWhilePendingRefused(t *testing.T) {
+	ed := &fakeEditor{edit: func(s string) string { return s }}
+	f := &fakeLoader{snap: sampleSnapshot()}
+	m := editModel(t, ed, f, rowTask030)
+	m, cmd := step(t, m, key("e"))
+	if cmd == nil || m.editPending != "task-030" {
+		t.Fatalf("first e: pending=%q", m.editPending)
+	}
+	m2, again := step(t, m, key("e"))
+	if again != nil || !m2.ui.StatusErr || !strings.Contains(m2.ui.Status, "already open") {
+		t.Errorf("second e: cmd=%v status=%q", again != nil, m2.ui.Status)
+	}
+	m = run(t, m, cmd)
+	if m.editPending != "" || m.ui.Status != "no changes to task-030" {
+		t.Errorf("after the editor: pending=%q status=%q", m.editPending, m.ui.Status)
+	}
+	if m = press(t, m, "e"); m.ui.Status != "no changes to task-030" || m.ui.StatusErr {
+		t.Errorf("e after the edit finished: %q", m.ui.Status)
+	}
+}
+
 func TestRenderEditConfirmGolden(t *testing.T) {
 	ui := UIState{Selected: rowTask030, Actions: DefaultActions(true), Modal: &Modal{
 		Decision: DecisionEdit, Subject: "task-030", Step: StepConfirm, Option: ConfirmNo, Changed: "title, notes",

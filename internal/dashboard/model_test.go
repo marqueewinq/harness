@@ -27,6 +27,7 @@ type fakeLoader struct {
 	calls      []string
 	stopErr    error
 	typeErr    error
+	editErr    error
 }
 
 func (f *fakeLoader) loader() Loader {
@@ -78,8 +79,14 @@ func (f *fakeLoader) loader() Loader {
 		EditFields: func(subject string) (EditFields, error) {
 			return EditFields{Title: "Title of " + subject, Description: "desc\n", Notes: ""}, nil
 		},
-		Edit: func(subject string, e EditFields) (string, error) {
+		Edit: func(subject string, old, e EditFields) (string, error) {
 			f.calls = append(f.calls, fmt.Sprintf("edit %s %q %q %q", subject, e.Title, e.Description, e.Notes))
+			if want := (EditFields{Title: "Title of " + subject, Description: "desc\n"}); old != want {
+				return "", fmt.Errorf("old = %+v, want the text given to the editor", old)
+			}
+			if f.editErr != nil {
+				return "", f.editErr
+			}
 			return "Edited " + subject + ".\n", nil
 		},
 		RemovePreApproval: func(subject, reason string) (string, error) {

@@ -43,7 +43,7 @@ func (a *App) stopReview(subject string, outcome StopOutcome, expectSHA string, 
 	}
 	var taskID, epicID, branch string
 	var target TaskState
-	if isEpicID(subject) {
+	if IsEpicID(subject) {
 		e, err := a.DB.GetEpic(subject)
 		if err != nil {
 			return "", err

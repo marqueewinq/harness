@@ -29,7 +29,7 @@ func IsPreApproval(reviewer string) bool {
 // state; their merge ignores a pre-approval verdict unless the type is none.
 // QUEUED and MERGING tasks are past the review gate and refused.
 func (a *App) RecordTerminalRemovePreApproval(subject, via, reason string) (string, error) {
-	isEpic := isEpicID(subject)
+	isEpic := IsEpicID(subject)
 	var current ReviewType
 	if isEpic {
 		e, err := a.DB.GetEpic(subject)

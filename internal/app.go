@@ -121,7 +121,7 @@ func Slugify(s string) string {
 	return s
 }
 
-func isEpicID(id string) bool {
+func IsEpicID(id string) bool {
 	return strings.HasPrefix(id, "epic-")
 }
 

@@ -28,9 +28,10 @@ type Loader struct {
 	// RemovePreApproval undoes a pre-approval a human confirmed.
 	RemovePreApproval func(subject, reason string) (string, error)
 	// EditFields reads a task's or epic's title, description and notes;
-	// Edit records an edit a human confirmed.
+	// Edit records an edit a human confirmed, replacing old (the text the
+	// editor was given) with new, and is refused if the text changed since.
 	EditFields func(subject string) (EditFields, error)
-	Edit       func(subject string, f EditFields) (string, error)
+	Edit       func(subject string, old, new EditFields) (string, error)
 }
 
 // DashboardVia labels dashboard verdicts: terminal:<user> (dashboard).
@@ -54,7 +55,7 @@ func AppLoader(app *internal.App, all bool) Loader {
 			return app.RecordTerminalRemovePreApproval(subject, DashboardVia, reason)
 		},
 		EditFields: func(subject string) (EditFields, error) {
-			if strings.HasPrefix(subject, "epic-") {
+			if internal.IsEpicID(subject) {
 				e, err := app.DB.GetEpic(subject)
 				if err != nil {
 					return EditFields{}, err
@@ -67,8 +68,8 @@ func AppLoader(app *internal.App, all bool) Loader {
 			}
 			return EditFields{Title: t.Title, Description: t.Description, Notes: t.Notes}, nil
 		},
-		Edit: func(subject string, f EditFields) (string, error) {
-			return app.RecordTerminalEdit(subject, f.Title, f.Description, f.Notes, DashboardVia)
+		Edit: func(subject string, old, new EditFields) (string, error) {
+			return app.RecordTerminalEdit(subject, internal.SubjectText(old), internal.SubjectText(new), DashboardVia)
 		},
 	}
 }
@@ -185,6 +186,9 @@ type Model struct {
 	// skipConfirm holds decision kinds the human chose "yes, don't ask
 	// again" for. It lives only as long as this Model: never stored.
 	skipConfirm map[string]bool
+	// editPending names the subject whose edit file is open, from `e` until
+	// the editor's result is handled; a second `e` meanwhile is refused.
+	editPending string
 }
 
 func NewModel(load Loader, opts Options) Model {
@@ -441,7 +445,7 @@ func (m Model) submit(md Modal, skipped string) tea.Cmd {
 		case DecisionRemovePreApproval:
 			report, err = load.RemovePreApproval(md.Subject, md.Comment)
 		case DecisionEdit:
-			report, err = load.Edit(md.Subject, *md.Edit)
+			report, err = load.Edit(md.Subject, *md.EditOrig, *md.Edit)
 		default:
 			report, err = load.Verdict(md.Subject, md.Decision, md.Comment, md.SHA)
 		}

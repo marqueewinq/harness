@@ -95,12 +95,69 @@ func changedFields(old, new EditFields) string {
 	return strings.Join(out, ", ")
 }
 
+// splitCommandLine splits an editor setting the way a POSIX shell splits
+// words: whitespace separates, single quotes are literal, double quotes allow
+// backslash escapes, and a backslash outside quotes escapes the next byte.
+// Expansions ($VAR, globs) are not performed.
+func splitCommandLine(s string) ([]string, error) {
+	var out []string
+	var cur strings.Builder
+	inWord := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\'':
+			j := strings.IndexByte(s[i+1:], '\'')
+			if j < 0 {
+				return nil, fmt.Errorf("unterminated ' in %q", s)
+			}
+			cur.WriteString(s[i+1 : i+1+j])
+			i += j + 1
+			inWord = true
+		case c == '"':
+			i++
+			for ; i < len(s) && s[i] != '"'; i++ {
+				if s[i] == '\\' && i+1 < len(s) && strings.IndexByte("\"\\$`", s[i+1]) >= 0 {
+					i++
+				}
+				cur.WriteByte(s[i])
+			}
+			if i == len(s) {
+				return nil, fmt.Errorf("unterminated \" in %q", s)
+			}
+			inWord = true
+		case c == '\\' && i+1 < len(s):
+			i++
+			cur.WriteByte(s[i])
+			inWord = true
+		case c == ' ' || c == '\t' || c == '\n':
+			if inWord {
+				out = append(out, cur.String())
+				cur.Reset()
+				inWord = false
+			}
+		default:
+			cur.WriteByte(c)
+			inWord = true
+		}
+	}
+	if inWord {
+		out = append(out, cur.String())
+	}
+	return out, nil
+}
+
 // ResolveEditor picks $VISUAL, then $EDITOR, then nano, then vi, skipping
-// any that is not installed. Values may carry arguments (e.g. "code --wait").
+// any that is not installed. Values may carry quoted arguments
+// (e.g. `"/Applications/My Editor.app/bin/edit" --wait`).
 func ResolveEditor(getenv func(string) string, lookPath func(string) (string, error)) ([]string, error) {
 	var candidates [][]string
 	for _, env := range []string{"VISUAL", "EDITOR"} {
-		if fields := strings.Fields(getenv(env)); len(fields) > 0 {
+		fields, err := splitCommandLine(getenv(env))
+		if err != nil {
+			return nil, fmt.Errorf("$%s: %w", env, err)
+		}
+		if len(fields) > 0 {
 			candidates = append(candidates, fields)
 		}
 	}

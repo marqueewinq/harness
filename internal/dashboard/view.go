@@ -154,9 +154,11 @@ type Modal struct {
 	Choice  internal.ReviewType
 	// Option is the highlighted ConfirmOptions entry in the confirm step.
 	Option int
-	// Edit holds the edited fields of a DecisionEdit, Changed names them.
-	Edit    *EditFields
-	Changed string
+	// Edit holds the edited fields of a DecisionEdit and EditOrig the text
+	// the editor was given; Changed names the edited fields.
+	Edit     *EditFields
+	EditOrig *EditFields
+	Changed  string
 	// Input is the rendered line editor.
 	Input string
 	Error string
@@ -529,7 +531,7 @@ func modalLines(st Styles, m *Modal) []string {
 	case DecisionRemovePreApproval:
 		title = fmt.Sprintf("Remove the pre-approval of %s (review type back to default)?", m.Subject)
 		commentPrompt = "Reason (optional, enter to continue):"
-		if !strings.HasPrefix(m.Subject, "epic-") {
+		if !internal.IsEpicID(m.Subject) {
 			note = "If its approval came from the pre-approval, it goes back to IN_PROGRESS and needs checks and a review again."
 		}
 	case DecisionType:

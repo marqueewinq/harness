@@ -41,6 +41,11 @@ func isEditable(r *Row) bool {
 // startEdit loads the subject's fields and writes them to a temp file, off
 // the UI goroutine; the editor runs once editStartMsg arrives.
 func (m *Model) startEdit(r Row) tea.Cmd {
+	if m.editPending != "" {
+		m.setStatus("an edit of "+m.editPending+" is already open; finish it first", true)
+		return nil
+	}
+	m.editPending = r.ID
 	load, subject := m.load.EditFields, r.ID
 	return func() tea.Msg {
 		orig, err := load(subject)
@@ -66,11 +71,13 @@ func (m *Model) startEdit(r Row) tea.Cmd {
 // runEditor suspends the UI while the editor owns the terminal.
 func (m Model) runEditor(msg editStartMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
+		m.editPending = ""
 		m.setStatus("edit "+msg.subject+": "+msg.err.Error(), true)
 		return m, nil
 	}
 	cmd, err := m.opts.EditorCommand(msg.path)
 	if err != nil {
+		m.editPending = ""
 		os.Remove(msg.path)
 		m.setStatus("edit "+msg.subject+": "+err.Error(), true)
 		return m, nil
@@ -83,6 +90,7 @@ func (m Model) runEditor(msg editStartMsg) (tea.Model, tea.Cmd) {
 // finishEdit reads the edited file. The file is removed unless it holds an
 // edit that could not be applied, so a typo never loses the human's text.
 func (m Model) finishEdit(msg editDoneMsg) (tea.Model, tea.Cmd) {
+	m.editPending = ""
 	if msg.err != nil {
 		m.setStatus(fmt.Sprintf("editor failed: %v (your text is in %s)", msg.err, msg.path), true)
 		return m, nil
@@ -120,7 +128,8 @@ func (m Model) finishEdit(msg editDoneMsg) (tea.Model, tea.Cmd) {
 	if edited.Notes != old.Notes {
 		final.Notes = edited.Notes
 	}
-	md := Modal{Decision: DecisionEdit, Subject: msg.subject, Edit: &final, Changed: changed}
+	orig := msg.orig
+	md := Modal{Decision: DecisionEdit, Subject: msg.subject, Edit: &final, EditOrig: &orig, Changed: changed}
 	m.ui.Modal = &md
 	return m.toConfirm(&md)
 }

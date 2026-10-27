@@ -76,7 +76,7 @@ func (db *DB) SetReviewType(subjectID string, r ReviewType, setBy string) error 
 		return fmt.Errorf("invalid review type %q", r)
 	}
 	table := "tasks"
-	if isEpicID(subjectID) {
+	if IsEpicID(subjectID) {
 		table = "epics"
 	}
 	res, err := db.conn.Exec(

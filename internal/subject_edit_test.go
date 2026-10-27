@@ -14,7 +14,7 @@ func TestRecordTerminalEditTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := app.RecordTerminalEdit(task.ID, "new title", "old desc", "line 1\nline 2", "dashboard")
+	report, err := app.RecordTerminalEdit(task.ID, SubjectText{"old title", "old desc", ""}, SubjectText{"new title", "old desc", "line 1\nline 2"}, "dashboard")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,18 +45,36 @@ func TestRecordTerminalEditTask(t *testing.T) {
 		t.Errorf("work status lacks notes:\n%s", out)
 	}
 
-	if _, err := app.RecordTerminalEdit(task.ID, "  ", "x", "", "dashboard"); err == nil || !strings.Contains(err.Error(), "title") {
+	if _, err := app.RecordTerminalEdit(task.ID, SubjectText{"new title", "old desc", "line 1\nline 2"}, SubjectText{"  ", "x", ""}, "dashboard"); err == nil || !strings.Contains(err.Error(), "title") {
 		t.Errorf("empty title: err = %v", err)
 	}
-	if _, err := app.RecordTerminalEdit(task.ID, "new title", "old desc", "line 1\nline 2", "dashboard"); err == nil || !strings.Contains(err.Error(), "no changes") {
+	if _, err := app.RecordTerminalEdit(task.ID, SubjectText{"new title", "old desc", "line 1\nline 2"}, SubjectText{"new title", "old desc", "line 1\nline 2"}, "dashboard"); err == nil || !strings.Contains(err.Error(), "no changes") {
 		t.Errorf("unchanged edit: err = %v", err)
+	}
+}
+
+func TestRecordTerminalEditRefusesStaleEdit(t *testing.T) {
+	app, _ := setupApp(t)
+	defer app.Close()
+	task, _ := app.DB.CreateTask("title", "desc", "b", "/tmp/x", "main", "", "", ReviewSetting{})
+	opened := SubjectText{"title", "desc", ""}
+	// Someone else edits the notes while the editor is open.
+	if _, err := app.RecordTerminalEdit(task.ID, opened, SubjectText{"title", "desc", "their notes"}, "dashboard"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := app.RecordTerminalEdit(task.ID, opened, SubjectText{"my title", "desc", ""}, "dashboard")
+	if err == nil || !strings.Contains(err.Error(), "changed since the editor was opened (notes)") || !strings.Contains(err.Error(), "re-open") {
+		t.Errorf("stale edit: err = %v", err)
+	}
+	if got, _ := app.DB.GetTask(task.ID); got.Title != "title" || got.Notes != "their notes" {
+		t.Errorf("stale edit applied: %q %q", got.Title, got.Notes)
 	}
 }
 
 func TestRecordTerminalEditMergedTaskAndEpic(t *testing.T) {
 	app, task := setupTaskInState(t, StateMerged)
 	app.Git = NewGitClient(t.TempDir())
-	if _, err := app.RecordTerminalEdit(task.ID, task.Title, "post-merge notes on why", "follow-up in task-099", "dashboard"); err != nil {
+	if _, err := app.RecordTerminalEdit(task.ID, SubjectText{task.Title, "", ""}, SubjectText{task.Title, "post-merge notes on why", "follow-up in task-099"}, "dashboard"); err != nil {
 		t.Fatalf("merged task not editable: %v", err)
 	}
 	if got, _ := app.DB.GetTask(task.ID); got.State != StateMerged || got.Notes != "follow-up in task-099" {
@@ -66,7 +84,7 @@ func TestRecordTerminalEditMergedTaskAndEpic(t *testing.T) {
 	proj, _ := app.DB.CreateProject("P", "")
 	epic, _ := app.DB.CreateEpic("E", "", proj.ID, "", ReviewSetting{})
 	app.DB.UpdateEpicStatus(epic.ID, EpicStatusClosed)
-	if _, err := app.RecordTerminalEdit(epic.ID, "Epic renamed", "desc", "epic notes", "dashboard"); err != nil {
+	if _, err := app.RecordTerminalEdit(epic.ID, SubjectText{"E", "", ""}, SubjectText{"Epic renamed", "desc", "epic notes"}, "dashboard"); err != nil {
 		t.Fatal(err)
 	}
 	e, _ := app.DB.GetEpic(epic.ID)
@@ -94,14 +112,14 @@ func TestRecordTerminalEditRefusals(t *testing.T) {
 
 	t.Run("token env set", func(t *testing.T) {
 		t.Setenv(ReviewTokenEnv, "anything")
-		if _, err := app.RecordTerminalEdit(task.ID, "x", "", "", "dashboard"); err == nil || !strings.Contains(err.Error(), "reviewer's environment") {
+		if _, err := app.RecordTerminalEdit(task.ID, SubjectText{"t", "", ""}, SubjectText{"x", "", ""}, "dashboard"); err == nil || !strings.Contains(err.Error(), "reviewer's environment") {
 			t.Errorf("err = %v", err)
 		}
 	})
 	orig := stdinIsTerminal
 	stdinIsTerminal = func() bool { return false }
 	defer func() { stdinIsTerminal = orig }()
-	if _, err := app.RecordTerminalEdit(task.ID, "x", "", "", "dashboard"); err == nil || !strings.Contains(err.Error(), "not an interactive terminal") {
+	if _, err := app.RecordTerminalEdit(task.ID, SubjectText{"t", "", ""}, SubjectText{"x", "", ""}, "dashboard"); err == nil || !strings.Contains(err.Error(), "not an interactive terminal") {
 		t.Errorf("without tty: err = %v", err)
 	}
 	if got, _ := app.DB.GetTask(task.ID); got.Title != "t" {

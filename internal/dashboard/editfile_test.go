@@ -84,6 +84,42 @@ func TestResolveEditor(t *testing.T) {
 	}
 }
 
+func TestSplitCommandLine(t *testing.T) {
+	for in, want := range map[string][]string{
+		"vim":                                  {"vim"},
+		"  code   --wait ":                     {"code", "--wait"},
+		`"/opt/My Editor/bin/edit" --wait`:     {"/opt/My Editor/bin/edit", "--wait"},
+		`'/opt/it'"'"'s/edit' -f`:              {"/opt/it's/edit", "-f"},
+		`/opt/My\ Editor/edit`:                 {"/opt/My Editor/edit"},
+		`emacsclient -a "" -t`:                 {"emacsclient", "-a", "", "-t"},
+		`sh -c "exec vim \"\$1\""`:             {"sh", "-c", `exec vim "$1"`},
+		"":                                     nil,
+	} {
+		got, err := splitCommandLine(in)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("split(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{`"open`, `'open`} {
+		if _, err := splitCommandLine(bad); err == nil {
+			t.Errorf("split(%q): no error", bad)
+		}
+	}
+	look := func(name string) (string, error) { return name, nil }
+	got, err := ResolveEditor(func(k string) string {
+		if k == "EDITOR" {
+			return `"/opt/My Editor/bin/edit" --wait`
+		}
+		return ""
+	}, look)
+	if err != nil || !reflect.DeepEqual(got, []string{"/opt/My Editor/bin/edit", "--wait"}) {
+		t.Errorf("quoted EDITOR = %q, %v", got, err)
+	}
+	if _, err := ResolveEditor(func(k string) string { return `"broken` }, look); err == nil || !strings.Contains(err.Error(), "$VISUAL") {
+		t.Errorf("unterminated quote: %v", err)
+	}
+}
+
 func TestChangedFields(t *testing.T) {
 	old := EditFields{Title: "a", Description: "d\n", Notes: ""}
 	if got := changedFields(old, EditFields{Title: "a", Description: "d", Notes: ""}); got != "" {

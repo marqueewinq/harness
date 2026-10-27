@@ -81,7 +81,7 @@ func terminalAuth(via string) verdictAuth {
 // was shown; the verdict is refused if the open request is now for another.
 func (a *App) RecordTerminalVerdict(subject, decision, comment, via, expectSHA string) (string, error) {
 	auth := terminalAuth(via)
-	if isEpicID(subject) {
+	if IsEpicID(subject) {
 		return a.epicVerdictReport(subject, decision, comment, expectSHA, auth)
 	}
 	return a.taskVerdictReport(subject, decision, comment, expectSHA, auth)

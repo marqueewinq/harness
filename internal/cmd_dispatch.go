@@ -4,7 +4,7 @@ import "fmt"
 
 // CmdReviewRequestDispatch dispatches review request to epic or task handler.
 func (a *App) CmdReviewRequestDispatch(id string) error {
-	if isEpicID(id) {
+	if IsEpicID(id) {
 		return a.cmdEpicReviewRequest(id)
 	}
 	return a.CmdReviewRequest(id)
@@ -12,7 +12,7 @@ func (a *App) CmdReviewRequestDispatch(id string) error {
 
 // CmdReviewApproveDispatch dispatches review approval to epic or task handler.
 func (a *App) CmdReviewApproveDispatch(id, comment string) error {
-	if isEpicID(id) {
+	if IsEpicID(id) {
 		return a.cmdEpicReviewApprove(id, comment)
 	}
 	return a.CmdReviewApprove(id, comment)
@@ -20,7 +20,7 @@ func (a *App) CmdReviewApproveDispatch(id, comment string) error {
 
 // CmdReviewRejectDispatch dispatches review rejection to epic or task handler.
 func (a *App) CmdReviewRejectDispatch(id, comment string) error {
-	if isEpicID(id) {
+	if IsEpicID(id) {
 		return a.cmdEpicReviewReject(id, comment)
 	}
 	return a.CmdReviewReject(id, comment)
@@ -28,7 +28,7 @@ func (a *App) CmdReviewRejectDispatch(id, comment string) error {
 
 // CmdReviewHistoryDispatch dispatches review history to epic or task handler.
 func (a *App) CmdReviewHistoryDispatch(id string) error {
-	if isEpicID(id) {
+	if IsEpicID(id) {
 		return a.cmdEpicReviewHistory(id)
 	}
 	return a.CmdReviewHistory(id)
@@ -36,7 +36,7 @@ func (a *App) CmdReviewHistoryDispatch(id string) error {
 
 // CmdDiffDispatch dispatches diff to epic or task handler.
 func (a *App) CmdDiffDispatch(id string) error {
-	if isEpicID(id) {
+	if IsEpicID(id) {
 		return a.CmdEpicDiff(id)
 	}
 	return a.CmdWorkDiff(id)
