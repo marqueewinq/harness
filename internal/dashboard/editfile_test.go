@@ -86,14 +86,14 @@ func TestResolveEditor(t *testing.T) {
 
 func TestSplitCommandLine(t *testing.T) {
 	for in, want := range map[string][]string{
-		"vim":                                  {"vim"},
-		"  code   --wait ":                     {"code", "--wait"},
-		`"/opt/My Editor/bin/edit" --wait`:     {"/opt/My Editor/bin/edit", "--wait"},
-		`'/opt/it'"'"'s/edit' -f`:              {"/opt/it's/edit", "-f"},
-		`/opt/My\ Editor/edit`:                 {"/opt/My Editor/edit"},
-		`emacsclient -a "" -t`:                 {"emacsclient", "-a", "", "-t"},
-		`sh -c "exec vim \"\$1\""`:             {"sh", "-c", `exec vim "$1"`},
-		"":                                     nil,
+		"vim":                              {"vim"},
+		"  code   --wait ":                 {"code", "--wait"},
+		`"/opt/My Editor/bin/edit" --wait`: {"/opt/My Editor/bin/edit", "--wait"},
+		`'/opt/it'"'"'s/edit' -f`:          {"/opt/it's/edit", "-f"},
+		`/opt/My\ Editor/edit`:             {"/opt/My Editor/edit"},
+		`emacsclient -a "" -t`:             {"emacsclient", "-a", "", "-t"},
+		`sh -c "exec vim \"\$1\""`:         {"sh", "-c", `exec vim "$1"`},
+		"":                                 nil,
 	} {
 		got, err := splitCommandLine(in)
 		if err != nil || !reflect.DeepEqual(got, want) {
