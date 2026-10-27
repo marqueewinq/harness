@@ -114,9 +114,16 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	}
 
 	unreviewedNote := ""
+	// pinned is the commit the gate vouched for (checked or approved); it is
+	// re-verified once the queue is ours, since the branch can move while
+	// waiting.
+	var pinned string
 	if unreviewed {
 		if err := a.requireCheckedHead(task); err != nil {
 			return err
+		}
+		if pinned, err = a.Git.RevParse(task.Branch); err != nil {
+			return fmt.Errorf("resolving %s: %w", task.Branch, err)
 		}
 		unreviewedNote = unreviewedMergeNote(task.ReviewSummary())
 		fmt.Printf("Task %s has review type none: %s.\n", id, unreviewedNote)
@@ -144,6 +151,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		if err := a.requireChecksAt(id, latestApproval.CommitSHA, "approved", ", then request review again"); err != nil {
 			return err
 		}
+		pinned = latestApproval.CommitSHA
 	}
 
 	// From here on Ctrl-C/SIGTERM must not kill harness mid-merge: the merge
@@ -192,6 +200,12 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	a.mergeLogf(id, "reached the head of the merge queue")
 	if err := a.DB.UpdateTaskState(id, StateMerging); err != nil {
 		return a.failMerge(id, fmt.Errorf("marking %s MERGING: %w", id, err))
+	}
+
+	if head, err := a.Git.RevParse(task.Branch); err != nil {
+		return a.failMerge(id, fmt.Errorf("resolving %s: %w", task.Branch, err))
+	} else if head != pinned {
+		return a.failMerge(id, fmt.Errorf("branch moved while waiting in the merge queue (%s -> %s); re-run checks and review", shortSHA(pinned), shortSHA(head)))
 	}
 
 	strategy, err := NewMergeStrategy(a.Config.Merge.Strategy)
