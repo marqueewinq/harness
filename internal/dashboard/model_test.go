@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/marqueewinq/harness/internal"
 )
 
 type verdictCall struct{ subject, decision, comment, sha string }
@@ -23,6 +24,9 @@ type fakeLoader struct {
 	verdictErr error
 	diffErr    error
 	expandable bool
+	calls      []string
+	stopErr    error
+	typeErr    error
 }
 
 func (f *fakeLoader) loader() Loader {
@@ -63,6 +67,20 @@ func (f *fakeLoader) loader() Loader {
 				return "", f.verdictErr
 			}
 			return "Review recorded: " + strings.ToUpper(decision) + " (81742677)\nTask " + subject + " is now APPROVED.\n", nil
+		},
+		Stop: func(subject string, outcome internal.StopOutcome, sha string) (string, error) {
+			f.calls = append(f.calls, fmt.Sprintf("stop %s %s %s", subject, outcome, sha))
+			if f.stopErr != nil {
+				return "", f.stopErr
+			}
+			return "Review stopped: " + string(outcome) + "\n", nil
+		},
+		SetType: func(subject string, r internal.ReviewType, reason string) (string, error) {
+			f.calls = append(f.calls, fmt.Sprintf("type %s %s %q", subject, r, reason))
+			if f.typeErr != nil {
+				return "", f.typeErr
+			}
+			return "Review type of " + subject + " is now " + string(r) + ".\n", nil
 		},
 	}
 }

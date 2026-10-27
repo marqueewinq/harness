@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/marqueewinq/harness/internal"
 )
 
 const (
@@ -117,14 +118,29 @@ type ModalStep int
 const (
 	StepComment ModalStep = iota
 	StepConfirm
+	StepPick
 )
+
+// Modal decisions besides the verdicts "approve" and "request_changes".
+const (
+	DecisionPreApprove = "preapprove"
+	DecisionType       = "type"
+)
+
+// ReviewTypes is the type picker's order.
+var ReviewTypes = []internal.ReviewType{internal.ReviewDefault, internal.ReviewHuman, internal.ReviewNone}
 
 type Modal struct {
 	Decision string
 	Subject  string
-	SHA      string
-	Step     ModalStep
-	Comment  string
+	// SHA is the open review request's commit the human was shown, or "" when
+	// no review is in flight.
+	SHA     string
+	Step    ModalStep
+	Comment string
+	// Current and Choice are the subject's review type and the picked one.
+	Current internal.ReviewType
+	Choice  internal.ReviewType
 	// Input is the rendered line editor.
 	Input string
 	Error string
@@ -314,6 +330,9 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 
 func barActions(ui UIState) []Action {
 	if ui.Modal != nil {
+		if ui.Modal.Step == StepPick {
+			return []Action{{Key: "up", Hint: "↑↓", Label: "choose"}, {Key: "enter", Hint: "enter", Label: "select"}, {Key: "esc", Hint: "esc", Label: "cancel"}}
+		}
 		return []Action{{Key: "enter", Hint: "enter", Label: "confirm"}, {Key: "esc", Hint: "esc", Label: "cancel"}}
 	}
 	actions := ui.Actions
@@ -452,26 +471,68 @@ func modalLines(st Styles, m *Modal) []string {
 	if m == nil {
 		return nil
 	}
-	verb := "Approve"
-	commentPrompt := "Comment (optional, enter to continue):"
-	if m.Decision == "request_changes" {
-		verb = "Reject"
+	var title, commentPrompt, note string
+	switch m.Decision {
+	case "request_changes":
+		title = fmt.Sprintf("Reject %s at %s?", m.Subject, shortSHA(m.SHA))
 		commentPrompt = "Comment (required):"
+	case DecisionPreApprove:
+		title = fmt.Sprintf("Pre-approve %s (review type none)?", m.Subject)
+		commentPrompt = "Reason (optional, enter to continue):"
+		if m.SHA != "" {
+			note = fmt.Sprintf("Approves the requested commit %s and stops its review.", shortSHA(m.SHA))
+		}
+	case DecisionType:
+		title = fmt.Sprintf("Review type of %s (now %s)", m.Subject, m.Current)
+		if m.Step == StepConfirm {
+			title = fmt.Sprintf("Set review type of %s to %s?", m.Subject, m.Choice)
+			note = typeChangeNote(m)
+		}
+	default:
+		title = fmt.Sprintf("Approve %s at %s?", m.Subject, shortSHA(m.SHA))
+		commentPrompt = "Comment (optional, enter to continue):"
 	}
-	lines := []string{st.Header.Render(fmt.Sprintf("── %s %s at %s? ──", verb, m.Subject, shortSHA(m.SHA)))}
-	if m.Step == StepComment {
-		lines = append(lines, " "+commentPrompt)
-	} else {
+	lines := []string{st.Header.Render("── " + title + " ──")}
+	if note != "" {
+		lines = append(lines, " "+st.Running.Render(note))
+	}
+	switch m.Step {
+	case StepPick:
+		for _, rt := range ReviewTypes {
+			line := "   " + string(rt)
+			if rt == m.Choice {
+				line = " " + st.Accent.Render("›") + " " + string(rt)
+			}
+			if rt == m.Current {
+				line += st.Dim.Render(" (current)")
+			}
+			lines = append(lines, line)
+		}
+	case StepComment:
+		lines = append(lines, " "+commentPrompt, " > "+m.Input)
+	default:
 		if m.Comment != "" {
 			lines = append(lines, " Comment: "+m.Comment)
 		}
-		lines = append(lines, fmt.Sprintf(" Type %s to confirm:", m.Subject))
+		lines = append(lines, fmt.Sprintf(" Type %s to confirm:", m.Subject), " > "+m.Input)
 	}
-	lines = append(lines, " > "+m.Input)
 	if m.Error != "" {
 		lines = append(lines, " "+st.Fail.Render(m.Error))
 	}
 	return lines
+}
+
+func typeChangeNote(m *Modal) string {
+	if m.SHA == "" {
+		return ""
+	}
+	switch m.Choice {
+	case internal.ReviewNone:
+		return fmt.Sprintf("Approves the requested commit %s and stops its review.", shortSHA(m.SHA))
+	case internal.ReviewHuman:
+		return fmt.Sprintf("Revokes the review request at %s and stops its reviewer; the task goes back to CHECKS_PASSED.", shortSHA(m.SHA))
+	}
+	return ""
 }
 
 // keyBar always colours each hotkey; a disabled action has the rest of its

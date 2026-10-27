@@ -1,0 +1,30 @@
+harness · main @ 39829b9 · 16:42:07
+warning: reading committed review config: boom
+AWAITING REVIEW
+ ! task-026  81742677  12m  agent reviewer orphaned  Reviewer supervision
+ ! epic-002  5d1c09aa   3m  human  Planning layer
+IN FLIGHT
+ proj-001 › epic-002 Planning layer · epic/planning · 3/7 done · approval default · awaiting
+›  task-025  REVIEW_REQUESTED    3m  test ▶ 41s, lint ▶ -  default · reviewing  Reviewer run records
+ ! task-027  MERGE_FAILED        1h  ✓ 2/2  human · approved  unfinished rebase  Sync epic branch
+   task-028  QUEUED              2m  ✓ 2/2  queue #1  none · pre-approved by alice  Dashboard snapshot
+ No epic
+   task-030  IN_PROGRESS         5m  none · self-declared  A very long task title that will certainly not fit into the …
+ ! task-031  CHECKS_FAILED      26h  ✗ lint  default · not started yet  checks failed  Broken
+MERGE QUEUE
+   1 task-028  pid 5150    hb 4s    live
+ ! 2 task-029  pid 6001    hb 3m    stale
+RECENT (24h)
+ proj-001 › epic-002 Planning layer · epic/planning · 3/7 done
+   task-024  MERGED  18m ago  Terminal verdicts
+
+
+
+
+
+
+── Pre-approve task-025 (review type none)? ──
+ Approves the requested commit abc12345 and stops its review.
+ Reason (optional, enter to continue):
+ > docs only
+ enter confirm  esc cancel

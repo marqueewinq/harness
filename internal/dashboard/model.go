@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -19,6 +20,10 @@ type Loader struct {
 	// returns the CLI's report. sha is the request commit the human was
 	// shown; the verdict is refused if the open request is for another.
 	Verdict func(subject, decision, comment, sha string) (string, error)
+	// Stop ends the in-flight review of subject at request commit sha.
+	Stop func(subject string, outcome internal.StopOutcome, sha string) (string, error)
+	// SetType records a review type change a human confirmed.
+	SetType func(subject string, r internal.ReviewType, reason string) (string, error)
 }
 
 // DashboardVia labels dashboard verdicts: terminal:<user> (dashboard).
@@ -32,7 +37,67 @@ func AppLoader(app *internal.App, all bool) Loader {
 		Verdict: func(subject, decision, comment, sha string) (string, error) {
 			return app.RecordTerminalVerdict(subject, decision, comment, DashboardVia, sha)
 		},
+		Stop: func(subject string, outcome internal.StopOutcome, sha string) (string, error) {
+			return app.RecordTerminalStop(subject, outcome, DashboardVia, sha)
+		},
+		SetType: func(subject string, r internal.ReviewType, reason string) (string, error) {
+			return app.RecordTerminalReviewType(subject, r, DashboardVia, reason)
+		},
 	}
+}
+
+// changeReviewType sets subject's review type to; with a review in flight
+// (sha set) a change to none approves the requested commit and a change to
+// human revokes the request, both stopping the reviewer. The stop runs
+// first: it is the step that can be refused (commit moved, request changed),
+// and a refusal must leave the type untouched rather than claim a
+// pre-approval or human gate that did not take effect.
+func changeReviewType(load Loader, subject string, to internal.ReviewType, reason, sha string) (string, error) {
+	var stopped string
+	if sha != "" && to != internal.ReviewDefault {
+		outcome := internal.StopRevoke
+		if to == internal.ReviewNone {
+			outcome = internal.StopApprove
+		}
+		report, err := load.Stop(subject, outcome, sha)
+		if err != nil {
+			return "", err
+		}
+		stopped = report
+	}
+	report, err := load.SetType(subject, to, reason)
+	if err != nil {
+		if stopped != "" {
+			return stopped, fmt.Errorf("review stopped (%s), but setting review type %s failed: %w; set it again with t",
+				firstLine(stopped), to, err)
+		}
+		return "", err
+	}
+	return stopped + report, nil
+}
+
+func firstLine(s string) string {
+	return strings.SplitN(strings.TrimSpace(s), "\n", 2)[0]
+}
+
+// rowReviewType is the review type of a task row or epic header whose type
+// may still change (not merged or closed).
+func rowReviewType(r *Row) (internal.ReviewType, bool) {
+	var rt internal.ReviewType
+	switch {
+	case r == nil:
+		return "", false
+	case r.Kind == RowTask && r.Task != nil && r.Task.State != internal.StateMerged && r.Task.State != internal.StateClosed:
+		rt = r.Task.ReviewType
+	case r.Kind == RowEpic && r.Group != nil && r.Group.Epic != nil && r.Group.Epic.Status != internal.EpicStatusClosed:
+		rt = r.Group.Epic.ReviewType
+	default:
+		return "", false
+	}
+	if rt == "" {
+		rt = internal.ReviewDefault
+	}
+	return rt, true
 }
 
 type Options struct {
@@ -93,9 +158,19 @@ func NewModel(load Loader, opts Options) Model {
 func DefaultActions(allowed bool) []Action {
 	verdict := func(c Context) bool { return allowed && c.Row != nil && c.Row.RequestSHA() != "" }
 	hasRow := func(c Context) bool { return c.Row != nil }
+	typed := func(c Context) bool {
+		_, ok := rowReviewType(c.Row)
+		return allowed && ok
+	}
+	preApprovable := func(c Context) bool {
+		rt, ok := rowReviewType(c.Row)
+		return allowed && ok && rt != internal.ReviewNone
+	}
 	return []Action{
 		{Key: "a", Label: "approve", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("approve", r) }},
 		{Key: "r", Label: "reject", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("request_changes", r) }},
+		{Key: "p", Label: "pre-approve", Enabled: preApprovable, Start: func(m *Model, r Row) tea.Cmd { return m.openModal(DecisionPreApprove, r) }},
+		{Key: "t", Label: "type", Enabled: typed, Start: func(m *Model, r Row) tea.Cmd { return m.openModal(DecisionType, r) }},
 		{Key: "d", Label: "diff", Enabled: hasRow, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) }},
 		{Key: "x", Label: "expand", Enabled: func(c Context) bool { return c.Expandable }},
 		{Key: "enter", Hint: "enter", Label: "details", Enabled: hasRow},
@@ -255,9 +330,58 @@ func (m *Model) openModal(decision string, r Row) tea.Cmd {
 	m.input.CharLimit = 2000
 	m.input.Cursor.SetMode(cursor.CursorStatic)
 	m.ui.Modal = &Modal{Decision: decision, Subject: r.ID, SHA: sha, Step: StepComment}
+	if decision == DecisionType {
+		rt, _ := rowReviewType(&r)
+		m.ui.Modal.Step, m.ui.Modal.Current, m.ui.Modal.Choice = StepPick, rt, rt
+	}
 	cmd := m.input.Focus()
 	m.syncInput()
 	return cmd
+}
+
+func (m Model) handlePickKey(md *Modal, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	i := 0
+	for j, rt := range ReviewTypes {
+		if rt == md.Choice {
+			i = j
+		}
+	}
+	switch msg.String() {
+	case "up", "k":
+		i = max(i-1, 0)
+	case "down", "j":
+		i = min(i+1, len(ReviewTypes)-1)
+	case "enter":
+		if md.Choice == md.Current {
+			md.Error = "already " + string(md.Current) + "; pick another type"
+			m.syncInput()
+			return m, nil
+		}
+		md.Step, md.Error = StepConfirm, ""
+		m.syncInput()
+		return m, nil
+	}
+	md.Choice, md.Error = ReviewTypes[i], ""
+	m.syncInput()
+	return m, nil
+}
+
+// submit runs the confirmed modal's decision off the UI goroutine.
+func (m Model) submit(md Modal) tea.Cmd {
+	load := m.load
+	return func() tea.Msg {
+		var report string
+		var err error
+		switch md.Decision {
+		case DecisionPreApprove:
+			report, err = changeReviewType(load, md.Subject, internal.ReviewNone, md.Comment, md.SHA)
+		case DecisionType:
+			report, err = changeReviewType(load, md.Subject, md.Choice, "", md.SHA)
+		default:
+			report, err = load.Verdict(md.Subject, md.Decision, md.Comment, md.SHA)
+		}
+		return verdictMsg{report: report, err: err}
+	}
 }
 
 func (m *Model) syncInput() {
@@ -277,6 +401,11 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ui.Modal = nil
 		m.setStatus("cancelled", false)
 		return m, nil
+	}
+	if md.Step == StepPick {
+		return m.handlePickKey(&md, msg)
+	}
+	switch msg.Type {
 	case tea.KeyEnter:
 		value := strings.TrimSpace(m.input.Value())
 		if md.Step == StepComment {
@@ -296,12 +425,8 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.ui.Modal = nil
-		m.setStatus("recording verdict for "+md.Subject+"…", false)
-		verdict, subject, decision, comment, sha := m.load.Verdict, md.Subject, md.Decision, md.Comment, md.SHA
-		return m, func() tea.Msg {
-			report, err := verdict(subject, decision, comment, sha)
-			return verdictMsg{report: report, err: err}
-		}
+		m.setStatus("recording decision for "+md.Subject+"…", false)
+		return m, m.submit(md)
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
@@ -403,6 +528,16 @@ func (m Model) disabledReason(key string) string {
 			return "is disabled: " + m.opts.DenyReason
 		}
 		return "applies to a row with an open review request"
+	case "p", "t":
+		if !m.opts.AllowActions {
+			return "is disabled: " + m.opts.DenyReason
+		}
+		if key == "p" {
+			if rt, ok := rowReviewType(m.actionRow()); ok && rt == internal.ReviewNone {
+				return "does not apply: review type is already none"
+			}
+		}
+		return "applies to a task row or epic header that is not merged or closed"
 	case "x":
 		return "applies to an open detail or diff pane with a description or review comments"
 	}
@@ -439,7 +574,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case "a", "r", "d", "x":
+	case "a", "r", "d", "x", "p", "t":
 		if k == "d" && m.ui.DiffOpen {
 			return m, nil
 		}

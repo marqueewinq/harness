@@ -190,10 +190,25 @@ func groupHeader(st Styles, g EpicGroup) string {
 		parts = append(parts, g.Branch)
 	}
 	parts = append(parts, fmt.Sprintf("%d/%d done", g.Done, g.Total))
-	if g.EpicReview != "" {
+	switch {
+	case g.Approval != "":
+		parts = append(parts, "approval "+approvalStyle(st, g.Approval).Render(g.Approval))
+	case g.EpicReview != "":
 		parts = append(parts, g.EpicReview)
 	}
 	return " " + strings.Join(parts, " · ")
+}
+
+func approvalStyle(st Styles, approval string) lipgloss.Style {
+	switch {
+	case strings.HasSuffix(approval, "not started yet"):
+		return st.Dim
+	case strings.Contains(approval, " · reviewer "):
+		return st.Fail
+	case strings.HasSuffix(approval, "approved"), strings.HasPrefix(approval, "none · "):
+		return st.Pass
+	}
+	return st.Running
 }
 
 func taskLine(st Styles, t TaskRow) string {
@@ -202,9 +217,13 @@ func taskLine(st Styles, t TaskRow) string {
 	if t.QueuePos > 0 {
 		parts = append(parts, fmt.Sprintf("queue #%d", t.QueuePos))
 	}
-	if t.Attention != "" {
+	if t.Approval != "" {
+		parts = append(parts, approvalStyle(st, t.Approval).Render(t.Approval))
+	}
+	switch {
+	case t.Attention != "":
 		parts = append(parts, st.Fail.Render(t.Attention))
-	} else {
+	case t.Approval == "":
 		parts = append(parts, reviewerText(st, t.Reviewer))
 	}
 	parts = append(parts, st.Dim.Render(t.Title))

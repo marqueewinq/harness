@@ -22,8 +22,10 @@ func dashboardCmd() *cobra.Command {
 		Long: `Full-screen view of open reviews, in-flight tasks grouped by epic, the merge
 queue and recently finished tasks, refreshed every --interval.
 
-Keys: ↑/↓ or j/k select, enter/tab details, f refresh, q quit; on a row under
-AWAITING REVIEW: d diff, a approve, r reject (not when HARNESS_REVIEW_TOKEN is set).
+Keys: ↑/↓ or j/k select, enter/tab details, d diff, x expand, f refresh, q quit;
+with an open review request: a approve, r reject; on a task or epic: p pre-approve
+(review type none), t review type. a, r, p and t need a terminal and no
+HARNESS_REVIEW_TOKEN.
 --once prints one plain snapshot and exits (for scripts and agents).`,
 		Args: cobra.NoArgs,
 	}

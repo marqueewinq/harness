@@ -52,6 +52,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	}
 	add("State: %s · branch %s · base %s", state, orDash(t.Branch), orDash(t.BaseBranch))
 	add("Worktree: %s", orDash(t.WorktreePath))
+	add("Review type: %s", t.ReviewSummary())
 	b.text("", "Description: ", t.Description)
 
 	if len(trs) > 0 {
@@ -153,6 +154,7 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	var b doc
 	add := b.add
 	add("Epic: %s · project %s · branch %s", e.Status, e.ProjectID, orDash(e.Branch))
+	add("Review type: %s", e.ReviewSummary())
 	b.text("", "Description: ", e.Description)
 	tasks, err := app.DB.ListTasksByEpic(e.ID)
 	if err != nil {

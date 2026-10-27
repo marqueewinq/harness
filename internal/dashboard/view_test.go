@@ -259,13 +259,27 @@ func TestKeyBarColor(t *testing.T) {
 		}
 	}
 
+	task := Rows(sampleSnapshot())[3]
+	for _, allowed := range []bool{false, true} {
+		bar := keyBar(st, DefaultActions(allowed), Context{Row: &task})
+		for _, k := range [][2]string{{"pre-approve", "p"}, {"type", "t"}} {
+			want := disabledKey(st, k[0], k[1])
+			if allowed {
+				want = enabledKey(st, k[0], k[1])
+			}
+			if !strings.Contains(bar, want) {
+				t.Errorf("allowed=%v: %s key not styled as expected: %q", allowed, k[0], bar)
+			}
+		}
+	}
+
 	if !strings.Contains(off, st.Accent.Render("enter")) {
 		t.Errorf("enter hint not accented with a row selected: %q", off)
 	}
 	if noRow := keyBar(st, DefaultActions(false), Context{}); !strings.Contains(noRow, st.AccentDim.Render("enter")+" "+st.Dim.Render("details")) {
 		t.Errorf("details hint not coloured+dimmed without a row: %q", noRow)
 	}
-	if plain := keyBar(NewStyles(false), DefaultActions(false), Context{Row: &sel}); plain != " approve  reject  diff  expand  enter details  refresh  quit  ↑↓ select" {
+	if plain := keyBar(NewStyles(false), DefaultActions(false), Context{Row: &sel}); plain != " approve  reject  pre-approve  type  diff  expand  enter details  refresh  quit  ↑↓ select" {
 		t.Errorf("plain key bar = %q", plain)
 	}
 }

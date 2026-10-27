@@ -114,9 +114,13 @@ type):
   `merge.rerun_checks`). The merge records "merged without review (review: …)"
   in the state history and, for squash merges, the commit message.
 
-There is no CLI path to change the type afterwards. Each type records who set
-it and when, e.g. `none · self-declared (allow_none) · 2026-10-27 10:12`;
-`work status`, `task list`, `epic view` and `review history` show it.
+There is no CLI path to change the type afterwards; a human changes it in the
+dashboard (`p` pre-approve, `t` type, see [Dashboard](#dashboard)). Each type
+records who set it and when, e.g.
+`none · self-declared (allow_none) · 2026-10-27 10:12` or
+`none · pre-approved by terminal:alice (dashboard) · 2026-10-27 11:40`;
+`work status`, `task list`, `epic view`, `review history` and the dashboard
+detail pane show it, and the dashboard's approval column summarises it.
 
 ## Merge queue
 
@@ -176,17 +180,29 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 | `x` | expand: descriptions and review comments in the detail and diff panes are wrapped to the pane width with their line breaks kept, but each shows at most 6 lines until `x` expands it; `x` again or moving the selection collapses |
 | `a` | on a row with an open review request: approve; optional comment, then type the task or epic ID to confirm |
 | `r` | on a row with an open review request: reject; a comment is required, then type the ID to confirm |
+| `p` | pre-approve a task row or epic header that is not merged or closed: sets review type `none` (no `review.allow_none` needed: it is a human decision); optional reason, then type the ID to confirm. With a review in flight it also approves the requested commit and stops the reviewer |
+| `t` | review type picker (`default` / `human` / `none`, any direction) for a task row or epic header that is not merged or closed, then type the ID to confirm. With a review in flight, `none` works like `p` and `human` revokes the request, stops the agent reviewer and returns the task to `CHECKS_PASSED`; `default` only changes the type. An `APPROVED` or `QUEUED` task keeps its state |
+
+Task rows and epic headers show an **approval** column: the review type and
+where its gate stands, e.g. `default · not started yet`, `default · reviewing`,
+`human · awaiting`, `human · approved`, `default · changes requested`,
+`none · pre-approved by alice`, `none · self-declared`. A `none` task or epic
+never appears under AWAITING REVIEW.
 
 Every hotkey letter is coloured inside its word; keys that do not apply to
 the selected row keep a faint coloured letter and a dimmed word.
 
-`esc` cancels an approve or reject at any step. The verdict goes through the
-same checks as `harness review approve|reject` (open request, branch head still
-at the requested commit for approve), is pinned to the requested commit the
-dashboard showed, and is recorded as `terminal:<user> (dashboard)`. Approve and
-reject are enabled only when the dashboard runs on an interactive terminal and
-`HARNESS_REVIEW_TOKEN` is not set, so a reviewer agent cannot record a verdict
-labelled as a human's; otherwise they stay dimmed and pressing them says why.
+`esc` cancels an approve, reject, pre-approve or type change at any step. The
+verdict goes through the same checks as `harness review approve|reject` (open
+request, branch head still at the requested commit for approve), is pinned to
+the requested commit the dashboard showed, and is recorded as
+`terminal:<user> (dashboard)`. When `p` or `t` stops a review in flight, the
+stop runs first and is pinned the same way; if it is refused (the commit moved
+or the request changed) the type is left unchanged. Approve, reject,
+pre-approve and type are enabled only when the dashboard runs on an
+interactive terminal and `HARNESS_REVIEW_TOKEN` is not set, so a reviewer agent
+cannot record a decision labelled as a human's; otherwise they stay dimmed and
+pressing them says why.
 Diff is read-only and always available.
 
 The interactive view needs a terminal; from scripts and agents use `--once`,

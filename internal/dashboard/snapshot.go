@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -64,6 +65,7 @@ type EpicGroup struct {
 	EpicReview string
 	// ReviewSHA is the commit of the epic's open review request, if any.
 	ReviewSHA string
+	Approval  string
 	Tasks     []TaskRow
 }
 
@@ -89,6 +91,9 @@ type TaskRow struct {
 	Attention  string
 	// MergeFailure is the recorded reason of a MERGE_FAILED task.
 	MergeFailure string
+	ReviewType   internal.ReviewType
+	// Approval is the approval column: review type · where the gate stands.
+	Approval string
 }
 
 type QueueRow struct {
@@ -135,6 +140,69 @@ func reviewerAttention(reviewer string) string {
 		return "awaiting human review"
 	}
 	return ""
+}
+
+// gateStatus says where a subject's review gate stands, from its state (""
+// for epics), reviewer status of an in-flight request, and latest verdict.
+func gateStatus(state internal.TaskState, inFlight bool, reviewer, verdict string) string {
+	switch {
+	case inFlight && reviewer == ReviewerHuman:
+		return "awaiting"
+	case inFlight && (reviewer == "" || reviewer == ReviewerPending || reviewer == internal.ReviewerRunning):
+		return "reviewing"
+	case inFlight:
+		return "reviewer " + reviewer
+	}
+	switch state {
+	case internal.StateApproved, internal.StateQueued, internal.StateMerging, internal.StateMerged:
+		return "approved"
+	case internal.StateRequestChanges:
+		return "changes requested"
+	case "":
+		if verdict != "" {
+			return verdict
+		}
+	}
+	return "not started yet"
+}
+
+// approvalText is the approval column. A none subject has no gate, so it
+// shows who waived it instead.
+func approvalText(rt internal.ReviewType, setBy, status string) string {
+	switch rt {
+	case internal.ReviewNone:
+		return "none · " + noneProvenance(setBy)
+	case "":
+		rt = internal.ReviewDefault
+	}
+	return string(rt) + " · " + status
+}
+
+func noneProvenance(setBy string) string {
+	switch {
+	case strings.HasPrefix(setBy, internal.ReviewSetByPreApproved):
+		return "pre-approved by " + shortSetter(strings.TrimPrefix(setBy, internal.ReviewSetByPreApproved))
+	case setBy == internal.ReviewSetBySelfDeclared:
+		return "self-declared"
+	case setBy == "":
+		return "no review"
+	}
+	return setBy
+}
+
+// shortSetter turns "terminal:alice (dashboard): reason" into "alice".
+func shortSetter(who string) string {
+	who = strings.TrimPrefix(who, "terminal:")
+	if i := strings.IndexAny(who, " :"); i > 0 {
+		who = who[:i]
+	}
+	return who
+}
+
+// isHumanReview: a human-typed subject's request launches no reviewer; a
+// default one does unless the committed config's review.type is human.
+func (b *builder) isHumanReview(rt internal.ReviewType) bool {
+	return rt == internal.ReviewHuman || (rt != internal.ReviewNone && b.human)
 }
 
 // reviewerStatus is "" for a request that ended without launching a reviewer.
@@ -245,19 +313,24 @@ func BuildSnapshot(app *internal.App, now time.Time, all bool) (Snapshot, error)
 	openByEpic := map[string]*internal.ReviewRequest{}
 	for i := range open {
 		req := &open[i]
-		row := ReviewRow{CommitSHA: req.CommitSHA, Age: now.Sub(req.CreatedAt), Reviewer: reviewerStatus(req, now, b.human)}
+		row := ReviewRow{CommitSHA: req.CommitSHA, Age: now.Sub(req.CreatedAt)}
+		var rt internal.ReviewType
 		if req.EpicID != "" {
 			openByEpic[req.EpicID] = req
 			row.SubjectID, row.IsEpic = req.EpicID, true
 			if e := epicByID[req.EpicID]; e != nil {
-				row.Title = e.Title
+				row.Title, rt = e.Title, e.ReviewType
 			}
 		} else {
 			row.SubjectID = req.TaskID
 			if t := taskByID[req.TaskID]; t != nil {
-				row.Title = t.Title
+				row.Title, rt = t.Title, t.ReviewType
 			}
 		}
+		if rt == internal.ReviewNone {
+			continue
+		}
+		row.Reviewer = reviewerStatus(req, now, b.isHumanReview(rt))
 		row.Attention = reviewerAttention(row.Reviewer)
 		s.Reviews = append(s.Reviews, row)
 	}
@@ -273,9 +346,13 @@ func BuildSnapshot(app *internal.App, now time.Time, all bool) (Snapshot, error)
 			g.Epic, g.Project, g.Branch = e, projByID[e.ProjectID], e.Branch
 			g.Done, g.Total = internal.CountDone(byEpic[epicID])
 			g.EpicReview = b.epicReview(e.ID, openByEpic[e.ID])
+			reviewer := ""
 			if req := openByEpic[e.ID]; req != nil {
 				g.ReviewSHA = req.CommitSHA
+				reviewer = reviewerStatus(req, now, b.isHumanReview(e.ReviewType))
 			}
+			g.Approval = approvalText(e.ReviewType, e.ReviewTypeSetBy,
+				gateStatus("", g.ReviewSHA != "", reviewer, verdictLabel(b.epicDecisions[e.ID])))
 		}
 		m[epicID] = g
 		return g
@@ -344,7 +421,7 @@ func (b *builder) stateSince(t *internal.Task) time.Time {
 
 func (b *builder) taskRow(t *internal.Task) TaskRow {
 	since := b.stateSince(t)
-	row := TaskRow{ID: t.ID, Title: t.Title, State: t.State, Age: b.now.Sub(since)}
+	row := TaskRow{ID: t.ID, Title: t.Title, State: t.State, Age: b.now.Sub(since), ReviewType: t.ReviewType}
 
 	if t.State == internal.StateChecksRunning {
 		row.Checks = b.runningChecks(t.ID, since)
@@ -357,10 +434,12 @@ func (b *builder) taskRow(t *internal.Task) TaskRow {
 	if t.State == internal.StateReviewRequested {
 		if req, ok := b.latestReqs[t.ID]; ok {
 			row.Review = &req
-			row.Reviewer = reviewerStatus(&req, b.now, b.human)
+			row.Reviewer = reviewerStatus(&req, b.now, b.isHumanReview(t.ReviewType))
 		}
 	}
 	row.Verdict = verdictLabel(b.taskDecisions[t.ID])
+	row.Approval = approvalText(t.ReviewType, t.ReviewTypeSetBy,
+		gateStatus(t.State, t.State == internal.StateReviewRequested, row.Reviewer, row.Verdict))
 	if q, ok := b.queue[t.ID]; ok {
 		row.QueuePos, row.QueueStale = q.Position, q.Stale
 	}
