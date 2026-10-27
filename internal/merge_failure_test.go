@@ -30,7 +30,6 @@ func readMergeLog(t *testing.T, app *App, id string) string {
 }
 
 func TestMergeFailureRecordsRebaseConflict(t *testing.T) {
-	t.Parallel()
 	app, dir, task := setupTask(t)
 	defer app.Close()
 	gitCommitFile(t, task.WorktreePath, "conflict.txt", "branch\n", "branch side")
@@ -133,7 +132,6 @@ func TestMergeFailureRecordsRecoveredAbandonedMerge(t *testing.T) {
 }
 
 func TestLastMergeFailureShownAfterRetry(t *testing.T) {
-	t.Parallel()
 	app, task := approvedTask(t)
 	forceState(t, app, task.ID, StateMerging)
 	if err := app.DB.UpdateTaskStateNote(task.ID, StateMergeFailed, "merge failed (into main): boom"); err != nil {
@@ -152,7 +150,6 @@ func TestLastMergeFailureShownAfterRetry(t *testing.T) {
 }
 
 func TestEpicMergeFailureRecorded(t *testing.T) {
-	t.Parallel()
 	app, dir := setupApp(t)
 	defer app.Close()
 	commitAllowNone(t, dir)

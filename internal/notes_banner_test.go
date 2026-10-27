@@ -32,22 +32,17 @@ func editNotes(t *testing.T, app *App, subject, notes string) {
 	}
 }
 
-func run(t *testing.T, fn func() error) (string, error) {
-	t.Helper()
-	return captureStdout(t, fn)
-}
-
 // Not parallel: captureStdout swaps os.Stdout.
 func TestNotesBannerShownOnceAndAfterEachEdit(t *testing.T) {
 	app, _, task := setupTask(t)
 	defer app.Close()
 	diff := func() error { return app.CmdWorkDiff(task.ID) }
 
-	if out, _ := run(t, diff); strings.Contains(out, bannerHead) {
+	if out, _ := captureStdout(t, diff); strings.Contains(out, bannerHead) {
 		t.Fatalf("banner without notes:\n%s", out)
 	}
 	editNotes(t, app, task.ID, "use sqlite only\nno new deps")
-	out, err := run(t, diff)
+	out, err := captureStdout(t, diff)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,16 +54,16 @@ func TestNotesBannerShownOnceAndAfterEachEdit(t *testing.T) {
 	if !strings.Contains(out[head:], "feature.txt") {
 		t.Errorf("command output missing after banner:\n%s", out)
 	}
-	if out, _ := run(t, diff); strings.Contains(out, bannerHead) {
+	if out, _ := captureStdout(t, diff); strings.Contains(out, bannerHead) {
 		t.Errorf("banner shown twice:\n%s", out)
 	}
 
 	editNotes(t, app, task.ID, "actually, postgres")
-	if out, _ := run(t, diff); !strings.Contains(out, bannerHead) || !strings.Contains(out, "actually, postgres") {
+	if out, _ := captureStdout(t, diff); !strings.Contains(out, bannerHead) || !strings.Contains(out, "actually, postgres") {
 		t.Errorf("banner not shown after a second edit:\n%s", out)
 	}
 	editNotes(t, app, task.ID, "")
-	if out, _ := run(t, diff); !strings.Contains(out, "(the notes were cleared)") {
+	if out, _ := captureStdout(t, diff); !strings.Contains(out, "(the notes were cleared)") {
 		t.Errorf("clearing the notes not announced:\n%s", out)
 	}
 }
@@ -81,10 +76,10 @@ func TestStatusAndViewMarkNotesSeen(t *testing.T) {
 		"task view":   func() error { return app.CmdTaskView(task.ID) },
 	} {
 		editNotes(t, app, task.ID, "notes for "+name)
-		if out, _ := run(t, show); !strings.Contains(out, "notes for "+name) {
+		if out, _ := captureStdout(t, show); !strings.Contains(out, "notes for "+name) {
 			t.Fatalf("%s does not print notes:\n%s", name, out)
 		}
-		if out, _ := run(t, func() error { return app.CmdWorkDiff(task.ID) }); strings.Contains(out, bannerHead) {
+		if out, _ := captureStdout(t, func() error { return app.CmdWorkDiff(task.ID) }); strings.Contains(out, bannerHead) {
 			t.Errorf("banner after %s already showed the notes:\n%s", name, out)
 		}
 	}
@@ -105,7 +100,7 @@ func TestNotesBannerOnTaskCommands(t *testing.T) {
 			app, _, task := setupTask(t)
 			defer app.Close()
 			editNotes(t, app, task.ID, "note for "+name)
-			out, _ := run(t, func() error { return cmd(app, task.ID) })
+			out, _ := captureStdout(t, func() error { return cmd(app, task.ID) })
 			if !strings.HasPrefix(out, bannerHead+task.ID) || !strings.Contains(out, "note for "+name) {
 				t.Errorf("no banner first:\n%s", out)
 			}
@@ -119,7 +114,7 @@ func TestNotesBannerOnTaskCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 		editNotes(t, app, "task-001", "start here")
-		out, err := run(t, func() error { return app.CmdTaskStart("task-001", "") })
+		out, err := captureStdout(t, func() error { return app.CmdTaskStart("task-001", "") })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +128,7 @@ func TestNotesBannerKeepsCommandError(t *testing.T) {
 	app, _, task := setupTask(t)
 	defer app.Close()
 	editNotes(t, app, task.ID, "careful")
-	out, err := run(t, func() error { return app.CmdWorkMerge(task.ID) })
+	out, err := captureStdout(t, func() error { return app.CmdWorkMerge(task.ID) })
 	if err == nil || !strings.Contains(err.Error(), "cannot merge in state IN_PROGRESS") {
 		t.Errorf("merge err = %v, want the usual state refusal", err)
 	}
@@ -159,26 +154,26 @@ func TestEpicNotesBanner(t *testing.T) {
 	editNotes(t, app, "epic-001", "epic-wide: keep the CLI flags stable")
 
 	for _, id := range []string{"task-001", "task-002"} {
-		out, err := run(t, func() error { return app.CmdTaskStart(id, "") })
+		out, err := captureStdout(t, func() error { return app.CmdTaskStart(id, "") })
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(out, bannerHead+"epic-001 (the epic of "+id+")") || !strings.Contains(out, "keep the CLI flags stable") {
 			t.Errorf("%s: no epic banner:\n%s", id, out)
 		}
-		if out, _ := run(t, func() error { return app.CmdWorkDiff(id) }); strings.Contains(out, bannerHead) {
+		if out, _ := captureStdout(t, func() error { return app.CmdWorkDiff(id) }); strings.Contains(out, bannerHead) {
 			t.Errorf("%s: epic banner shown twice:\n%s", id, out)
 		}
 	}
 
-	out, _ := run(t, func() error { return app.CmdEpicMerge("epic-001") })
+	out, _ := captureStdout(t, func() error { return app.CmdEpicMerge("epic-001") })
 	if !strings.HasPrefix(out, bannerHead+"epic-001 (edited") {
 		t.Errorf("epic command: no epic banner:\n%s", out)
 	}
-	if out, _ := run(t, func() error { return app.CmdEpicMerge("epic-001") }); strings.Contains(out, bannerHead) {
+	if out, _ := captureStdout(t, func() error { return app.CmdEpicMerge("epic-001") }); strings.Contains(out, bannerHead) {
 		t.Errorf("epic banner shown twice on epic commands:\n%s", out)
 	}
-	if out, _ := run(t, func() error { return app.CmdEpicView("epic-001") }); !strings.Contains(out, "keep the CLI flags stable") {
+	if out, _ := captureStdout(t, func() error { return app.CmdEpicView("epic-001") }); !strings.Contains(out, "keep the CLI flags stable") {
 		t.Errorf("epic view lacks notes:\n%s", out)
 	}
 }
