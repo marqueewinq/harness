@@ -291,7 +291,7 @@ func TestKeyBarColor(t *testing.T) {
 	if noRow := keyBar(st, DefaultActions(false), Context{}); !strings.Contains(noRow, st.AccentDim.Render("enter")+" "+st.Dim.Render("details")) {
 		t.Errorf("details hint not coloured+dimmed without a row: %q", noRow)
 	}
-	if plain := keyBar(NewStyles(false), DefaultActions(false), Context{Row: &sel}); plain != " approve  reject  pre-approve  type  diff  expand  enter details  refresh  quit  ↑↓ select" {
+	if plain := keyBar(NewStyles(false), DefaultActions(false), Context{Row: &sel}); plain != " approve  reject  pre-approve  type  edit  diff  expand  enter details  refresh  quit  ↑↓ select" {
 		t.Errorf("plain key bar = %q", plain)
 	}
 }

@@ -75,6 +75,13 @@ func (f *fakeLoader) loader() Loader {
 			}
 			return "Review stopped: " + string(outcome) + "\n", nil
 		},
+		EditFields: func(subject string) (EditFields, error) {
+			return EditFields{Title: "Title of " + subject, Description: "desc\n", Notes: ""}, nil
+		},
+		Edit: func(subject string, e EditFields) (string, error) {
+			f.calls = append(f.calls, fmt.Sprintf("edit %s %q %q %q", subject, e.Title, e.Description, e.Notes))
+			return "Edited " + subject + ".\n", nil
+		},
 		RemovePreApproval: func(subject, reason string) (string, error) {
 			f.calls = append(f.calls, fmt.Sprintf("unpreapprove %s %q", subject, reason))
 			return "Pre-approval of " + subject + " removed.\n", nil

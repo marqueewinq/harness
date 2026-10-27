@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -26,6 +27,10 @@ type Loader struct {
 	SetType func(subject string, r internal.ReviewType, reason string) (string, error)
 	// RemovePreApproval undoes a pre-approval a human confirmed.
 	RemovePreApproval func(subject, reason string) (string, error)
+	// EditFields reads a task's or epic's title, description and notes;
+	// Edit records an edit a human confirmed.
+	EditFields func(subject string) (EditFields, error)
+	Edit       func(subject string, f EditFields) (string, error)
 }
 
 // DashboardVia labels dashboard verdicts: terminal:<user> (dashboard).
@@ -47,6 +52,23 @@ func AppLoader(app *internal.App, all bool) Loader {
 		},
 		RemovePreApproval: func(subject, reason string) (string, error) {
 			return app.RecordTerminalRemovePreApproval(subject, DashboardVia, reason)
+		},
+		EditFields: func(subject string) (EditFields, error) {
+			if strings.HasPrefix(subject, "epic-") {
+				e, err := app.DB.GetEpic(subject)
+				if err != nil {
+					return EditFields{}, err
+				}
+				return EditFields{Title: e.Title, Description: e.Description, Notes: e.Notes}, nil
+			}
+			t, err := app.DB.GetTask(subject)
+			if err != nil {
+				return EditFields{}, err
+			}
+			return EditFields{Title: t.Title, Description: t.Description, Notes: t.Notes}, nil
+		},
+		Edit: func(subject string, f EditFields) (string, error) {
+			return app.RecordTerminalEdit(subject, f.Title, f.Description, f.Notes, DashboardVia)
 		},
 	}
 }
@@ -117,6 +139,11 @@ type Options struct {
 	// AllowActions enables approve/reject/diff; DenyReason explains a refusal.
 	AllowActions bool
 	DenyReason   string
+	// EditorCommand builds the editor process for a file (default
+	// DefaultEditorCommand); ExecProcess hands it the terminal (default
+	// tea.ExecProcess). Tests replace both.
+	EditorCommand func(path string) (*exec.Cmd, error)
+	ExecProcess   func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 }
 
 type snapshotMsg struct {
@@ -161,6 +188,12 @@ type Model struct {
 }
 
 func NewModel(load Loader, opts Options) Model {
+	if opts.EditorCommand == nil {
+		opts.EditorCommand = DefaultEditorCommand
+	}
+	if opts.ExecProcess == nil {
+		opts.ExecProcess = tea.ExecProcess
+	}
 	return Model{
 		load:        load,
 		opts:        opts,
@@ -200,6 +233,7 @@ func DefaultActions(allowed bool) []Action {
 		{Key: "r", Label: "reject", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("request_changes", r) }},
 		{Key: "p", Label: "pre-approve", Enabled: preApprovable, Start: togglePreApproval, AltLabel: "remove pre-approval", UseAlt: isNone},
 		{Key: "t", Label: "type", Enabled: typed, Start: func(m *Model, r Row) tea.Cmd { return m.openModal(DecisionType, r) }},
+		{Key: "e", Label: "edit", Enabled: func(c Context) bool { return allowed && isEditable(c.Row) }, Start: func(m *Model, r Row) tea.Cmd { return m.startEdit(r) }},
 		{Key: "d", Label: "diff", Enabled: hasRow, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) }},
 		{Key: "x", Label: "expand", Enabled: func(c Context) bool { return c.Expandable }},
 		{Key: "enter", Hint: "enter", Label: "details", Enabled: hasRow},
@@ -406,6 +440,8 @@ func (m Model) submit(md Modal, skipped string) tea.Cmd {
 			report, err = changeReviewType(load, md.Subject, md.Choice, "", md.SHA)
 		case DecisionRemovePreApproval:
 			report, err = load.RemovePreApproval(md.Subject, md.Comment)
+		case DecisionEdit:
+			report, err = load.Edit(md.Subject, *md.Edit)
 		default:
 			report, err = load.Verdict(md.Subject, md.Decision, md.Comment, md.SHA)
 		}
@@ -543,7 +579,7 @@ func decisionLabel(decision string) string {
 
 func autoConfirmLabels(skip map[string]bool) []string {
 	var out []string
-	kinds := []string{"approve", "request_changes", DecisionPreApprove, DecisionRemovePreApproval}
+	kinds := []string{"approve", "request_changes", DecisionPreApprove, DecisionRemovePreApproval, DecisionEdit}
 	for _, t := range []internal.ReviewType{internal.ReviewDefault, internal.ReviewHuman, internal.ReviewNone} {
 		kinds = append(kinds, DecisionType+":"+string(t))
 	}
@@ -608,6 +644,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus(status, false)
 		m.ui.DiffOpen, m.ui.Diff = false, nil
 		return m, m.startRefresh()
+	case editStartMsg:
+		return m.runEditor(msg)
+	case editDoneMsg:
+		next, cmd := m.finishEdit(msg)
+		return next, cmd
 	case tea.KeyMsg:
 		if m.ui.Modal != nil {
 			return m.handleModalKey(msg)
@@ -646,6 +687,11 @@ func (m Model) disabledReason(key string) string {
 			return "is disabled: " + m.opts.DenyReason
 		}
 		return "applies to a row with an open review request"
+	case "e":
+		if !m.opts.AllowActions {
+			return "is disabled: " + m.opts.DenyReason
+		}
+		return "applies to a task row or epic header"
 	case "p", "t":
 		if !m.opts.AllowActions {
 			return "is disabled: " + m.opts.DenyReason
@@ -690,7 +736,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case "a", "r", "d", "x", "p", "t":
+	case "a", "r", "d", "x", "p", "t", "e":
 		if k == "d" && m.ui.DiffOpen {
 			return m, nil
 		}

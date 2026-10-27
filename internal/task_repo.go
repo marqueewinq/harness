@@ -22,13 +22,16 @@ type Task struct {
 	ReviewType      ReviewType
 	ReviewTypeSetBy string
 	ReviewTypeSetAt time.Time // zero when never set (pre-review-types rows)
+
+	// Notes is free-form text for humans; it never goes into a reviewer prompt.
+	Notes string
 }
 
 type rowScanner interface {
 	Scan(dest ...interface{}) error
 }
 
-const taskColumns = `id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at, review_type, review_type_set_by, review_type_set_at`
+const taskColumns = `id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at, review_type, review_type_set_by, review_type_set_at, notes`
 
 func scanTask(s rowScanner) (*Task, error) {
 	t := &Task{}
@@ -36,7 +39,7 @@ func scanTask(s rowScanner) (*Task, error) {
 	var reviewSetAt sql.NullTime
 	err := s.Scan(&t.ID, &t.Title, &t.Description, &branch, &worktreePath,
 		&t.State, &t.BaseBranch, &parentID, &epicID, &t.CreatedAt, &t.UpdatedAt,
-		&t.ReviewType, &t.ReviewTypeSetBy, &reviewSetAt)
+		&t.ReviewType, &t.ReviewTypeSetBy, &reviewSetAt, &t.Notes)
 	if err != nil {
 		return nil, err
 	}

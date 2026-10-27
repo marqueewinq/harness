@@ -107,6 +107,7 @@ func (a *App) CmdEpicView(epicID string) error {
 	if e.Description != "" {
 		fmt.Printf("Description: %s\n", e.Description)
 	}
+	printNotes(e.Notes)
 	tasks, _ := a.DB.ListTasksByEpic(e.ID)
 	if len(tasks) == 0 {
 		fmt.Printf("\nNo tasks. Run: harness task new \"title\" --epic %s\n", e.ID)

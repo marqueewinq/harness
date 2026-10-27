@@ -20,6 +20,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	if task.Description != "" {
 		fmt.Printf("Description: %s\n", task.Description)
 	}
+	printNotes(task.Notes)
 	fmt.Printf("Branch: %s\n", task.Branch)
 	fmt.Printf("Worktree: %s\n", task.WorktreePath)
 	fmt.Printf("State: %s\n", task.State)

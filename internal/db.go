@@ -140,8 +140,54 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v13: %w", err)
 		}
 	}
+	if version < 14 {
+		if err := migrateV14(conn); err != nil {
+			return fmt.Errorf("migration v14: %w", err)
+		}
+	}
 
 	return nil
+}
+
+// notes is free-form text for humans, kept out of reviewer prompts. v3 once
+// added tasks.notes and v6 dropped it, so the column is added only if absent.
+// subject_edits is the audit log of title/description/notes edits; it is
+// separate from the state transition tables so an edit never reads as a state
+// change (the dashboard derives "age in state" from transitions).
+func migrateV14(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, table := range []string{"tasks", "epics"} {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'notes'`, table).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN notes TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE IF NOT EXISTS subject_edits (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			subject_id TEXT NOT NULL,
+			fields TEXT NOT NULL,
+			edited_by TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_subject_edits_subject ON subject_edits (subject_id, id)`,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (14)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // note records why a transition skipped a gate (e.g. a merge without review).

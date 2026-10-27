@@ -122,6 +122,14 @@ records who set it and when, e.g.
 `work status`, `task list`, `epic view`, `review history` and the dashboard
 detail pane show it, and the dashboard's approval column summarises it.
 
+### Notes
+
+Tasks and epics have a free-form **notes** field next to the description, for
+humans: follow-ups, context, why something was closed. Notes are never sent to
+a reviewer (the prompt uses the title, description and diff). They are shown
+by `work status`, `task view`, `epic view` and the dashboard detail pane, and
+edited with `e` in the dashboard together with the title and description.
+
 ## Merge queue
 
 `harness work merge` puts the task in a queue in SQLite and blocks until the
@@ -177,11 +185,12 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 | `f` | refresh now |
 | `q`, `Ctrl-C` | quit |
 | `d` | diff of any task or epic row; `j`/`k`, `pgup`/`pgdn`, `g`/`G` scroll, `esc` closes. With an open review request it is exactly the requested commit (`<base>...<sha>`, base is the task's base branch or main for an epic); otherwise the branch head (`<base>...<branch>`), or a note when there is nothing to diff (not started, branch deleted). The header names the range shown and lists the description, check results on that commit and previous review comments |
-| `x` | expand: descriptions and review comments in the detail and diff panes are wrapped to the pane width with their line breaks kept, but each shows at most 6 lines until `x` expands it; `x` again or moving the selection collapses |
+| `x` | expand: descriptions, notes and review comments in the detail and diff panes are wrapped to the pane width with their line breaks kept, but each shows at most 6 lines until `x` expands it; `x` again or moving the selection collapses |
 | `a` | on a row with an open review request: approve; optional comment, then confirm |
 | `r` | on a row with an open review request: reject; a comment is required, then confirm |
 | `p` | pre-approve a task row or epic header that is not merged or closed: sets review type `none` (no `review.allow_none` needed: it is a human decision); optional reason, then confirm. With a review in flight it also approves the requested commit and stops the reviewer. On a subject whose type is already `none` (pre-approved or self-declared) the key reads **remove pre-approval** and sets the type back to `default` (recorded as `pre-approval removed by terminal:<user> (dashboard)`); a task that is `APPROVED` by a pre-approval goes back to `IN_PROGRESS`, so it needs checks and a review again, and an epic's pre-approval no longer counts for `harness epic merge`. Refused for `QUEUED`/`MERGING` tasks, which are past the review gate |
 | `t` | review type picker (`default` / `human` / `none`, any direction) for a task row or epic header that is not merged or closed, then confirm. With a review in flight, `none` works like `p` and `human` revokes the request, stops the agent reviewer and returns the task to `CHECKS_PASSED`; `default` only changes the type. An `APPROVED` or `QUEUED` task keeps its state |
+| `e` | edit the title, description and notes of any task row or epic header, merged and closed ones included. The dashboard suspends and opens a temp file in `$VISUAL`, else `$EDITOR`, else `nano`, else `vi`; save and quit to apply, then confirm. Leaving the file unchanged or emptying the title cancels; if the file cannot be read back (e.g. a `---` separator line was removed) nothing is applied and the status line names the file so your text is not lost. Each edit is recorded with who made it (`terminal:<user> (dashboard)`), when and which fields; the detail pane shows the last one. A description edited during an open review only reaches later review requests |
 
 Task rows and epic headers show an **approval** column: the review type and
 where its gate stands, e.g. `default · not started yet`, `default · reviewing`,

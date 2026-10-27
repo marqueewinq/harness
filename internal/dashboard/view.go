@@ -154,6 +154,9 @@ type Modal struct {
 	Choice  internal.ReviewType
 	// Option is the highlighted ConfirmOptions entry in the confirm step.
 	Option int
+	// Edit holds the edited fields of a DecisionEdit, Changed names them.
+	Edit    *EditFields
+	Changed string
 	// Input is the rendered line editor.
 	Input string
 	Error string
@@ -520,6 +523,9 @@ func modalLines(st Styles, m *Modal) []string {
 		if m.SHA != "" {
 			note = fmt.Sprintf("Approves the requested commit %s and stops its review.", shortSHA(m.SHA))
 		}
+	case DecisionEdit:
+		title = fmt.Sprintf("Save the edit of %s?", m.Subject)
+		note = "Changes: " + m.Changed
 	case DecisionRemovePreApproval:
 		title = fmt.Sprintf("Remove the pre-approval of %s (review type back to default)?", m.Subject)
 		commentPrompt = "Reason (optional, enter to continue):"

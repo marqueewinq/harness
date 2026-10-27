@@ -54,6 +54,8 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	add("Worktree: %s", orDash(t.WorktreePath))
 	add("Review type: %s", t.ReviewSummary())
 	b.text("", "Description: ", t.Description)
+	b.text("", "Notes: ", t.Notes)
+	editLine(app, &b, t.ID)
 
 	if len(trs) > 0 {
 		add("History:")
@@ -156,6 +158,8 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	add("Epic: %s · project %s · branch %s", e.Status, e.ProjectID, orDash(e.Branch))
 	add("Review type: %s", e.ReviewSummary())
 	b.text("", "Description: ", e.Description)
+	b.text("", "Notes: ", e.Notes)
+	editLine(app, &b, e.ID)
 	tasks, err := app.DB.ListTasksByEpic(e.ID)
 	if err != nil {
 		return Detail{}, err
@@ -210,6 +214,15 @@ func fileTail(path string) []string {
 	}
 	data, _ := io.ReadAll(f)
 	return lastLines(string(data), logTailLines)
+}
+
+func editLine(app *internal.App, b *doc, subject string) {
+	edits, err := app.DB.ListEdits(subject)
+	if err != nil || len(edits) == 0 {
+		return
+	}
+	e := edits[len(edits)-1]
+	b.add("Last edited %s by %s (%s)", e.CreatedAt.Local().Format("2006-01-02 15:04"), e.EditedBy, e.Fields)
 }
 
 func reviewLines(add func(string, ...interface{}), req *internal.ReviewRequest, now time.Time) {

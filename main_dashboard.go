@@ -23,8 +23,9 @@ func dashboardCmd() *cobra.Command {
 queue and recently finished tasks, refreshed every --interval.
 
 Keys: ↑/↓ or j/k select, enter/tab details, d diff, x expand, f refresh, q quit;
-with an open review request: a approve, r reject; on a task or epic: p pre-approve
-(review type none), t review type. a, r, p and t need a terminal and no
+with an open review request: a approve, r reject; on a task or epic: e edit
+(title/description/notes in $VISUAL/$EDITOR), p pre-approve
+(review type none), t review type. a, r, p, t and e need a terminal and no
 HARNESS_REVIEW_TOKEN.
 --once prints one plain snapshot and exits (for scripts and agents).`,
 		Args: cobra.NoArgs,

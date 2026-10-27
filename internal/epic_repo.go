@@ -19,9 +19,12 @@ type Epic struct {
 	ReviewType      ReviewType
 	ReviewTypeSetBy string
 	ReviewTypeSetAt time.Time // zero when never set (pre-review-types rows)
+
+	// Notes is free-form text for humans; it never goes into a reviewer prompt.
+	Notes string
 }
 
-const epicColumns = `id, project_id, title, description, status, branch, created_at, updated_at, review_type, review_type_set_by, review_type_set_at`
+const epicColumns = `id, project_id, title, description, status, branch, created_at, updated_at, review_type, review_type_set_by, review_type_set_at, notes`
 
 func scanEpic(s rowScanner) (*Epic, error) {
 	e := &Epic{}
@@ -29,7 +32,7 @@ func scanEpic(s rowScanner) (*Epic, error) {
 	var status string
 	var reviewSetAt sql.NullTime
 	err := s.Scan(&e.ID, &e.ProjectID, &e.Title, &e.Description, &status, &branch, &e.CreatedAt, &e.UpdatedAt,
-		&e.ReviewType, &e.ReviewTypeSetBy, &reviewSetAt)
+		&e.ReviewType, &e.ReviewTypeSetBy, &reviewSetAt, &e.Notes)
 	if err != nil {
 		return nil, err
 	}

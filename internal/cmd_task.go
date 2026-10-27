@@ -93,6 +93,7 @@ func (a *App) CmdTaskView(taskID string) error {
 	if task.Description != "" {
 		fmt.Printf("Description: %s\n", task.Description)
 	}
+	printNotes(task.Notes)
 	fmt.Printf("State: %s\n", task.State)
 	a.printMergeFailure(task)
 	fmt.Printf("Review type: %s\n", FormatReviewType(task.ReviewType, task.ReviewTypeSetBy, task.ReviewTypeSetAt))
