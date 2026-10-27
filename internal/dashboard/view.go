@@ -68,7 +68,8 @@ func Rows(s Snapshot) []Row {
 // Context is what decides whether an action applies right now.
 type Context struct {
 	Row *Row
-	// Expandable: the open detail or diff pane has user text to expand.
+	// Expandable: the open detail or diff pane hides user text at the current
+	// width, or is expanded and can collapse (see Expandable).
 	Expandable bool
 }
 

@@ -188,8 +188,9 @@ func verdictLines(b *doc, reviews []internal.Review) {
 	if r.Reviewer != "" {
 		line += " by " + r.Reviewer
 	}
+	start := len(b.lines)
 	b.add("%s", line)
-	b.text("  ", "", r.Comment)
+	b.textUnder(start, "  ", r.Comment)
 }
 
 // liveLogTail returns the most recently written check log of the run that

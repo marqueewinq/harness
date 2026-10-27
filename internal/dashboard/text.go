@@ -27,8 +27,12 @@ func textLines(s string) []string {
 	return out
 }
 
-// Span marks Lines[Start:End] as user-written text, which a collapsed pane
-// caps at collapsedTextLines wrapped lines.
+// maxTextWidth bounds the line length of user text (descriptions, verdicts,
+// review comments) on wide terminals, for readability.
+const maxTextWidth = 150
+
+// Span marks Lines[Start:End] as user-written text, which a pane wraps at
+// maxTextWidth and, collapsed, caps at collapsedTextLines wrapped lines.
 type Span struct{ Start, End int }
 
 type doc struct {
@@ -49,9 +53,15 @@ func (d *doc) text(indent, label, s string) {
 	if label != "" {
 		d.lines = append(d.lines, indent+strings.TrimRight(label, " "))
 	}
-	start := len(d.lines)
-	for _, l := range textLines(s) {
-		d.lines = append(d.lines, indent+"  "+l)
+	d.textUnder(len(d.lines), indent, s)
+}
+
+// textUnder appends s's lines and marks them, from line start on, as one span.
+func (d *doc) textUnder(start int, indent, s string) {
+	if strings.TrimSpace(s) != "" {
+		for _, l := range textLines(s) {
+			d.lines = append(d.lines, indent+"  "+l)
+		}
 	}
 	d.spans = append(d.spans, Span{start, len(d.lines)})
 }
@@ -77,9 +87,9 @@ func wrapLines(lines []string, width int) []string {
 	return out
 }
 
-// paneLines wraps lines to width; unless expanded, each span keeps at most
-// collapsedTextLines wrapped lines and ends with a hint. hidden counts the
-// wrapped lines left out.
+// paneLines wraps lines to width, and spans to at most maxTextWidth; unless
+// expanded, each span keeps at most collapsedTextLines wrapped lines and ends
+// with a hint. hidden counts the wrapped lines left out.
 func paneLines(st Styles, lines []string, spans []Span, width int, expanded bool) (out []string, hidden int) {
 	for i := 0; i < len(lines); {
 		span := Span{i, i + 1}
@@ -89,7 +99,11 @@ func paneLines(st Styles, lines []string, spans []Span, width int, expanded bool
 				span, user = s, true
 			}
 		}
-		wrapped := wrapLines(lines[span.Start:span.End], width)
+		w := width
+		if user {
+			w = min(width, maxTextWidth)
+		}
+		wrapped := wrapLines(lines[span.Start:span.End], w)
 		if user && !expanded && len(wrapped) > collapsedTextLines {
 			n := len(wrapped) - collapsedTextLines
 			hidden += n
