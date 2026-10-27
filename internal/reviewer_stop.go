@@ -161,14 +161,12 @@ func verifyReviewerProcess(req *ReviewRequest) error {
 // userHZ is the fixed unit of clock ticks in /proc on Linux.
 const userHZ = 100
 
-// procStat reads pid's parent and start time from /proc.
-func procStat(pid int) (int, time.Time, error) {
+func procStat(pid int) (ppid int, start time.Time, err error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		return 0, time.Time{}, err
 	}
-	// comm (field 2) may contain spaces and parentheses; fields after it are
-	// unambiguous. After ")": state, ppid, ..., starttime is the 20th.
+	// comm may contain spaces and ")", so split after its last ")".
 	s := string(data)
 	i := strings.LastIndexByte(s, ')')
 	if i < 0 {
@@ -178,7 +176,7 @@ func procStat(pid int) (int, time.Time, error) {
 	if len(fields) < 20 {
 		return 0, time.Time{}, fmt.Errorf("malformed /proc/%d/stat", pid)
 	}
-	ppid, err := strconv.Atoi(fields[1])
+	ppid, err = strconv.Atoi(fields[1])
 	if err != nil {
 		return 0, time.Time{}, fmt.Errorf("malformed /proc/%d/stat: %w", pid, err)
 	}

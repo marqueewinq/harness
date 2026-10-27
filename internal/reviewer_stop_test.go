@@ -176,7 +176,9 @@ func TestStopReviewRefusesChangedRequest(t *testing.T) {
 	if _, err := app.RecordTerminalStop(task.ID, StopRevoke, "dashboard", lr.req.CommitSHA); err != nil {
 		t.Fatal(err)
 	}
-	waitExit(t, lr.cmd, lr.out, 20*time.Second)
+	if err := waitExit(t, lr.cmd, lr.out, 20*time.Second); err != nil {
+		t.Errorf("review request exited with %v; output:\n%s", err, lr.out)
+	}
 	assertPIDFileDead(t, lr.pidFile)
 }
 
@@ -310,7 +312,7 @@ func TestStopReviewEpic(t *testing.T) {
 	if err := app.CmdProjectNew("P", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.CmdEpicNew("E", "", "proj-001", "", false); err != nil {
+	if err := app.CmdEpicNew("E", "", "proj-001", "", false, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.CmdReviewRequestDispatch("epic-001"); err != nil {
