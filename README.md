@@ -141,7 +141,7 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 | `f` | refresh now |
 | `q`, `Ctrl-C` | quit |
 | `d` | diff of any task or epic row; `j`/`k`, `pgup`/`pgdn`, `g`/`G` scroll, `esc` closes. With an open review request it is exactly the requested commit (`<base>...<sha>`, base is the task's base branch or main for an epic); otherwise the branch head (`<base>...<branch>`), or a note when there is nothing to diff (not started, branch deleted). The header names the range shown and lists the description, check results on that commit and previous review comments |
-| `x` | expand: show the full multi-line description and review comments in the open detail or diff pane, wrapped to its width; `x` again or moving the selection collapses |
+| `x` | expand: descriptions and review comments in the detail and diff panes are wrapped to the pane width with their line breaks kept, but each shows at most 6 lines until `x` expands it; `x` again or moving the selection collapses |
 | `a` | on a row with an open review request: approve; optional comment, then type the task or epic ID to confirm |
 | `r` | on a row with an open review request: reject; a comment is required, then type the ID to confirm |
 

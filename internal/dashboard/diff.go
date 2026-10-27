@@ -101,7 +101,7 @@ func BuildDiff(app *internal.App, row Row) (DiffView, error) {
 		b.text("  ", fmt.Sprintf("[%s at %s] ", r.Decision, orDash(shortSHA(r.CommitSHA))), r.Comment)
 	}
 	b.add("")
-	v.Header, v.FullHeader, v.Expandable = b.lines, b.full, b.expandable
+	v.Header, v.HeaderSpans = b.lines, b.spans
 
 	if target == "" {
 		return v, nil

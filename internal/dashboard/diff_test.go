@@ -78,12 +78,8 @@ func TestBuildDiffEpic(t *testing.T) {
 	if v.SHA != "" || v.Range != "main...epic/e @ "+head[:8] || !strings.Contains(header, "Branch head main...epic/e") || !strings.Contains(strings.Join(v.Diff, "\n"), "+epic work") {
 		t.Errorf("epic branch-head diff = %+v", v)
 	}
-	if !strings.Contains(header, "Description: epic description second line") || !v.Expandable {
-		t.Errorf("collapsed description: %q", header)
-	}
-	full := strings.Join(v.FullHeader, "\n")
-	if !strings.Contains(full, "Description:\n  epic description\n  second line") {
-		t.Errorf("full header = %q", full)
+	if !strings.Contains(header, "Description:\n  epic description\n  second line") || len(v.HeaderSpans) != 1 {
+		t.Errorf("description not kept multi-line: %q spans=%v", header, v.HeaderSpans)
 	}
 
 	app.DB.OpenReviewRequest("", epic.ID, head)

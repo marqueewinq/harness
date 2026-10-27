@@ -1,0 +1,40 @@
+harness · main @ 39829b9 · 16:42:07
+warning: reading committed review config: boom
+AWAITING REVIEW
+ ! task-026  81742677  12m  agent reviewer orphaned  Reviewer supervi…
+ ! epic-002  5d1c09aa   3m  human  Planning layer
+IN FLIGHT
+ proj-001 › epic-002 Planning layer · epic/planning · 3/7 done · revi…
+   task-025  CHECKS_RUNNING      3m  test ▶ 41s, lint ▶ -  Reviewer r…
+ ! task-027  MERGE_FAILED        1h  ✓ 2/2  unfinished rebase  Sync e…
+   task-028  QUEUED              2m  ✓ 2/2  queue #1  Dashboard snaps…
+ No epic
+›  task-030  IN_PROGRESS         5m  A very long task title that will…
+ ! task-031  CHECKS_FAILED      26h  ✗ lint  checks failed  Broken
+MERGE QUEUE
+   1 task-028  pid 5150    hb 4s    live
+ ! 2 task-029  pid 6001    hb 3m    stale
+RECENT (24h)
+ proj-001 › epic-002 Planning layer · epic/planning · 3/7 done
+   task-024  MERGED  18m ago  Terminal verdicts
+
+
+── task-030 described ────────────────────────────────────────────────
+ State: IN_PROGRESS for 5m · branch described · base main
+ Worktree: /repo/.worktrees/a-rather-long-worktree-directory-name-
+ that-must-wrap-too
+ Description:
+   first paragraph alpha beta gamma delta epsilon zeta eta theta iota
+   kappa lambda mu nu xi omicron pi rho sigma tau upsilon ENDOFLINEONE
+   second line ENDOFLINETWO
+   
+   third block line a
+   third block line b
+   … 2 more lines — x to expand
+ Review: not requested
+
+
+
+
+
+ approve  reject  diff  expand  enter details  refresh  quit  ↑↓ sele…

@@ -132,7 +132,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 }
 
 func (b *doc) detail(key, title string) Detail {
-	return Detail{Key: key, Title: title, Lines: b.lines, Full: b.full, Expandable: b.expandable}
+	return Detail{Key: key, Title: title, Lines: b.lines, Spans: b.spans}
 }
 
 func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {

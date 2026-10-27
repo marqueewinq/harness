@@ -106,7 +106,7 @@ func DefaultActions(allowed bool) []Action {
 }
 
 func (m Model) context() Context {
-	return Context{Row: m.actionRow(), Expandable: Expandable(m.snap, m.ui)}
+	return Context{Row: m.actionRow(), Expandable: Expandable(m.snap, m.ui, m.width)}
 }
 
 func (m Model) Init() tea.Cmd {

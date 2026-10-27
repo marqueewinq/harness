@@ -88,14 +88,13 @@ func (a Action) enabled(c Context) bool {
 	return a.Enabled == nil || a.Enabled(c)
 }
 
-// Detail is the detail pane content for the row whose Key it carries. Full
-// is Lines with user text kept multi-line, shown when expanded.
+// Detail is the detail pane content for the row whose Key it carries; Spans
+// mark the user-written text in Lines.
 type Detail struct {
-	Key        string
-	Title      string
-	Lines      []string
-	Full       []string
-	Expandable bool
+	Key   string
+	Title string
+	Lines []string
+	Spans []Span
 }
 
 // DiffView is the diff pane: context lines, then the diff.
@@ -103,14 +102,13 @@ type DiffView struct {
 	Key string
 	// SHA is set only for a diff of an open review request's commit; a
 	// verdict from this pane is pinned to it. Branch-head diffs leave it empty.
-	SHA        string
-	Range      string
-	Title      string
-	Header     []string
-	FullHeader []string
-	Expandable bool
-	Diff       []string
-	Failed     bool
+	SHA         string
+	Range       string
+	Title       string
+	Header      []string
+	HeaderSpans []Span
+	Diff        []string
+	Failed      bool
 }
 
 type ModalStep int
@@ -249,13 +247,25 @@ func ClampDetailOffset(s Snapshot, ui UIState, width, height int) int {
 	return clampOffset(ui.DetailOffset, -1, l.detailH-1, len(body))
 }
 
-// Expandable reports whether the pane on screen has user text to expand.
-func Expandable(s Snapshot, ui UIState) bool {
-	if ui.DiffOpen {
-		return ui.Diff != nil && ui.Diff.Key == ui.DiffKey && ui.Diff.Expandable
+// Expandable reports whether the pane on screen hides user text at this
+// width, or is expanded and can collapse.
+func Expandable(s Snapshot, ui UIState, width int) bool {
+	st := NewStyles(false)
+	var hidden int
+	switch {
+	case ui.DiffOpen:
+		if ui.Diff == nil || ui.Diff.Key != ui.DiffKey {
+			return false
+		}
+		_, hidden = paneLines(st, ui.Diff.Header, ui.Diff.HeaderSpans, width-1, false)
+	default:
+		sel := selectedRow(Rows(s), ui)
+		if !ui.DetailOpen || sel == nil || ui.Detail == nil || ui.Detail.Key != sel.Key() {
+			return false
+		}
+		_, hidden = paneLines(st, ui.Detail.Lines, ui.Detail.Spans, width-1, false)
 	}
-	sel := selectedRow(Rows(s), ui)
-	return ui.DetailOpen && sel != nil && ui.Detail != nil && ui.Detail.Key == sel.Key() && ui.Detail.Expandable
+	return hidden > 0 || ui.Expanded
 }
 
 // Render draws the interactive dashboard as exactly height lines.
@@ -294,7 +304,7 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 		}
 		out = append(out, " "+style.Render(ui.Status))
 	}
-	out = append(out, keyBar(st, barActions(ui), Context{Row: sel, Expandable: Expandable(s, ui)}))
+	out = append(out, keyBar(st, barActions(ui), Context{Row: sel, Expandable: Expandable(s, ui, width)}))
 	for i, line := range out {
 		out[i] = ansi.Truncate(line, width, "…")
 	}
@@ -361,10 +371,11 @@ func detailBody(st Styles, ui UIState, sel *Row, width int) (string, []string) {
 		return "details", []string{st.Dim.Render("nothing selected")}
 	case ui.Detail == nil || ui.Detail.Key != sel.Key():
 		return sel.ID, []string{st.Dim.Render("loading…")}
-	case ui.Expanded && ui.Detail.Expandable:
-		return ui.Detail.Title, wrapLines(ui.Detail.Full, width-1)
 	}
-	return ui.Detail.Title, ui.Detail.Lines
+	// Lines are drawn after a one-cell gutter, so wrap at width-1 and the
+	// final line-fit truncation never cuts them.
+	body, _ := paneLines(st, ui.Detail.Lines, ui.Detail.Spans, width-1, ui.Expanded)
+	return ui.Detail.Title, body
 }
 
 func detailPane(st Styles, s Snapshot, ui UIState, sel *Row, width, height, paneH int) []string {
@@ -386,10 +397,7 @@ func diffBody(st Styles, ui UIState, width int) []string {
 	if ui.Diff == nil || ui.Diff.Key != ui.DiffKey {
 		return []string{st.Dim.Render("loading…")}
 	}
-	header := ui.Diff.Header
-	if ui.Expanded && ui.Diff.Expandable {
-		header = wrapLines(ui.Diff.FullHeader, width-1)
-	}
+	header, _ := paneLines(st, ui.Diff.Header, ui.Diff.HeaderSpans, width-1, ui.Expanded)
 	var body []string
 	for _, h := range header {
 		body = append(body, " "+h)

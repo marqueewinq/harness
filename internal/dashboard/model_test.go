@@ -33,8 +33,12 @@ func (f *fakeLoader) loader() Loader {
 		},
 		Detail: func(r Row, _ time.Time) (Detail, error) {
 			f.details = append(f.details, r.Key())
-			return Detail{Key: r.Key(), Title: r.ID, Lines: []string{"detail of " + r.ID},
-				Full: []string{"detail of " + r.ID, "full text of " + r.ID}, Expandable: f.expandable}, nil
+			var b doc
+			b.add("detail of %s", r.ID)
+			if f.expandable {
+				b.text("", "Description: ", longText("full text of "+r.ID))
+			}
+			return b.detail(r.Key(), r.ID), nil
 		},
 		Diff: func(r Row) (DiffView, error) {
 			f.diffs = append(f.diffs, r.Key())
@@ -42,9 +46,12 @@ func (f *fakeLoader) loader() Loader {
 				return DiffView{}, f.diffErr
 			}
 			sha := r.RequestSHA()
-			v := DiffView{Key: r.Key(), SHA: sha, Range: "base..." + sha, Title: r.ID + " diff",
-				Header: []string{"Review of " + r.ID + " at " + sha}, Expandable: f.expandable,
-				FullHeader: []string{"Review of " + r.ID + " at " + sha, "full comments of " + r.ID}}
+			var b doc
+			b.add("Review of %s at %s", r.ID, sha)
+			if f.expandable {
+				b.text("  ", "[request_changes at x] ", longText("full comments of "+r.ID))
+			}
+			v := DiffView{Key: r.Key(), SHA: sha, Range: "base..." + sha, Title: r.ID + " diff", Header: b.lines, HeaderSpans: b.spans}
 			for i := 0; i < f.diffLines; i++ {
 				v.Diff = append(v.Diff, fmt.Sprintf("+line %d", i))
 			}
@@ -66,6 +73,28 @@ func step(t *testing.T, m Model, msg tea.Msg) (Model, tea.Cmd) {
 	return next.(Model), cmd
 }
 
+// longText has more lines than a collapsed pane shows, ending with last.
+func longText(last string) string {
+	return "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\n" + last
+}
+
+// cmdTimeout bounds one command: a tea.Tick sleeps its whole interval, so a
+// model built with a long --interval would otherwise block run.
+const cmdTimeout = 10 * time.Second
+
+func execCmd(t *testing.T, cmd tea.Cmd) tea.Msg {
+	t.Helper()
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	select {
+	case msg := <-done:
+		return msg
+	case <-time.After(cmdTimeout):
+		t.Fatalf("command still running after %s (a tea.Tick with a long interval? use Options{Interval: time.Millisecond})", cmdTimeout)
+		return nil
+	}
+}
+
 // run executes cmd and feeds every message it yields back into the model,
 // except ticks, which would recurse.
 func run(t *testing.T, m Model, cmd tea.Cmd) Model {
@@ -73,7 +102,7 @@ func run(t *testing.T, m Model, cmd tea.Cmd) Model {
 	if cmd == nil {
 		return m
 	}
-	switch msg := cmd().(type) {
+	switch msg := execCmd(t, cmd).(type) {
 	case tea.BatchMsg:
 		for _, c := range msg {
 			m = run(t, m, c)
