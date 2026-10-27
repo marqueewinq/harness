@@ -119,11 +119,8 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	// waiting.
 	var pinned string
 	if unreviewed {
-		if err := a.requireCheckedHead(task); err != nil {
+		if pinned, err = a.requireCheckedHead(task); err != nil {
 			return err
-		}
-		if pinned, err = a.Git.RevParse(task.Branch); err != nil {
-			return fmt.Errorf("resolving %s: %w", task.Branch, err)
 		}
 		unreviewedNote = unreviewedMergeNote(task.ReviewSummary())
 		fmt.Printf("Task %s has review type none: %s.\n", id, unreviewedNote)

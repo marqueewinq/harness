@@ -50,22 +50,25 @@ func unreviewedMergeNote(summary string) string {
 // requireCheckedHead pins a review-type-none merge to the checked commit,
 // since there is no approval to pin to: the latest check run must be on the
 // branch's current head, every check in it must have passed, and
-// merge.require.checks must have passed on that commit.
-func (a *App) requireCheckedHead(task *Task) error {
+// merge.require.checks must have passed on that commit. It returns the checked
+// commit, which the caller pins: never re-read the head, or a commit landing in
+// between would be pinned unchecked.
+func (a *App) requireCheckedHead(task *Task) (string, error) {
 	head, err := a.Git.RevParse(task.Branch)
 	if err != nil {
-		return fmt.Errorf("resolving %s: %w", task.Branch, err)
+		return "", fmt.Errorf("resolving %s: %w", task.Branch, err)
 	}
 	runs, err := a.DB.GetLatestCheckRuns(task.ID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(runs) == 0 || runs[0].CommitSHA == "" {
-		return fmt.Errorf("task %s has no check run pinned to a commit; run: harness work check %s", task.ID, task.ID)
+		return "", fmt.Errorf("task %s has no check run pinned to a commit; run: harness work check %s", task.ID, task.ID)
 	}
-	if runs[0].CommitSHA != head {
-		return fmt.Errorf("%s moved since checks ran (%s -> %s); re-run checks: harness work check %s",
-			task.Branch, shortSHA(runs[0].CommitSHA), shortSHA(head), task.ID)
+	checked := runs[0].CommitSHA
+	if checked != head {
+		return "", fmt.Errorf("%s moved since checks ran (%s -> %s); re-run checks: harness work check %s",
+			task.Branch, shortSHA(checked), shortSHA(head), task.ID)
 	}
 	var failed []string
 	for _, r := range runs {
@@ -74,10 +77,13 @@ func (a *App) requireCheckedHead(task *Task) error {
 		}
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("latest check run on %s did not pass (%s); fix it, then run: harness work check %s",
-			shortSHA(head), strings.Join(failed, ", "), task.ID)
+		return "", fmt.Errorf("latest check run on %s did not pass (%s); fix it, then run: harness work check %s",
+			shortSHA(checked), strings.Join(failed, ", "), task.ID)
 	}
-	return a.requireChecksAt(task.ID, head, "checked", "")
+	if err := a.requireChecksAt(task.ID, checked, "checked", ""); err != nil {
+		return "", err
+	}
+	return checked, nil
 }
 
 // QueueWithoutReview moves a task from CHECKS_PASSED to QUEUED. It is the only
