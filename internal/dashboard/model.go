@@ -457,8 +457,8 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // toConfirm follows the comment or pick step: the y/N chooser, or the
 // decision itself when its kind was set to "don't ask again" this session.
 func (m Model) toConfirm(md *Modal) (tea.Model, tea.Cmd) {
-	if m.skipConfirm[md.Decision] {
-		return m.run(*md, decisionLabel(md.Decision))
+	if key := skipKey(*md); m.skipConfirm[key] {
+		return m.run(*md, decisionLabel(key))
 	}
 	md.Step, md.Option, md.Error = StepConfirm, ConfirmNo, ""
 	m.syncInput()
@@ -488,7 +488,7 @@ func (m Model) handleConfirmKey(md *Modal, msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case ConfirmYes:
 		return m.run(*md, "")
 	case ConfirmAlways:
-		m.skipConfirm[md.Decision] = true
+		m.skipConfirm[skipKey(*md)] = true
 		m.ui.AutoConfirm = autoConfirmLabels(m.skipConfirm)
 		return m.run(*md, "")
 	}
@@ -513,8 +513,21 @@ func skippedNote(kind string) string {
 	return " (confirmation skipped for " + kind + " this session)"
 }
 
-// decisionLabel names a modal decision kind for the user.
+// skipKey scopes "don't ask again". Type changes are keyed by their target:
+// skipping a switch to human must not also skip a switch to none, which can
+// approve the commit under review.
+func skipKey(md Modal) string {
+	if md.Decision == DecisionType {
+		return DecisionType + ":" + string(md.Choice)
+	}
+	return md.Decision
+}
+
+// decisionLabel names a modal decision kind (or skip key) for the user.
 func decisionLabel(decision string) string {
+	if choice, ok := strings.CutPrefix(decision, DecisionType+":"); ok {
+		return "type → " + choice
+	}
 	switch decision {
 	case "request_changes":
 		return "reject"
@@ -530,7 +543,11 @@ func decisionLabel(decision string) string {
 
 func autoConfirmLabels(skip map[string]bool) []string {
 	var out []string
-	for _, d := range []string{"approve", "request_changes", DecisionPreApprove, DecisionRemovePreApproval, DecisionType} {
+	kinds := []string{"approve", "request_changes", DecisionPreApprove, DecisionRemovePreApproval}
+	for _, t := range []internal.ReviewType{internal.ReviewDefault, internal.ReviewHuman, internal.ReviewNone} {
+		kinds = append(kinds, DecisionType+":"+string(t))
+	}
+	for _, d := range kinds {
 		if skip[d] {
 			out = append(out, decisionLabel(d))
 		}

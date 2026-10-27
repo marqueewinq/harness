@@ -132,6 +132,12 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		if latestApproval == nil || latestApproval.CommitSHA == "" {
 			return fmt.Errorf("task %s has no approval pinned to a commit; run: harness work check %s, then harness review request %s", id, id, id)
 		}
+		// A pre-approval only stands while the type is none: moving the type
+		// away (t picker) without the p toggle must not leave it mergeable.
+		if IsPreApproval(latestApproval.Reviewer) && task.ReviewType != ReviewNone {
+			return fmt.Errorf("task %s's latest approval is a pre-approval (%s), and its review type is now %s; run: harness work check %s, then harness review request %s",
+				id, latestApproval.Reviewer, task.ReviewType, id, id)
+		}
 		currentHead, err := a.Git.RevParse(task.Branch)
 		if err != nil {
 			return fmt.Errorf("resolving %s: %w", task.Branch, err)

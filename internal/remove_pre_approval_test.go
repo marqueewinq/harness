@@ -64,6 +64,35 @@ func TestRemovePreApprovalDropsDashboardApproval(t *testing.T) {
 	}
 }
 
+// Leaving none through the type picker (not the p toggle) keeps the task
+// APPROVED, but its pre-approval must not carry it through merge.
+func TestMergeRefusesPreApprovalAfterTypeChange(t *testing.T) {
+	app, task := requestedTask(t)
+	if _, err := app.RecordTerminalStop(task.ID, StopApprove, "dashboard", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.RecordTerminalReviewType(task.ID, ReviewNone, "dashboard", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.RecordTerminalReviewType(task.ID, ReviewHuman, "dashboard", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.DB.GetTask(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateApproved {
+		t.Fatalf("setup: state %s, want APPROVED", got.State)
+	}
+	err = app.CmdWorkMerge(task.ID)
+	if err == nil || !strings.Contains(err.Error(), "is a pre-approval") {
+		t.Fatalf("merge err = %v, want pre-approval refusal", err)
+	}
+	if got, _ := app.DB.GetTask(task.ID); got.State != StateApproved {
+		t.Errorf("state = %s; refusal must not change state", got.State)
+	}
+}
+
 func TestRemovePreApprovalKeepsHumanApproval(t *testing.T) {
 	app, task := requestedTask(t)
 	if _, err := app.RecordTerminalVerdict(task.ID, "approve", "", "dashboard", ""); err != nil {
