@@ -201,7 +201,7 @@ func TestRenderExpandedDescriptionGolden(t *testing.T) {
 		"    1. rebase epic/planning onto main, keeping each task's merge commit so that the history stays readable for reviewers",
 		"    2. re-run checks"}
 	d.Lines = append(append(append([]string{}, d.Lines[:2]...), desc...), d.Lines[2:]...)
-	d.Spans = []Span{{3, 8}}
+	d.Spans = []Span{{Start: 3, End: 8}}
 	ui := UIState{Selected: 4, DetailOpen: true, Detail: d, Expanded: true, Actions: DefaultActions(true)}
 	out := Render(sampleSnapshot(), ui, 100, 30)
 	renderLines(t, out, 30)

@@ -57,21 +57,11 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	b.text("", "Notes: ", t.Notes)
 	editLine(app, &b, t.ID)
 
-	if len(trs) > 0 {
-		add("History:")
-		start := 0
-		if len(trs) > historyMaxLines {
-			start = len(trs) - historyMaxLines
-			add("  … %d earlier", start)
-		}
-		for _, tr := range trs[start:] {
-			from := tr.FromState
-			if from == "" {
-				from = "(created)"
-			}
-			add("  %s  %s → %s", tr.CreatedAt.Format("01-02 15:04:05"), from, tr.ToState)
-		}
+	var hist []historyEntry
+	for _, tr := range trs {
+		hist = append(hist, historyEntry{at: tr.CreatedAt, from: tr.FromState, to: tr.ToState, note: tr.Note})
 	}
+	b.history(hist)
 
 	runs, err := app.DB.GetLatestCheckRuns(t.ID)
 	if err != nil {
@@ -166,6 +156,15 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	}
 	done, total := internal.CountDone(tasks)
 	add("Tasks: %d/%d done", done, total)
+	trs, err := app.DB.GetEpicTransitions(e.ID)
+	if err != nil {
+		return Detail{}, err
+	}
+	var entries []historyEntry
+	for _, tr := range trs {
+		entries = append(entries, historyEntry{at: tr.CreatedAt, from: tr.FromState, to: tr.ToState, note: tr.Note})
+	}
+	b.history(entries)
 	req, err := app.DB.GetLatestReviewRequest("", e.ID)
 	if err != nil {
 		return Detail{}, err

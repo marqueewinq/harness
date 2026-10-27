@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -31,9 +32,14 @@ func textLines(s string) []string {
 // review comments) on wide terminals, for readability.
 const maxTextWidth = 150
 
-// Span marks Lines[Start:End] as user-written text, which a pane wraps at
-// maxTextWidth and, collapsed, caps at collapsedTextLines wrapped lines.
-type Span struct{ Start, End int }
+// Span marks Lines[Start:End] as a block the expand key opens. By default it
+// is user-written text, which a pane wraps at maxTextWidth and, collapsed,
+// caps at its first collapsedTextLines wrapped lines. With Tail > 0 it is a
+// log (e.g. state history): collapsed, it keeps its last Tail lines.
+type Span struct {
+	Start, End int
+	Tail       int
+}
 
 type doc struct {
 	lines []string
@@ -63,7 +69,36 @@ func (d *doc) textUnder(start int, indent, s string) {
 			d.lines = append(d.lines, indent+"  "+l)
 		}
 	}
-	d.spans = append(d.spans, Span{start, len(d.lines)})
+	d.spans = append(d.spans, Span{Start: start, End: len(d.lines)})
+}
+
+// historyEntry is one state transition for doc.history.
+type historyEntry struct {
+	at       time.Time
+	from, to string
+	note     string
+}
+
+// history adds the state history as a log block: oldest first, notes on
+// their entry's line; collapsed, only the last historyMaxLines show.
+func (d *doc) history(entries []historyEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	d.add("History:")
+	start := len(d.lines)
+	for _, e := range entries {
+		from := e.from
+		if from == "" {
+			from = "(created)"
+		}
+		line := fmt.Sprintf("  %s  %s → %s", e.at.Format("01-02 15:04:05"), from, e.to)
+		if note := flatten(e.note); note != "" {
+			line += " · " + note
+		}
+		d.lines = append(d.lines, line)
+	}
+	d.spans = append(d.spans, Span{Start: start, End: len(d.lines), Tail: historyMaxLines})
 }
 
 // wrapLines wraps each line to width display cells, keeping its indentation
@@ -92,12 +127,23 @@ func wrapLines(lines []string, width int) []string {
 // with a hint. hidden counts the wrapped lines left out.
 func paneLines(st Styles, lines []string, spans []Span, width int, expanded bool) (out []string, hidden int) {
 	for i := 0; i < len(lines); {
-		span := Span{i, i + 1}
+		span := Span{Start: i, End: i + 1}
 		user := false
 		for _, s := range spans {
 			if s.Start == i && s.End > s.Start {
 				span, user = s, true
 			}
+		}
+		if user && span.Tail > 0 {
+			block := lines[span.Start:span.End]
+			if n := len(block) - span.Tail; !expanded && n > 0 {
+				hidden += n
+				out = append(out, st.Dim.Render(fmt.Sprintf("  … %d earlier — x to expand", n)))
+				block = block[n:]
+			}
+			out = append(out, wrapLines(block, width)...)
+			i = span.End
+			continue
 		}
 		w := width
 		if user {
