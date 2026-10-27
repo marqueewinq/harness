@@ -75,6 +75,10 @@ func (f *fakeLoader) loader() Loader {
 			}
 			return "Review stopped: " + string(outcome) + "\n", nil
 		},
+		RemovePreApproval: func(subject, reason string) (string, error) {
+			f.calls = append(f.calls, fmt.Sprintf("unpreapprove %s %q", subject, reason))
+			return "Pre-approval of " + subject + " removed.\n", nil
+		},
 		SetType: func(subject string, r internal.ReviewType, reason string) (string, error) {
 			f.calls = append(f.calls, fmt.Sprintf("type %s %s %q", subject, r, reason))
 			if f.typeErr != nil {

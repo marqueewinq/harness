@@ -24,6 +24,8 @@ type Loader struct {
 	Stop func(subject string, outcome internal.StopOutcome, sha string) (string, error)
 	// SetType records a review type change a human confirmed.
 	SetType func(subject string, r internal.ReviewType, reason string) (string, error)
+	// RemovePreApproval undoes a pre-approval a human confirmed.
+	RemovePreApproval func(subject, reason string) (string, error)
 }
 
 // DashboardVia labels dashboard verdicts: terminal:<user> (dashboard).
@@ -43,7 +45,16 @@ func AppLoader(app *internal.App, all bool) Loader {
 		SetType: func(subject string, r internal.ReviewType, reason string) (string, error) {
 			return app.RecordTerminalReviewType(subject, r, DashboardVia, reason)
 		},
+		RemovePreApproval: func(subject, reason string) (string, error) {
+			return app.RecordTerminalRemovePreApproval(subject, DashboardVia, reason)
+		},
 	}
+}
+
+// pastGate: a QUEUED or MERGING task's pre-approval can no longer be removed.
+func pastGate(r *Row) bool {
+	return r != nil && r.Kind == RowTask && r.Task != nil &&
+		(r.Task.State == internal.StateQueued || r.Task.State == internal.StateMerging)
 }
 
 // changeReviewType sets subject's review type to; with a review in flight
@@ -169,14 +180,25 @@ func DefaultActions(allowed bool) []Action {
 		_, ok := rowReviewType(c.Row)
 		return allowed && ok
 	}
-	preApprovable := func(c Context) bool {
+	isNone := func(c Context) bool {
 		rt, ok := rowReviewType(c.Row)
-		return allowed && ok && rt != internal.ReviewNone
+		return ok && rt == internal.ReviewNone
+	}
+	// p toggles: pre-approve, or on a none subject remove the pre-approval.
+	preApprovable := func(c Context) bool {
+		_, ok := rowReviewType(c.Row)
+		return allowed && ok && !(isNone(c) && pastGate(c.Row))
+	}
+	togglePreApproval := func(m *Model, r Row) tea.Cmd {
+		if rt, _ := rowReviewType(&r); rt == internal.ReviewNone {
+			return m.openModal(DecisionRemovePreApproval, r)
+		}
+		return m.openModal(DecisionPreApprove, r)
 	}
 	return []Action{
 		{Key: "a", Label: "approve", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("approve", r) }},
 		{Key: "r", Label: "reject", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("request_changes", r) }},
-		{Key: "p", Label: "pre-approve", Enabled: preApprovable, Start: func(m *Model, r Row) tea.Cmd { return m.openModal(DecisionPreApprove, r) }},
+		{Key: "p", Label: "pre-approve", Enabled: preApprovable, Start: togglePreApproval, AltLabel: "remove pre-approval", UseAlt: isNone},
 		{Key: "t", Label: "type", Enabled: typed, Start: func(m *Model, r Row) tea.Cmd { return m.openModal(DecisionType, r) }},
 		{Key: "d", Label: "diff", Enabled: hasRow, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) }},
 		{Key: "x", Label: "expand", Enabled: func(c Context) bool { return c.Expandable }},
@@ -382,6 +404,8 @@ func (m Model) submit(md Modal, skipped string) tea.Cmd {
 			report, err = changeReviewType(load, md.Subject, internal.ReviewNone, md.Comment, md.SHA)
 		case DecisionType:
 			report, err = changeReviewType(load, md.Subject, md.Choice, "", md.SHA)
+		case DecisionRemovePreApproval:
+			report, err = load.RemovePreApproval(md.Subject, md.Comment)
 		default:
 			report, err = load.Verdict(md.Subject, md.Decision, md.Comment, md.SHA)
 		}
@@ -496,6 +520,8 @@ func decisionLabel(decision string) string {
 		return "reject"
 	case DecisionPreApprove:
 		return "pre-approve"
+	case DecisionRemovePreApproval:
+		return "remove pre-approval"
 	case DecisionType:
 		return "type change"
 	}
@@ -504,7 +530,7 @@ func decisionLabel(decision string) string {
 
 func autoConfirmLabels(skip map[string]bool) []string {
 	var out []string
-	for _, d := range []string{"approve", "request_changes", DecisionPreApprove, DecisionType} {
+	for _, d := range []string{"approve", "request_changes", DecisionPreApprove, DecisionRemovePreApproval, DecisionType} {
 		if skip[d] {
 			out = append(out, decisionLabel(d))
 		}
@@ -607,10 +633,8 @@ func (m Model) disabledReason(key string) string {
 		if !m.opts.AllowActions {
 			return "is disabled: " + m.opts.DenyReason
 		}
-		if key == "p" {
-			if rt, ok := rowReviewType(m.actionRow()); ok && rt == internal.ReviewNone {
-				return "does not apply: review type is already none"
-			}
+		if row := m.actionRow(); key == "p" && pastGate(row) {
+			return fmt.Sprintf("cannot remove the pre-approval: %s is %s, already past the review gate", row.ID, row.Task.State)
 		}
 		return "applies to a task row or epic header that is not merged or closed"
 	case "x":

@@ -29,6 +29,12 @@ func (a *App) CmdEpicMerge(epicID string) error {
 		if latestApproval == nil {
 			return fmt.Errorf("epic %s has no approval. Run: harness review request %s", epicID, epicID)
 		}
+		// A pre-approval only stands while the epic's type is none; once the
+		// type is back to default or human it is not a review.
+		if IsPreApproval(latestApproval.Reviewer) {
+			return fmt.Errorf("epic %s's latest approval is a pre-approval (%s), and its review type is now %s. Run: harness review request %s",
+				epicID, latestApproval.Reviewer, e.ReviewType, epicID)
+		}
 		currentHead, err := a.Git.RevParse(e.Branch)
 		if err != nil {
 			return fmt.Errorf("cannot get HEAD of %s: %w", e.Branch, err)

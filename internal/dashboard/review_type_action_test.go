@@ -314,11 +314,12 @@ func TestReviewTypeActionsRefused(t *testing.T) {
 		}
 	}
 
+	// A none task already queued is past the gate: its pre-approval stays.
 	s := sampleSnapshot()
-	s.Groups[1].Tasks[0].ReviewType = internal.ReviewNone
-	m = selectRow(t, started(t, &fakeLoader{snap: s}), rowTask030)
-	if next := press(t, m, "p"); next.ui.Modal != nil || !strings.Contains(next.ui.Status, "already none") {
-		t.Errorf("p on a none task: modal=%v status=%q", next.ui.Modal, next.ui.Status)
+	s.Groups[0].Tasks[2].ReviewType = internal.ReviewNone
+	m = selectRow(t, started(t, &fakeLoader{snap: s}), 5)
+	if next := press(t, m, "p"); next.ui.Modal != nil || !strings.Contains(next.ui.Status, "already past the review gate") {
+		t.Errorf("p on a queued none task: modal=%v status=%q", next.ui.Modal, next.ui.Status)
 	}
 	if next := press(t, m, "t"); next.ui.Modal == nil {
 		t.Error("t refused on a none task")
@@ -326,4 +327,73 @@ func TestReviewTypeActionsRefused(t *testing.T) {
 	if len(f.calls) != 0 {
 		t.Errorf("loader called: %v", f.calls)
 	}
+}
+
+func TestPreApproveToggle(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot()}
+	m := selectRow(t, started(t, f), rowTask030)
+	m = press(t, m, "p", "enter", "y")
+	if want := []string{`type task-030 none ""`}; !reflect.DeepEqual(f.calls, want) {
+		t.Fatalf("pre-approve calls = %v", f.calls)
+	}
+
+	// The next snapshot shows the task as none: p now removes the pre-approval.
+	f.snap = sampleSnapshot()
+	f.snap.Groups[1].Tasks[0].ReviewType = internal.ReviewNone
+	m = press(t, m, "f")
+	if bar := strings.Split(m.View(), "\n"); !strings.Contains(bar[len(bar)-1], "remove pre-approval") {
+		t.Errorf("key bar label did not switch: %q", bar[len(bar)-1])
+	}
+	m = press(t, m, "p")
+	if m.ui.Modal == nil || m.ui.Modal.Decision != DecisionRemovePreApproval {
+		t.Fatalf("modal = %+v status=%q", m.ui.Modal, m.ui.Status)
+	}
+	if v := m.View(); !strings.Contains(v, "Remove the pre-approval of task-030") || !strings.Contains(v, "goes back to IN_PROGRESS") {
+		t.Errorf("remove modal:\n%s", v)
+	}
+	m = typeText(t, m, "wants review")
+	m = press(t, m, "enter", "a")
+	if want := `unpreapprove task-030 "wants review"`; f.calls[len(f.calls)-1] != want {
+		t.Errorf("calls = %v, want last %s", f.calls, want)
+	}
+	if !strings.Contains(strings.Split(m.View(), "\n")[0], "auto-confirm: remove pre-approval") {
+		t.Errorf("header lacks the remove kind: %q", strings.Split(m.View(), "\n")[0])
+	}
+	// Its own kind: pre-approving still asks.
+	f.snap = sampleSnapshot()
+	m = press(t, m, "f", "p", "enter")
+	if m.ui.Modal == nil || m.ui.Modal.Step != StepConfirm {
+		t.Errorf("pre-approve skipped its confirmation: %+v", m.ui.Modal)
+	}
+}
+
+func TestRemovePreApprovalKeyBar(t *testing.T) {
+	st := NewStyles(true)
+	s := sampleSnapshot()
+	s.Groups[1].Tasks[0].ReviewType = internal.ReviewNone
+	row := Rows(s)[rowTask030]
+	for _, allowed := range []bool{true, false} {
+		bar := keyBar(st, DefaultActions(allowed), Context{Row: &row})
+		want := disabledKey(st, "remove pre-approval", "p")
+		if allowed {
+			want = enabledKey(st, "remove pre-approval", "p")
+		}
+		if !strings.Contains(bar, want) {
+			t.Errorf("allowed=%v: bar = %q", allowed, bar)
+		}
+	}
+	if plain := keyBar(NewStyles(false), DefaultActions(true), Context{Row: &row}); !strings.Contains(plain, "  remove pre-approval  type  ") {
+		t.Errorf("plain bar = %q", plain)
+	}
+}
+
+func TestRenderRemovePreApprovalGolden(t *testing.T) {
+	s := sampleSnapshot()
+	s.Groups[1].Tasks[0].ReviewType = internal.ReviewNone
+	ui := UIState{Selected: rowTask030, Actions: DefaultActions(true), Modal: &Modal{
+		Decision: DecisionRemovePreApproval, Subject: "task-030", Step: StepConfirm, Comment: "wants review", Option: ConfirmNo,
+	}}
+	out := Render(s, ui, 120, 30)
+	renderLines(t, out, 30)
+	checkGolden(t, "tui_remove_pre_approval.golden", out+"\n")
 }

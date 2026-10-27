@@ -180,7 +180,7 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 | `x` | expand: descriptions and review comments in the detail and diff panes are wrapped to the pane width with their line breaks kept, but each shows at most 6 lines until `x` expands it; `x` again or moving the selection collapses |
 | `a` | on a row with an open review request: approve; optional comment, then confirm |
 | `r` | on a row with an open review request: reject; a comment is required, then confirm |
-| `p` | pre-approve a task row or epic header that is not merged or closed: sets review type `none` (no `review.allow_none` needed: it is a human decision); optional reason, then confirm. With a review in flight it also approves the requested commit and stops the reviewer |
+| `p` | pre-approve a task row or epic header that is not merged or closed: sets review type `none` (no `review.allow_none` needed: it is a human decision); optional reason, then confirm. With a review in flight it also approves the requested commit and stops the reviewer. On a subject whose type is already `none` (pre-approved or self-declared) the key reads **remove pre-approval** and sets the type back to `default` (recorded as `pre-approval removed by terminal:<user> (dashboard)`); a task that is `APPROVED` by a pre-approval goes back to `IN_PROGRESS`, so it needs checks and a review again, and an epic's pre-approval no longer counts for `harness epic merge`. Refused for `QUEUED`/`MERGING` tasks, which are past the review gate |
 | `t` | review type picker (`default` / `human` / `none`, any direction) for a task row or epic header that is not merged or closed, then confirm. With a review in flight, `none` works like `p` and `human` revokes the request, stops the agent reviewer and returns the task to `CHECKS_PASSED`; `default` only changes the type. An `APPROVED` or `QUEUED` task keeps its state |
 
 Task rows and epic headers show an **approval** column: the review type and
@@ -195,7 +195,8 @@ the selected row keep a faint coloured letter and a dimmed word.
 Confirming shows what will happen (e.g. "Approve task-026 at 81742677?") and a
 chooser: `y` yes, `n`, `esc` or `enter` no (the default), `a` yes and don't ask
 again; `←`/`→` move the highlight and `enter` picks it. "Don't ask again"
-applies to that kind of decision (approve, reject, pre-approve, type change)
+applies to that kind of decision (approve, reject, pre-approve, remove
+pre-approval, type change)
 for the rest of this dashboard session only: nothing is saved, the header
 lists the kinds as `auto-confirm: …`, and the status line notes each skipped
 confirmation. Comments and reasons are still asked for. The CLI prompt of

@@ -84,6 +84,16 @@ type Action struct {
 	Label   string
 	Enabled func(c Context) bool
 	Start   func(m *Model, row Row) tea.Cmd
+	// AltLabel replaces Label when UseAlt holds, for a key that toggles.
+	AltLabel string
+	UseAlt   func(c Context) bool
+}
+
+func (a Action) label(c Context) string {
+	if a.AltLabel != "" && a.UseAlt != nil && a.UseAlt(c) {
+		return a.AltLabel
+	}
+	return a.Label
 }
 
 func (a Action) enabled(c Context) bool {
@@ -123,8 +133,9 @@ const (
 
 // Modal decisions besides the verdicts "approve" and "request_changes".
 const (
-	DecisionPreApprove = "preapprove"
-	DecisionType       = "type"
+	DecisionPreApprove        = "preapprove"
+	DecisionRemovePreApproval = "unpreapprove"
+	DecisionType              = "type"
 )
 
 // ReviewTypes is the type picker's order.
@@ -509,6 +520,12 @@ func modalLines(st Styles, m *Modal) []string {
 		if m.SHA != "" {
 			note = fmt.Sprintf("Approves the requested commit %s and stops its review.", shortSHA(m.SHA))
 		}
+	case DecisionRemovePreApproval:
+		title = fmt.Sprintf("Remove the pre-approval of %s (review type back to default)?", m.Subject)
+		commentPrompt = "Reason (optional, enter to continue):"
+		if !strings.HasPrefix(m.Subject, "epic-") {
+			note = "If its approval came from the pre-approval, it goes back to IN_PROGRESS and needs checks and a review again."
+		}
 	case DecisionType:
 		title = fmt.Sprintf("Review type of %s (now %s)", m.Subject, m.Current)
 		if m.Step == StepConfirm {
@@ -585,11 +602,12 @@ func keyBar(st Styles, actions []Action, c Context) string {
 		if !a.enabled(c) {
 			key, rest = st.AccentDim, st.Dim
 		}
+		label := a.label(c)
 		if a.Hint != "" {
-			parts = append(parts, key.Render(a.Hint)+" "+rest.Render(a.Label))
+			parts = append(parts, key.Render(a.Hint)+" "+rest.Render(label))
 			continue
 		}
-		parts = append(parts, accentKey(key, rest, a.Label, a.Key))
+		parts = append(parts, accentKey(key, rest, label, a.Key))
 	}
 	return " " + strings.Join(parts, "  ")
 }
