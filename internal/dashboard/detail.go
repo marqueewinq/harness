@@ -48,7 +48,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	}
 	state := string(t.State)
 	if !since.IsZero() {
-		state += " for " + fmtAge(now.Sub(since))
+		state += " for " + internal.FormatDuration(now.Sub(since))
 	}
 	add("State: %s · branch %s · base %s", state, orDash(t.Branch), orDash(t.BaseBranch))
 	add("Worktree: %s", orDash(t.WorktreePath))
@@ -61,7 +61,7 @@ func taskDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	for _, tr := range trs {
 		hist = append(hist, historyEntry{at: tr.CreatedAt, from: tr.FromState, to: tr.ToState, note: tr.Note})
 	}
-	b.history(hist)
+	b.history(hist, now)
 
 	runs, err := app.DB.GetLatestCheckRuns(t.ID)
 	if err != nil {
@@ -164,7 +164,7 @@ func epicDetail(app *internal.App, row Row, now time.Time) (Detail, error) {
 	for _, tr := range trs {
 		entries = append(entries, historyEntry{at: tr.CreatedAt, from: tr.FromState, to: tr.ToState, note: tr.Note})
 	}
-	b.history(entries)
+	b.history(entries, now)
 	req, err := app.DB.GetLatestReviewRequest("", e.ID)
 	if err != nil {
 		return Detail{}, err

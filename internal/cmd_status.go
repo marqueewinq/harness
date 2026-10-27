@@ -185,7 +185,12 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	transitions, _ := a.DB.GetTaskTransitions(task.ID)
 	if len(transitions) > 0 {
 		fmt.Println("\nState history:")
-		for _, tr := range transitions {
+		times := make([]time.Time, len(transitions))
+		for i, tr := range transitions {
+			times[i] = tr.CreatedAt
+		}
+		stays := TimeInStates(times, time.Now())
+		for i, tr := range transitions {
 			from := tr.FromState
 			if from == "" {
 				from = "(created)"
@@ -194,7 +199,8 @@ func (a *App) CmdWorkStatus(taskID string) error {
 			if tr.Note != "" {
 				note = "  (" + tr.Note + ")"
 			}
-			fmt.Printf("  %s  %s -> %s%s\n", tr.CreatedAt.Format("15:04:05"), from, tr.ToState, note)
+			fmt.Printf("  %s  %s -> %s  %s%s\n", tr.CreatedAt.Format("15:04:05"), from, tr.ToState,
+				FormatStay(stays[i], i == len(transitions)-1), note)
 		}
 	}
 

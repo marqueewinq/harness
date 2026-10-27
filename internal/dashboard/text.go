@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/marqueewinq/harness/internal"
 )
 
 // collapsedTextLines is how many wrapped lines of one piece of user text a
@@ -79,20 +80,28 @@ type historyEntry struct {
 	note     string
 }
 
-// history adds the state history as a log block: oldest first, notes on
-// their entry's line; collapsed, only the last historyMaxLines show.
-func (d *doc) history(entries []historyEntry) {
+// history adds the state history as a log block: oldest first, each entry
+// with how long the subject stayed in the state it entered (the last one
+// until now), notes on their entry's line; collapsed, only the last
+// historyMaxLines show.
+func (d *doc) history(entries []historyEntry, now time.Time) {
 	if len(entries) == 0 {
 		return
 	}
 	d.add("History:")
 	start := len(d.lines)
-	for _, e := range entries {
+	times := make([]time.Time, len(entries))
+	for i, e := range entries {
+		times[i] = e.at
+	}
+	stays := internal.TimeInStates(times, now)
+	for i, e := range entries {
 		from := e.from
 		if from == "" {
 			from = "(created)"
 		}
-		line := fmt.Sprintf("  %s  %s → %s", e.at.Format("01-02 15:04:05"), from, e.to)
+		line := fmt.Sprintf("  %s  %s → %s  %s", e.at.Format("01-02 15:04:05"), from, e.to,
+			internal.FormatStay(stays[i], i == len(entries)-1))
 		if note := flatten(e.note); note != "" {
 			line += " · " + note
 		}

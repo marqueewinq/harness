@@ -28,10 +28,29 @@ func historyDetail(n int) *Detail {
 		entries = append(entries, e)
 		from = to
 	}
-	b.history(entries)
+	b.history(entries, start.Add(time.Duration(n-1)*time.Minute+90*time.Second))
 	b.add("Review: not requested")
 	d := b.detail("task:task-027", "task-027 Sync epic branch")
 	return &d
+}
+
+func TestHistoryShowsTimeInEachState(t *testing.T) {
+	t0 := time.Date(2026, 10, 27, 17, 31, 7, 0, time.Local)
+	var b doc
+	b.history([]historyEntry{
+		{at: t0, to: "IN_PROGRESS"},
+		{at: t0.Add(51 * time.Second), from: "IN_PROGRESS", to: "CHECKS_RUNNING"},
+		{at: t0.Add(90 * time.Minute), from: "CHECKS_RUNNING", to: "CHECKS_FAILED", note: "test failed"},
+	}, t0.Add(102*time.Minute))
+	want := []string{
+		"History:",
+		"  10-27 17:31:07  (created) → IN_PROGRESS  51s",
+		"  10-27 17:31:58  IN_PROGRESS → CHECKS_RUNNING  1h29m",
+		"  10-27 19:01:07  CHECKS_RUNNING → CHECKS_FAILED  12m (now) · test failed",
+	}
+	if strings.Join(b.lines, "\n") != strings.Join(want, "\n") {
+		t.Errorf("history:\n%s\nwant:\n%s", strings.Join(b.lines, "\n"), strings.Join(want, "\n"))
+	}
 }
 
 func TestHistoryCollapsedAndExpanded(t *testing.T) {
