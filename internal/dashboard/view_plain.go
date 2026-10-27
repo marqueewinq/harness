@@ -19,6 +19,7 @@ type Styles struct {
 	Group     lipgloss.Style
 	Dim       lipgloss.Style
 	Pass      lipgloss.Style
+	Approved  lipgloss.Style
 	Running   lipgloss.Style
 	Fail      lipgloss.Style
 	Gutter    lipgloss.Style
@@ -44,7 +45,8 @@ func NewStyles(color bool) Styles {
 		Group:   r.NewStyle().Bold(true),
 		Dim:     r.NewStyle().Faint(true),
 		Pass:    r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "2"}),
-		Running: r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "3"}),
+		Approved: r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "6"}),
+		Running:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "3"}),
 		Fail:    r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}),
 		Gutter:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}).Bold(true),
 		Accent:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "6"}).Bold(true),
@@ -252,7 +254,9 @@ func recentLine(st Styles, t TaskRow) string {
 
 func stateStyle(st Styles, s internal.TaskState) lipgloss.Style {
 	switch s {
-	case internal.StateChecksPassed, internal.StateApproved, internal.StateMerged:
+	case internal.StateApproved:
+		return st.Approved
+	case internal.StateChecksPassed, internal.StateMerged:
 		return st.Pass
 	case internal.StateChecksRunning, internal.StateReviewRequested, internal.StateQueued, internal.StateMerging, internal.StateRequestChanges:
 		return st.Running
