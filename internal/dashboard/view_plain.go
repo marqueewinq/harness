@@ -39,17 +39,17 @@ func NewStyles(color bool) Styles {
 		r.SetColorProfile(termenv.Ascii)
 	}
 	return Styles{
-		Plain:   r.NewStyle(),
-		Header:  r.NewStyle().Bold(true),
-		Section: r.NewStyle().Bold(true).Underline(true),
-		Group:   r.NewStyle().Bold(true),
-		Dim:     r.NewStyle().Faint(true),
-		Pass:    r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "2"}),
+		Plain:    r.NewStyle(),
+		Header:   r.NewStyle().Bold(true),
+		Section:  r.NewStyle().Bold(true).Underline(true),
+		Group:    r.NewStyle().Bold(true),
+		Dim:      r.NewStyle().Faint(true),
+		Pass:     r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "2"}),
 		Approved: r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "6"}),
 		Running:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "3"}),
-		Fail:    r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}),
-		Gutter:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}).Bold(true),
-		Accent:  r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "6"}).Bold(true),
+		Fail:     r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}),
+		Gutter:   r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "1"}).Bold(true),
+		Accent:   r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "6"}).Bold(true),
 		// AccentDim keeps a disabled action's hotkey coloured but faint.
 		AccentDim: r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "6"}).Faint(true),
 	}
