@@ -119,8 +119,15 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	// re-verified once the queue is ours, since the branch can move while
 	// waiting.
 	var pinned string
+	// notesStillCovered repeats the notes gate once the queue is ours: a human
+	// note added while waiting must stop the merge like a moved branch does.
+	var notesStillCovered func() error
 	if unreviewed {
 		if pinned, err = a.requireCheckedHead(task); err != nil {
+			return err
+		}
+		notesStillCovered = func() error {
+			_, err := a.requireCheckedHead(task)
 			return err
 		}
 		unreviewedNote = unreviewedMergeNote(task.ReviewSummary())
@@ -159,6 +166,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 			return err
 		}
 		pinned = latestApproval.CommitSHA
+		notesStillCovered = func() error { return a.requireNotesCoveredByApproval(id, "", latestApproval) }
 	}
 
 	// From here on Ctrl-C/SIGTERM must not kill harness mid-merge: the merge
@@ -213,6 +221,9 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		return a.failMerge(id, fmt.Errorf("resolving %s: %w", task.Branch, err))
 	} else if head != pinned {
 		return a.failMerge(id, fmt.Errorf("branch moved while waiting in the merge queue (%s -> %s); re-run checks and review", shortSHA(pinned), shortSHA(head)))
+	}
+	if err := notesStillCovered(); err != nil {
+		return a.failMerge(id, fmt.Errorf("while waiting in the merge queue: %w", err))
 	}
 
 	strategy, err := NewMergeStrategy(a.Config.Merge.Strategy)
