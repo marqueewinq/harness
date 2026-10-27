@@ -20,13 +20,16 @@ type Review struct {
 	CommitSHA string
 	Reviewer  string
 	CreatedAt time.Time
+	// NotesSnapshot is the subject's notes the approval covers; invalid on
+	// rows predating notes pinning.
+	NotesSnapshot sql.NullString
 }
 
-const reviewColumns = `id, COALESCE(task_id, ''), COALESCE(epic_id, ''), decision, comment, commit_sha, reviewer, created_at`
+const reviewColumns = `id, COALESCE(task_id, ''), COALESCE(epic_id, ''), decision, comment, commit_sha, reviewer, created_at, notes_snapshot`
 
 func scanReview(s rowScanner) (*Review, error) {
 	r := &Review{}
-	err := s.Scan(&r.ID, &r.TaskID, &r.EpicID, &r.Decision, &r.Comment, &r.CommitSHA, &r.Reviewer, &r.CreatedAt)
+	err := s.Scan(&r.ID, &r.TaskID, &r.EpicID, &r.Decision, &r.Comment, &r.CommitSHA, &r.Reviewer, &r.CreatedAt, &r.NotesSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +101,10 @@ type ReviewRequest struct {
 	ReviewerFinished  time.Time
 	ReviewerExitCode  int
 	ReviewerOutcome   string
+
+	// NotesSnapshot is the subject's notes when the request was opened, which
+	// the reviewer prompt carries; invalid on rows predating notes pinning.
+	NotesSnapshot sql.NullString
 }
 
 const (
@@ -144,14 +151,14 @@ func (r *ReviewRequest) RunStatus(now time.Time) string {
 
 const reviewRequestColumns = `id, COALESCE(task_id, ''), COALESCE(epic_id, ''), commit_sha, token_hash, created_at,
 	resolved_at IS NOT NULL, resolution, reviewer_pid, reviewer_owner_pid, reviewer_started_unix,
-	reviewer_heartbeat_unix, reviewer_finished_unix, reviewer_exit_code, reviewer_outcome`
+	reviewer_heartbeat_unix, reviewer_finished_unix, reviewer_exit_code, reviewer_outcome, notes_snapshot`
 
 func scanReviewRequest(s rowScanner) (*ReviewRequest, error) {
 	r := &ReviewRequest{}
 	var started, heartbeat, finished int64
 	err := s.Scan(&r.ID, &r.TaskID, &r.EpicID, &r.CommitSHA, &r.TokenHash, &r.CreatedAt,
 		&r.Resolved, &r.Resolution, &r.ReviewerPID, &r.ReviewerOwnerPID, &started,
-		&heartbeat, &finished, &r.ReviewerExitCode, &r.ReviewerOutcome)
+		&heartbeat, &finished, &r.ReviewerExitCode, &r.ReviewerOutcome, &r.NotesSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -206,9 +213,13 @@ func (db *DB) OpenReviewRequestID(taskID, epicID, commitSHA string) (string, int
 		); err != nil {
 			return err
 		}
+		notes, err := readSubjectNotes(tx, taskID, epicID)
+		if err != nil {
+			return err
+		}
 		res, err := tx.Exec(
-			`INSERT INTO review_requests (`+col+`, commit_sha, token_hash) VALUES (?, ?, ?)`,
-			id, commitSHA, hashReviewToken(token),
+			`INSERT INTO review_requests (`+col+`, commit_sha, token_hash, notes_snapshot) VALUES (?, ?, ?, ?)`,
+			id, commitSHA, hashReviewToken(token), notes.Notes,
 		)
 		if err != nil {
 			return err
@@ -341,13 +352,26 @@ func (db *DB) FinishReviewerRun(reqID int, exitOutcome string, exitCode int) (st
 }
 
 // ResolveReviewRequest records the verdict and closes the request atomically,
-// so one request yields at most one verdict.
+// so one request yields at most one verdict. An approve is refused, leaving
+// the request open, if the subject's notes changed since the request was
+// opened: the reviewer did not see them. A reject is always recorded.
 func (db *DB) ResolveReviewRequest(req *ReviewRequest, decision, comment, reviewer string) error {
 	return db.WithTx(func(tx *sql.Tx) error {
+		notes, err := readSubjectNotes(tx, req.TaskID, req.EpicID)
+		if err != nil {
+			return err
+		}
+		var snapshot sql.NullString
+		if err := tx.QueryRow(`SELECT notes_snapshot FROM review_requests WHERE id = ?`, req.ID).Scan(&snapshot); err != nil {
+			return err
+		}
+		if decision == "approve" && snapshot.Valid && snapshot.String != notes.Notes {
+			return notes.changedDuringReview(req.TaskID + req.EpicID)
+		}
 		if err := closeOpenRequest(tx, req.ID, resolutionVerdict); err != nil {
 			return err
 		}
-		return insertReview(tx, req, decision, comment, reviewer)
+		return insertReview(tx, req, decision, comment, reviewer, snapshot)
 	})
 }
 
@@ -356,6 +380,11 @@ func (db *DB) ResolveReviewRequest(req *ReviewRequest, decision, comment, review
 // the request is revoked without a verdict. A non-empty taskState moves the
 // task in the same transaction. Either way the token is dead on commit, so a
 // reviewer still running gets "already resolved".
+//
+// A human pre-approval is allowed even if the notes changed during the
+// review: it is a human's decision taken with the current notes in view
+// (humans write the notes), not a reviewer verdict on a prompt that lacked
+// them. The approval therefore covers the notes as they are now.
 func (db *DB) StopReviewRequest(req *ReviewRequest, approver string, taskState TaskState) error {
 	return db.WithTx(func(tx *sql.Tx) error {
 		resolution := resolutionRevokedByHuman
@@ -366,7 +395,12 @@ func (db *DB) StopReviewRequest(req *ReviewRequest, approver string, taskState T
 			return err
 		}
 		if approver != "" {
-			if err := insertReview(tx, req, "approve", "", approver); err != nil {
+			notes, err := readSubjectNotes(tx, req.TaskID, req.EpicID)
+			if err != nil {
+				return err
+			}
+			current := sql.NullString{String: notes.Notes, Valid: true}
+			if err := insertReview(tx, req, "approve", "", approver, current); err != nil {
 				return err
 			}
 		}
@@ -391,7 +425,7 @@ func closeOpenRequest(tx *sql.Tx, reqID int, resolution string) error {
 	return nil
 }
 
-func insertReview(tx *sql.Tx, req *ReviewRequest, decision, comment, reviewer string) error {
+func insertReview(tx *sql.Tx, req *ReviewRequest, decision, comment, reviewer string, notes sql.NullString) error {
 	var taskVal, epicVal interface{}
 	if req.TaskID != "" {
 		taskVal = req.TaskID
@@ -400,8 +434,8 @@ func insertReview(tx *sql.Tx, req *ReviewRequest, decision, comment, reviewer st
 		epicVal = req.EpicID
 	}
 	_, err := tx.Exec(
-		`INSERT INTO reviews (task_id, epic_id, decision, comment, commit_sha, reviewer) VALUES (?, ?, ?, ?, ?, ?)`,
-		taskVal, epicVal, decision, comment, req.CommitSHA, reviewer,
+		`INSERT INTO reviews (task_id, epic_id, decision, comment, commit_sha, reviewer, notes_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		taskVal, epicVal, decision, comment, req.CommitSHA, reviewer, notes,
 	)
 	return err
 }

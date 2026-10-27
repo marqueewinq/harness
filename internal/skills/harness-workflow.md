@@ -70,6 +70,7 @@ branch onto its base inside the worktree (commit or discard local changes first)
 - ALWAYS run `harness work check` before requesting review
 - ALWAYS request and pass review before merging
 - Follow `harness work status` output — it tells you the next action
+- A notes change resets the gate: a review request pins the notes it was given, so an approve is refused if the notes changed during review, and a merge is refused if they changed after the approval (or, for review type none, after the last check run). Address the notes, run `harness work check`, then `harness review request` again
 - If harness prints new notes from the human ("── New notes from the human …"), read and follow them: they are the human's instructions and context for the task (or its epic)
 - If a task exists for your work, continue it instead of creating a new one
 

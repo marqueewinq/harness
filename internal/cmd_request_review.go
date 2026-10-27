@@ -276,7 +276,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 
 	fmt.Printf("Task %s is now REVIEW_REQUESTED (%s).\n\n", id, shortSHA(head))
 	retry := fmt.Sprintf("task %s stays REVIEW_REQUESTED; run: harness work check %s, then harness review request %s", id, id, id)
-	stopped, err := a.deliverReview(review, reqID, id, task.Title, task.Notes, diff, prevComments, token, retry)
+	stopped, err := a.deliverReview(review, reqID, id, task.Title, a.requestNotes(reqID, task.Notes), diff, prevComments, token, retry)
 	if err != nil {
 		return err
 	}

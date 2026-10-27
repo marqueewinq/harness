@@ -80,6 +80,15 @@ func (a *App) requireCheckedHead(task *Task) (string, error) {
 		return "", fmt.Errorf("latest check run on %s did not pass (%s); fix it, then run: harness work check %s",
 			shortSHA(checked), strings.Join(failed, ", "), task.ID)
 	}
+	started := runs[0].StartedAt
+	for _, r := range runs {
+		if r.StartedAt.Before(started) {
+			started = r.StartedAt
+		}
+	}
+	if err := a.requireNotesBeforeChecks(task.ID, started); err != nil {
+		return "", err
+	}
 	if err := a.requireChecksAt(task.ID, checked, "checked", ""); err != nil {
 		return "", err
 	}

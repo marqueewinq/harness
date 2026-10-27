@@ -150,8 +150,43 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v15: %w", err)
 		}
 	}
+	if version < 16 {
+		if err := migrateV16(conn); err != nil {
+			return fmt.Errorf("migration v16: %w", err)
+		}
+	}
 
 	return nil
+}
+
+// notes_snapshot pins the subject's notes a review request was given (and
+// that an approval covers). NULL on rows predating it: those are not checked.
+func migrateV16(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, table := range []string{"review_requests", "reviews"} {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'notes_snapshot'`, table).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN notes_snapshot TEXT NULL`); err != nil {
+				return err
+			}
+		}
+	}
+	for _, stmt := range []string{
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (16)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // notes_changed_at/by record the latest notes edit; notes_seen_at is when an

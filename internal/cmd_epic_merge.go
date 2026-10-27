@@ -45,6 +45,9 @@ func (a *App) CmdEpicMerge(epicID string) error {
 			return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
 				shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
 		}
+		if err := a.requireNotesCoveredByApproval("", epicID, latestApproval); err != nil {
+			return err
+		}
 	}
 
 	// Warn about open tasks

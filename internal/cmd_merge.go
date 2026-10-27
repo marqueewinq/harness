@@ -155,6 +155,9 @@ func (a *App) CmdWorkMerge(taskID string) error {
 		if err := a.requireChecksAt(id, latestApproval.CommitSHA, "approved", ", then request review again"); err != nil {
 			return err
 		}
+		if err := a.requireNotesCoveredByApproval(id, "", latestApproval); err != nil {
+			return err
+		}
 		pinned = latestApproval.CommitSHA
 	}
 

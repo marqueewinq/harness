@@ -314,6 +314,16 @@ next `harness` command on the task (`work check/commit/diff/sync/merge/close`,
 the human" banner, together with changed notes of the task's epic. `work
 status` and `task view` print the notes and count as seen.
 
+A notes change resets the review gate. Each review request pins the subject's
+own notes (a task's, or the epic's for an epic review; an epic's notes are not
+part of its tasks' gates), and the reviewer prompt carries exactly that text.
+An approve (agent token, terminal, or dashboard `a`) is refused while the
+notes differ from the request's; reject still works. A merge is refused if the
+notes changed after the approval, or for review type `none` after the latest
+check run started; the error shows the notes. Re-run checks and request review
+again. A dashboard pre-approval mid-review is allowed: it is a human decision
+made with the current notes, and the approval covers them.
+
 `merge.require.review` was removed: a config that still sets it fails to load.
 Use review types and `review.allow_none` instead.
 
