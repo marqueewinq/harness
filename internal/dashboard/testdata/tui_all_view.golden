@@ -11,7 +11,7 @@ ALL TASKS
 ›  task-040  PLANNED             3d  default · not started yet  Planned follow-up
  ▾ proj-001 › epic-003 Someday · 0/0 done · 0 tasks
  No epic
-   task-010  MERGED             30d  Old merged work
+   task-010  MERGED  30d ago  Old merged work
    task-030  IN_PROGRESS         5m  A very long task title that will certainly not fit into the configured w…
  ! task-031  CHECKS_FAILED      26h  ✗ lint  checks failed  Broken
 MERGE QUEUE

@@ -142,7 +142,7 @@ func listLines(st Styles, s Snapshot, o ListOptions) (lines []listLine, rows []R
 			lines[start].text = st.Dim.Render(title + " · none")
 		}
 	}
-	groups := func(gs []EpicGroup, line func(TaskRow) string, selectable, dimDone bool) {
+	groups := func(gs []EpicGroup, line func(TaskRow) string, selectable bool) {
 		for gi := range gs {
 			g := &gs[gi]
 			epicText := ""
@@ -184,12 +184,7 @@ func listLines(st Styles, s Snapshot, o ListOptions) (lines []listLine, rows []R
 				continue
 			}
 			for _, t := range shown {
-				text := line(*t)
-				if dimDone && finished(t.State) {
-					// Keep the leading gutter space plain: the cursor replaces it.
-					text = " " + st.Dim.Render(strings.TrimPrefix(ansi.Strip(text), " "))
-				}
-				addRow(text, Row{Kind: RowTask, ID: t.ID, Task: t, Group: g})
+				addRow(line(*t), Row{Kind: RowTask, ID: t.ID, Task: t, Group: g})
 			}
 		}
 	}
@@ -203,9 +198,18 @@ func listLines(st Styles, s Snapshot, o ListOptions) (lines []listLine, rows []R
 		}
 	})
 	if o.View == ViewAll {
-		section("ALL TASKS", func() { groups(s.Browse, func(t TaskRow) string { return taskLine(st, t) }, true, true) })
+		// Same row styles as the active view: in-flight rows as in IN FLIGHT,
+		// finished ones as in RECENT.
+		section("ALL TASKS", func() {
+			groups(s.Browse, func(t TaskRow) string {
+				if finished(t.State) {
+					return recentLine(st, t)
+				}
+				return taskLine(st, t)
+			}, true)
+		})
 	} else {
-		section("IN FLIGHT", func() { groups(s.Groups, func(t TaskRow) string { return taskLine(st, t) }, true, false) })
+		section("IN FLIGHT", func() { groups(s.Groups, func(t TaskRow) string { return taskLine(st, t) }, true) })
 	}
 	section("MERGE QUEUE", func() {
 		for _, q := range s.Queue {
@@ -219,7 +223,7 @@ func listLines(st Styles, s Snapshot, o ListOptions) (lines []listLine, rows []R
 		if s.All {
 			recentTitle = "DONE"
 		}
-		section(recentTitle, func() { groups(s.Recent, func(t TaskRow) string { return recentLine(st, t) }, false, false) })
+		section(recentTitle, func() { groups(s.Recent, func(t TaskRow) string { return recentLine(st, t) }, false) })
 	}
 	if o.Filter != "" && len(rows) == 0 {
 		add(st.Dim.Render("no matches"))
