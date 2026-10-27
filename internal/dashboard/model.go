@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -143,7 +144,7 @@ type Options struct {
 	// EditorCommand builds the editor process for a file (default
 	// DefaultEditorCommand); ExecProcess hands it the terminal (default
 	// tea.ExecProcess). Tests replace both.
-	EditorCommand func(path string) (*exec.Cmd, error)
+	EditorCommand func(path string) (cmd *exec.Cmd, warning string, err error)
 	ExecProcess   func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 }
 
@@ -161,6 +162,8 @@ type verdictMsg struct {
 	err    error
 	// skipped is the decision kind whose confirmation was skipped, if any.
 	skipped string
+	// editPath is an edit's temp file: removed once saved, else named.
+	editPath string
 }
 
 type tickMsg time.Time
@@ -233,22 +236,33 @@ func DefaultActions(allowed bool) []Action {
 		}
 		return m.openModal(DecisionPreApprove, r)
 	}
+	// The key bar shows the actions without Hidden, in this order, and must
+	// fit 80 columns; `?` lists them all.
 	return []Action{
-		{Key: "a", Label: "approve", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("approve", r) }},
-		{Key: "r", Label: "reject", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("request_changes", r) }},
-		{Key: "p", Label: "pre-approve", Enabled: preApprovable, Start: togglePreApproval, AltLabel: "remove pre-approval", UseAlt: isNone},
-		{Key: "t", Label: "type", Enabled: typed, Start: func(m *Model, r Row) tea.Cmd { return m.openModal(DecisionType, r) }},
-		{Key: "e", Label: "edit", Enabled: func(c Context) bool { return allowed && isEditable(c.Row) }, Start: func(m *Model, r Row) tea.Cmd { return m.startEdit(r) }},
-		{Key: "d", Label: "diff", Enabled: hasRow, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) }},
-		{Key: "x", Label: "expand", Enabled: func(c Context) bool { return c.Expandable }},
-		{Key: "enter", Hint: "enter", Label: "details", Enabled: hasRow},
-		{Key: "v", Label: "view"},
-		{Key: "/", Hint: "/", Label: "filter"},
-		{Key: " ", Hint: "space", Label: "fold", Enabled: func(c Context) bool { return c.Row != nil && c.Row.Kind == RowEpic }},
-		{Key: "c", Label: "collapse"},
-		{Key: "f", Label: "refresh"},
-		{Key: "q", Label: "quit"},
-		{Key: "up", Hint: "↑↓", Label: "select"},
+		{Key: "a", Label: "approve", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("approve", r) },
+			Help: "approve the open review request of the row (terminal, no review token)"},
+		{Key: "r", Label: "reject", Enabled: verdict, Start: func(m *Model, r Row) tea.Cmd { return m.openModal("request_changes", r) },
+			Help: "reject it with a required comment"},
+		{Key: "p", Label: "pre-approve", Enabled: preApprovable, Start: togglePreApproval, AltLabel: "un-pre-approve", UseAlt: isNone,
+			Help: "review type none, approving a review in flight; on none: undo it"},
+		{Key: "t", Label: "type", Enabled: typed, Start: func(m *Model, r Row) tea.Cmd { return m.openModal(DecisionType, r) },
+			Help: "pick the review type: default, human or none"},
+		{Key: "e", Label: "edit", Enabled: func(c Context) bool { return allowed && isEditable(c.Row) }, Start: func(m *Model, r Row) tea.Cmd { return m.startEdit(r) },
+			Help: "edit title, description and notes in $VISUAL/$EDITOR"},
+		{Key: "d", Label: "diff", Enabled: hasRow, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) },
+			Help: "diff of the requested commit, else of the branch head"},
+		{Key: "v", Label: "view", Help: "switch the active and all views"},
+		{Key: "/", Hint: "/", Label: "filter", Help: "filter the list as you type; enter keeps it, esc clears it"},
+		{Key: "?", Hint: "?", Label: "help", Help: "this list; esc or ? closes it"},
+		{Key: "q", Label: "quit", Help: "quit (also Ctrl-C)"},
+		{Key: "enter", Hint: "enter", Label: "details", Enabled: hasRow, Hidden: true, Help: "toggle the detail pane; pgup/pgdn scroll it"},
+		{Key: "x", Label: "expand", Enabled: func(c Context) bool { return c.Expandable }, Hidden: true,
+			Help: "show descriptions, notes and comments in full in the open pane"},
+		{Key: " ", Hint: "space", Label: "fold", Enabled: func(c Context) bool { return c.Row != nil && c.Row.Kind == RowEpic }, Hidden: true,
+			Help: "fold or unfold the selected epic's tasks"},
+		{Key: "c", Label: "collapse", Hidden: true, Help: "collapse every epic, or expand them all"},
+		{Key: "f", Label: "refresh", Hidden: true, Help: "refresh now"},
+		{Key: "up", Hint: "↑↓ j k", Label: "select", Hidden: true, Help: "move the selection; g/G first/last"},
 	}
 }
 
@@ -345,10 +359,20 @@ func (m *Model) applySnapshot(s Snapshot) {
 // when the selection moved to another row.
 func (m *Model) relist() tea.Cmd {
 	before := m.selKey
+	var foldedInto string
+	if r := m.selected(); r != nil && r.Kind == RowTask && r.Group != nil && r.Group.Epic != nil {
+		foldedInto = "epic:" + r.Group.Epic.ID
+	}
 	m.rows = RowsFor(m.snap, m.ui.List)
 	sel := -1
 	for i, r := range m.rows {
 		if r.Key() == m.selKey {
+			sel = i
+		}
+	}
+	// A task hidden by a fold hands the selection to its epic header.
+	for i, r := range m.rows {
+		if sel < 0 && foldedInto != "" && r.Key() == foldedInto {
 			sel = i
 		}
 	}
@@ -547,7 +571,7 @@ func (m Model) submit(md Modal, skipped string) tea.Cmd {
 		default:
 			report, err = load.Verdict(md.Subject, md.Decision, md.Comment, md.SHA)
 		}
-		return verdictMsg{report: report, err: err, skipped: skipped}
+		return verdictMsg{report: report, err: err, skipped: skipped, editPath: md.EditPath}
 	}
 }
 
@@ -566,7 +590,7 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case tea.KeyEsc:
 		m.ui.Modal = nil
-		m.setStatus("cancelled", false)
+		m.setStatus(cancelledText(&md), false)
 		return m, nil
 	}
 	if md.Step == StepPick {
@@ -631,7 +655,7 @@ func (m Model) handleConfirmKey(md *Modal, msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		return m.run(*md, "")
 	}
 	m.ui.Modal = nil
-	m.setStatus("cancelled", false)
+	m.setStatus(cancelledText(md), false)
 	return m, nil
 }
 
@@ -736,8 +760,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case verdictMsg:
 		if msg.err != nil {
-			m.setStatus(msg.err.Error(), true)
+			text := msg.err.Error()
+			if msg.editPath != "" {
+				text += "; " + keptText(msg.editPath)
+			}
+			m.setStatus(text, true)
 			return m, nil
+		}
+		if msg.editPath != "" {
+			os.Remove(msg.editPath)
 		}
 		status := firstLine(msg.report)
 		if msg.skipped != "" {
@@ -752,6 +783,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.finishEdit(msg)
 		return next, cmd
 	case tea.KeyMsg:
+		if m.ui.Help {
+			switch msg.String() {
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "esc", "?":
+				m.ui.Help = false
+			}
+			return m, nil
+		}
 		if m.ui.Filtering {
 			return m.handleFilterKey(msg)
 		}
@@ -848,6 +888,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.runAction(k)
 	case "f":
 		return m, m.startRefresh()
+	case "?":
+		m.ui.Help = true
+		return m, nil
 	}
 	if m.ui.DiffOpen {
 		return m.handleDiffKey(k)

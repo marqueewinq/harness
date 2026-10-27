@@ -49,13 +49,14 @@ type Snapshot struct {
 }
 
 type ReviewRow struct {
-	SubjectID string
-	IsEpic    bool
-	Title     string
-	CommitSHA string
-	Age       time.Duration
-	Reviewer  string
-	Attention string
+	SubjectID  string
+	IsEpic     bool
+	Title      string
+	CommitSHA  string
+	Age        time.Duration
+	Reviewer   string
+	Attention  string
+	ReviewType internal.ReviewType
 }
 
 // EpicGroup with a nil Epic is the "No epic" group.
@@ -334,6 +335,10 @@ func BuildSnapshot(app *internal.App, now time.Time, all bool) (Snapshot, error)
 			continue
 		}
 		row.Reviewer = reviewerStatus(req, now, b.isHumanReview(rt))
+		row.ReviewType = rt
+		if rt == "" {
+			row.ReviewType = internal.ReviewDefault
+		}
 		row.Attention = reviewerAttention(row.Reviewer)
 		s.Reviews = append(s.Reviews, row)
 	}

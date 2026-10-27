@@ -17,6 +17,7 @@ import (
 type fakeEditor struct {
 	edit    func(string) string
 	fail    error
+	warning string
 	path    string
 	content string
 }
@@ -26,8 +27,8 @@ func (e *fakeEditor) options(allowed bool) Options {
 		Interval:     time.Millisecond,
 		AllowActions: allowed,
 		DenyReason:   "HARNESS_REVIEW_TOKEN is set",
-		EditorCommand: func(path string) (*exec.Cmd, error) {
-			return exec.Command("fake-editor", path), nil
+		EditorCommand: func(path string) (*exec.Cmd, string, error) {
+			return exec.Command("fake-editor", path), e.warning, nil
 		},
 		ExecProcess: func(c *exec.Cmd, cb tea.ExecCallback) tea.Cmd {
 			return func() tea.Msg {
@@ -92,23 +93,67 @@ func TestEditNoChangesAndCancels(t *testing.T) {
 		name   string
 		edit   func(string) string
 		status string
+		kept   bool
 	}{
-		{"unchanged", func(s string) string { return s }, "no changes to task-030"},
-		{"trailing blank lines only", func(s string) string { return s + "\n\n" }, "no changes to task-030"},
-		{"empty title", replaceLine("Title: Title of task-030", "Title:"), "title empty: edit of task-030 cancelled"},
+		{"unchanged", func(s string) string { return s }, "no changes to task-030", false},
+		{"trailing blank lines only", func(s string) string { return s + "\n\n" }, "no changes to task-030", false},
+		{"empty title", replaceLine("Title: Title of task-030", "Title:"), "title empty: edit of task-030 cancelled; nothing saved; your text is in ", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ed := &fakeEditor{edit: tc.edit}
 			f := &fakeLoader{snap: sampleSnapshot()}
 			m := press(t, editModel(t, ed, f, rowTask030), "e")
-			if m.ui.Modal != nil || m.ui.Status != tc.status || len(f.calls) != 0 {
+			defer os.Remove(ed.path)
+			want := tc.status
+			if tc.kept {
+				want += ed.path
+			}
+			if m.ui.Modal != nil || m.ui.Status != want || len(f.calls) != 0 {
 				t.Errorf("modal=%+v status=%q calls=%v", m.ui.Modal, m.ui.Status, f.calls)
 			}
-			if _, err := os.Stat(ed.path); !os.IsNotExist(err) {
-				t.Errorf("temp file left behind")
+			if _, err := os.Stat(ed.path); os.IsNotExist(err) == tc.kept {
+				t.Errorf("temp file kept=%v, want %v", !os.IsNotExist(err), tc.kept)
 			}
 		})
+	}
+}
+
+// The edit file is the only copy of the human's text until the save
+// succeeds: a refused save or a cancel keeps it and names it.
+func TestEditFileKeptUntilSaved(t *testing.T) {
+	mine := replaceLine("Title: Title of task-030", "Title: Mine")
+
+	ed := &fakeEditor{edit: mine}
+	f := &fakeLoader{snap: sampleSnapshot(), editErr: errors.New("task-030 changed since the editor was opened (notes)")}
+	m := press(t, editModel(t, ed, f, rowTask030), "e", "y")
+	defer os.Remove(ed.path)
+	if !m.ui.StatusErr || !strings.Contains(m.ui.Status, "changed since the editor was opened") || !strings.HasSuffix(m.ui.Status, "nothing saved; your text is in "+ed.path) {
+		t.Errorf("stale status = %q", m.ui.Status)
+	}
+	if data, err := os.ReadFile(ed.path); err != nil || !strings.Contains(string(data), "Title: Mine") {
+		t.Errorf("stale refusal lost the text: %v", err)
+	}
+
+	for _, cancel := range []string{"n", "esc", "enter"} {
+		ed := &fakeEditor{edit: mine}
+		f := &fakeLoader{snap: sampleSnapshot()}
+		m := press(t, editModel(t, ed, f, rowTask030), "e", cancel)
+		if m.ui.Status != "cancelled; nothing saved; your text is in "+ed.path || len(f.calls) != 0 {
+			t.Errorf("%s: status=%q calls=%v", cancel, m.ui.Status, f.calls)
+		}
+		if _, err := os.Stat(ed.path); err != nil {
+			t.Errorf("%s: cancel lost the text: %v", cancel, err)
+		}
+		os.Remove(ed.path)
+	}
+}
+
+func TestEditorWarningShown(t *testing.T) {
+	ed := &fakeEditor{edit: func(s string) string { return s }, warning: `ignored $VISUAL: unterminated " in "\"code"`}
+	m := press(t, editModel(t, ed, &fakeLoader{snap: sampleSnapshot()}, rowTask030), "e")
+	if !strings.Contains(m.ui.Status, "no changes to task-030") || !strings.Contains(m.ui.Status, "warning: ignored $VISUAL") {
+		t.Errorf("status = %q", m.ui.Status)
 	}
 }
 
@@ -135,7 +180,9 @@ func TestEditorFailure(t *testing.T) {
 	}
 
 	noEditor := ed.options(true)
-	noEditor.EditorCommand = func(string) (*exec.Cmd, error) { return nil, errors.New("no editor found: set VISUAL or EDITOR") }
+	noEditor.EditorCommand = func(string) (*exec.Cmd, string, error) {
+		return nil, "", errors.New("no editor found: set VISUAL or EDITOR")
+	}
 	m = selectRow(t, startedWith(t, &fakeLoader{snap: sampleSnapshot()}, noEditor), rowTask030)
 	m = press(t, m, "e")
 	if !m.ui.StatusErr || !strings.Contains(m.ui.Status, "no editor found") {

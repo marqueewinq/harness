@@ -162,12 +162,18 @@ func listLines(st Styles, s Snapshot, o ListOptions) (lines []listLine, rows []R
 			header := groupHeader(st, *g)
 			folded := false
 			if g.Epic != nil && selectable && o.Folding {
-				folded = o.Collapsed[g.Epic.ID]
+				// While filtering, matching tasks are shown even in a folded
+				// epic: the search would otherwise find rows it cannot show.
+				folded = o.Collapsed[g.Epic.ID] && (o.Filter == "" || len(shown) == 0)
 				marker := "▾"
 				if folded {
 					marker = "▸"
 				}
-				header = " " + st.Accent.Render(marker) + header + fmt.Sprintf(" · %d tasks", len(g.Tasks))
+				count := fmt.Sprintf(" · %d tasks", len(g.Tasks))
+				if o.Filter != "" {
+					count = fmt.Sprintf(" · %d/%d tasks", len(shown), len(g.Tasks))
+				}
+				header = " " + st.Accent.Render(marker) + header + count
 			}
 			if g.Epic != nil && selectable {
 				addRow(header, Row{Kind: RowEpic, ID: g.Epic.ID, IsEpic: true, Group: g})
@@ -191,7 +197,7 @@ func listLines(st Styles, s Snapshot, o ListOptions) (lines []listLine, rows []R
 	section("AWAITING REVIEW", func() {
 		for i := range s.Reviews {
 			r := &s.Reviews[i]
-			if o.matches(r.SubjectID, r.Title, r.Reviewer) {
+			if o.matches(r.SubjectID, r.Title, r.Reviewer, string(r.ReviewType)) {
 				addRow(reviewLine(st, *r), Row{Kind: RowReview, ID: r.SubjectID, IsEpic: r.IsEpic, Review: r})
 			}
 		}

@@ -1,0 +1,34 @@
+harness · main @ 39829b9 · 16:42:07
+warning: reading committed review config: boom
+── keys 
+ a       approve         approve the open review request of the row (terminal, no review token)
+ r       reject          reject it with a required comment
+ p       pre-approve     review type none, approving a review in flight; on none: undo it
+ t       type            pick the review type: default, human or none
+ e       edit            edit title, description and notes in $VISUAL/$EDITOR
+ d       diff            diff of the requested commit, else of the branch head
+ v       view            switch the active and all views
+ /       filter          filter the list as you type; enter keeps it, esc clears it
+ ?       help            this list; esc or ? closes it
+ q       quit            quit (also Ctrl-C)
+ enter   details         toggle the detail pane; pgup/pgdn scroll it
+ x       expand          show descriptions, notes and comments in full in the open pane
+ space   fold            fold or unfold the selected epic's tasks
+ c       collapse        collapse every epic, or expand them all
+ f       refresh         refresh now
+ ↑↓ j k  select          move the selection; g/G first/last
+ esc                     close the open pane, modal or filter
+ pgup pgdn               scroll the detail or diff pane
+
+
+
+
+
+
+
+
+
+
+
+
+ esc close  ? close

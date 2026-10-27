@@ -239,12 +239,93 @@ func TestCollapse(t *testing.T) {
 	}
 }
 
+func TestViewSwitchHandsHiddenTaskToItsHeader(t *testing.T) {
+	f := &fakeLoader{snap: browseSnapshot()}
+	m := started(t, f)
+	m = press(t, m, "v")
+	m = selectRow(t, m, 6) // task-040 in the all view
+	if m.selected().ID != "task-040" {
+		t.Fatalf("selected %+v", m.selected())
+	}
+	m.ui.List.Collapsed["epic-002"] = true
+	m = press(t, m, "v", "v")
+	if m.selected().ID != "epic-002" || m.selected().Kind != RowEpic {
+		t.Errorf("selection = %+v, want the epic-002 header", m.selected())
+	}
+}
+
+func TestFilterInFoldedEpics(t *testing.T) {
+	o := ListOptions{View: ViewAll, Folding: true, Filter: "planned", Collapsed: map[string]bool{"epic-002": true}}
+	lines, rows := listLines(NewStyles(false), browseSnapshot(), o)
+	if got := rowIDsOf(rows); !reflect.DeepEqual(got, []string{"epic-002", "task-040"}) {
+		t.Errorf("a match inside a folded epic is hidden: %v", got)
+	}
+	var header string
+	for _, l := range lines {
+		if strings.Contains(l.text, "epic-002 Planning layer") {
+			header = l.text
+		}
+	}
+	if !strings.Contains(header, "· 1/4 tasks") || !strings.Contains(header, "▾") {
+		t.Errorf("header = %q, want ▾ and 1/4 tasks", header)
+	}
+	o.Filter = "someday"
+	if _, rows := listLines(NewStyles(false), browseSnapshot(), o); !reflect.DeepEqual(rowIDsOf(rows), []string{"epic-003"}) {
+		t.Errorf("epic-only match: %v", rowIDsOf(rows))
+	}
+}
+
+func TestFilterMatchesReviewRowType(t *testing.T) {
+	s := sampleSnapshot()
+	s.Reviews[1].ReviewType = internal.ReviewHuman
+	if got := rowIDsOf(RowsFor(s, ListOptions{Filter: "HUMAN"})); len(got) == 0 || got[0] != "epic-002" {
+		t.Errorf("review row not matched by review type: %v", got)
+	}
+}
+
+func TestHelpOverlay(t *testing.T) {
+	m := started(t, &fakeLoader{snap: browseSnapshot()})
+	m = press(t, m, "?")
+	v := m.View()
+	for _, want := range []string{"── keys", "space", "fold", "collapse", "refresh", "expand", "enter", "details", "pgup pgdn"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("help lacks %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "AWAITING REVIEW") {
+		t.Errorf("help did not replace the list:\n%s", v)
+	}
+	if next := press(t, m, "j"); !next.ui.Help || next.ui.Selected != m.ui.Selected {
+		t.Errorf("keys leaked through the help")
+	}
+	for _, k := range []string{"esc", "?"} {
+		if press(t, m, k).ui.Help {
+			t.Errorf("%s did not close the help", k)
+		}
+	}
+}
+
+func TestKeyBarFits80Columns(t *testing.T) {
+	none := sampleSnapshot()
+	none.Groups[1].Tasks[0].ReviewType = internal.ReviewNone
+	for _, s := range []Snapshot{sampleSnapshot(), none} {
+		for _, sel := range []int{0, rowEpicHeader, rowTask030} {
+			out := Render(s, UIState{Selected: sel, Actions: DefaultActions(true)}, 80, 30)
+			bar := out[strings.LastIndex(out, "\n")+1:]
+			if strings.Contains(bar, "…") || !strings.HasSuffix(bar, "quit") || !strings.Contains(bar, "? help") {
+				t.Errorf("bar at 80 columns = %q", bar)
+			}
+		}
+	}
+}
+
 func TestRenderBrowseGoldens(t *testing.T) {
 	collapsed := map[string]bool{"epic-002": true}
 	for name, ui := range map[string]UIState{
 		"tui_all_view.golden":  {Selected: 6, List: ListOptions{View: ViewAll, Folding: true, Collapsed: map[string]bool{}}},
 		"tui_filtered.golden":  {Selected: 0, List: ListOptions{View: ViewAll, Folding: true, Filter: "planning", Collapsed: map[string]bool{}}, Filtering: true, FilterInput: "planning"},
 		"tui_collapsed.golden": {Selected: 2, List: ListOptions{View: ViewActive, Folding: true, Collapsed: collapsed}},
+		"tui_help.golden":      {Selected: 2, Help: true, List: ListOptions{Folding: true, Collapsed: map[string]bool{}}},
 	} {
 		ui.Actions = DefaultActions(true)
 		out := Render(browseSnapshot(), ui, 110, 34)

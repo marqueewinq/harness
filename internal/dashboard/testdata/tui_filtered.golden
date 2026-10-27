@@ -3,7 +3,7 @@ warning: reading committed review config: boom
 AWAITING REVIEW
 ›! epic-002  5d1c09aa   3m  human  Planning layer
 ALL TASKS
- ▾ proj-001 › epic-002 Planning layer · epic/planning · 3/8 done · 4 tasks
+ ▾ proj-001 › epic-002 Planning layer · epic/planning · 3/8 done · 4/4 tasks
    task-025  CHECKS_RUNNING      3m  test ▶ 41s, lint ▶ -  Reviewer run records
  ! task-027  MERGE_FAILED        1h  ✓ 2/2  unfinished rebase  Sync epic branch
    task-028  QUEUED              2m  ✓ 2/2  queue #1  Dashboard snapshot

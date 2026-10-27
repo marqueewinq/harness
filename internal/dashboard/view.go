@@ -92,6 +92,9 @@ type Action struct {
 	// AltLabel replaces Label when UseAlt holds, for a key that toggles.
 	AltLabel string
 	UseAlt   func(c Context) bool
+	// Hidden keeps the action out of the key bar; the `?` help lists it.
+	Hidden bool
+	Help   string
 }
 
 func (a Action) label(c Context) string {
@@ -164,6 +167,8 @@ type Modal struct {
 	Edit     *EditFields
 	EditOrig *EditFields
 	Changed  string
+	// EditPath is the edit's temp file, kept until the edit is saved.
+	EditPath string
 	// Input is the rendered line editor.
 	Input string
 	Error string
@@ -213,6 +218,8 @@ type UIState struct {
 	// Filtering: the filter line editor is open; FilterInput is its rendering.
 	Filtering   bool
 	FilterInput string
+	// Help shows every key in place of the list.
+	Help bool
 }
 
 type layout struct {
@@ -344,7 +351,16 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 	sel := selectedRow(l.rows, ui)
 
 	out := append([]string{}, l.header...)
-	if ui.DiffOpen {
+	if ui.Help {
+		body := helpLines(st, ui, Context{Row: sel, Expandable: Expandable(s, ui, width)})
+		for i := 0; i < l.bodyH; i++ {
+			if i < len(body) {
+				out = append(out, body[i])
+			} else {
+				out = append(out, "")
+			}
+		}
+	} else if ui.DiffOpen {
 		out = append(out, diffPane(st, s, ui, height, width, l.bodyH)...)
 	} else {
 		offset := clampOffset(ui.Offset, l.selLine, l.listH, len(l.lines))
@@ -380,6 +396,35 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 	return strings.Join(out, "\n")
 }
 
+// helpLines lists every action with its key, styled like the key bar for the
+// selected row (dimmed when it does not apply), then the pane keys.
+func helpLines(st Styles, ui UIState, c Context) []string {
+	actions := ui.Actions
+	if actions == nil {
+		actions = DefaultActions(false)
+	}
+	lines := []string{separator(st, "keys", 0)}
+	for _, a := range actions {
+		key := a.Hint
+		if key == "" {
+			key = a.Key
+		}
+		style, text := st.Accent, st.Plain
+		if !a.enabled(c) {
+			style, text = st.AccentDim, st.Dim
+		}
+		lines = append(lines, fmt.Sprintf(" %s %s %s", style.Render(fmt.Sprintf("%-7s", key)),
+			text.Render(fmt.Sprintf("%-15s", a.label(c))), st.Dim.Render(a.Help)))
+	}
+	for _, k := range [][2]string{
+		{"esc", "close the open pane, modal or filter"},
+		{"pgup pgdn", "scroll the detail or diff pane"},
+	} {
+		lines = append(lines, fmt.Sprintf(" %s %s", st.Accent.Render(fmt.Sprintf("%-23s", k[0])), st.Dim.Render(k[1])))
+	}
+	return lines
+}
+
 func barActions(ui UIState) []Action {
 	if ui.Filtering {
 		return []Action{{Key: "enter", Hint: "enter", Label: "keep filter"}, {Key: "esc", Hint: "esc", Label: "clear"}}
@@ -394,12 +439,21 @@ func barActions(ui UIState) []Action {
 		}
 		return []Action{{Key: "enter", Hint: "enter", Label: "continue"}, {Key: "esc", Hint: "esc", Label: "cancel"}}
 	}
+	if ui.Help {
+		return []Action{{Key: "esc", Hint: "esc", Label: "close"}, {Key: "?", Hint: "?", Label: "close"}}
+	}
 	actions := ui.Actions
 	if actions == nil {
 		actions = DefaultActions(false)
 	}
 	if !ui.DiffOpen {
-		return actions
+		var shown []Action
+		for _, a := range actions {
+			if !a.Hidden {
+				shown = append(shown, a)
+			}
+		}
+		return shown
 	}
 	var out []Action
 	for _, a := range actions {

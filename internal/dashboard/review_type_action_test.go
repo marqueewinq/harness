@@ -341,7 +341,7 @@ func TestPreApproveToggle(t *testing.T) {
 	f.snap = sampleSnapshot()
 	f.snap.Groups[1].Tasks[0].ReviewType = internal.ReviewNone
 	m = press(t, m, "f")
-	if bar := strings.Split(m.View(), "\n"); !strings.Contains(bar[len(bar)-1], "remove pre-approval") {
+	if bar := strings.Split(m.View(), "\n"); !strings.Contains(bar[len(bar)-1], "un-pre-approve") {
 		t.Errorf("key bar label did not switch: %q", bar[len(bar)-1])
 	}
 	m = press(t, m, "p")
@@ -374,15 +374,15 @@ func TestRemovePreApprovalKeyBar(t *testing.T) {
 	row := Rows(s)[rowTask030]
 	for _, allowed := range []bool{true, false} {
 		bar := keyBar(st, DefaultActions(allowed), Context{Row: &row})
-		want := disabledKey(st, "remove pre-approval", "p")
+		want := disabledKey(st, "un-pre-approve", "p")
 		if allowed {
-			want = enabledKey(st, "remove pre-approval", "p")
+			want = enabledKey(st, "un-pre-approve", "p")
 		}
 		if !strings.Contains(bar, want) {
 			t.Errorf("allowed=%v: bar = %q", allowed, bar)
 		}
 	}
-	if plain := keyBar(NewStyles(false), DefaultActions(true), Context{Row: &row}); !strings.Contains(plain, "  remove pre-approval  type  ") {
+	if plain := keyBar(NewStyles(false), DefaultActions(true), Context{Row: &row}); !strings.Contains(plain, "  un-pre-approve  type  ") {
 		t.Errorf("plain bar = %q", plain)
 	}
 }

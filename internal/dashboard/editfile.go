@@ -149,23 +149,27 @@ func splitCommandLine(s string) ([]string, error) {
 
 // ResolveEditor picks $VISUAL, then $EDITOR, then nano, then vi, skipping
 // any that is not installed. Values may carry quoted arguments
-// (e.g. `"/Applications/My Editor.app/bin/edit" --wait`).
-func ResolveEditor(getenv func(string) string, lookPath func(string) (string, error)) ([]string, error) {
+// (e.g. `"/Applications/My Editor.app/bin/edit" --wait`); one that does not
+// parse is skipped too, and warning says so.
+func ResolveEditor(getenv func(string) string, lookPath func(string) (string, error)) (argv []string, warning string, err error) {
 	var candidates [][]string
+	var warnings []string
 	for _, env := range []string{"VISUAL", "EDITOR"} {
 		fields, err := splitCommandLine(getenv(env))
 		if err != nil {
-			return nil, fmt.Errorf("$%s: %w", env, err)
+			warnings = append(warnings, fmt.Sprintf("ignored $%s: %v", env, err))
+			continue
 		}
 		if len(fields) > 0 {
 			candidates = append(candidates, fields)
 		}
 	}
+	warning = strings.Join(warnings, "; ")
 	candidates = append(candidates, []string{"nano"}, []string{"vi"})
 	for _, c := range candidates {
 		if path, err := lookPath(c[0]); err == nil {
-			return append([]string{path}, c[1:]...), nil
+			return append([]string{path}, c[1:]...), warning, nil
 		}
 	}
-	return nil, fmt.Errorf("no editor found: set VISUAL or EDITOR, or install nano or vi")
+	return nil, warning, fmt.Errorf("no editor found: set VISUAL or EDITOR, or install nano or vi")
 }

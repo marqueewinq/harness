@@ -22,20 +22,34 @@ type editDoneMsg struct {
 	subject string
 	path    string
 	orig    EditFields
+	warning string
 	err     error
 }
 
-// DefaultEditorCommand opens path in $VISUAL, $EDITOR, nano or vi.
-func DefaultEditorCommand(path string) (*exec.Cmd, error) {
-	argv, err := ResolveEditor(os.Getenv, exec.LookPath)
+// DefaultEditorCommand opens path in $VISUAL, $EDITOR, nano or vi; warning
+// names a setting that was skipped because it did not parse.
+func DefaultEditorCommand(path string) (*exec.Cmd, string, error) {
+	argv, warning, err := ResolveEditor(os.Getenv, exec.LookPath)
 	if err != nil {
-		return nil, err
+		return nil, warning, err
 	}
-	return exec.Command(argv[0], append(argv[1:], path)...), nil
+	return exec.Command(argv[0], append(argv[1:], path)...), warning, nil
 }
 
 func isEditable(r *Row) bool {
 	return r != nil && (r.Kind == RowTask || r.Kind == RowEpic)
+}
+
+// keptText tells the human where an unsaved edit is.
+func keptText(path string) string {
+	return "nothing saved; your text is in " + path
+}
+
+func withWarning(status, warning string) string {
+	if warning == "" {
+		return status
+	}
+	return status + " (warning: " + warning + ")"
 }
 
 // startEdit loads the subject's fields and writes them to a temp file, off
@@ -75,44 +89,47 @@ func (m Model) runEditor(msg editStartMsg) (tea.Model, tea.Cmd) {
 		m.setStatus("edit "+msg.subject+": "+msg.err.Error(), true)
 		return m, nil
 	}
-	cmd, err := m.opts.EditorCommand(msg.path)
+	cmd, warning, err := m.opts.EditorCommand(msg.path)
 	if err != nil {
 		m.editPending = ""
 		os.Remove(msg.path)
-		m.setStatus("edit "+msg.subject+": "+err.Error(), true)
+		m.setStatus(withWarning("edit "+msg.subject+": "+err.Error(), warning), true)
 		return m, nil
 	}
 	return m, m.opts.ExecProcess(cmd, func(err error) tea.Msg {
-		return editDoneMsg{subject: msg.subject, path: msg.path, orig: msg.orig, err: err}
+		return editDoneMsg{subject: msg.subject, path: msg.path, orig: msg.orig, warning: warning, err: err}
 	})
 }
 
-// finishEdit reads the edited file. The file is removed unless it holds an
-// edit that could not be applied, so a typo never loses the human's text.
+// finishEdit reads the edited file. The file is removed only when there is
+// nothing to save or the save succeeded (see the verdictMsg handling): on any
+// error, cancel or refusal it stays and the status names it, so the human's
+// text is never lost.
 func (m Model) finishEdit(msg editDoneMsg) (tea.Model, tea.Cmd) {
 	m.editPending = ""
-	if msg.err != nil {
-		m.setStatus(fmt.Sprintf("editor failed: %v (your text is in %s)", msg.err, msg.path), true)
+	fail := func(text string) (tea.Model, tea.Cmd) {
+		m.setStatus(withWarning(text, msg.warning), true)
 		return m, nil
+	}
+	if msg.err != nil {
+		return fail(fmt.Sprintf("editor failed: %v; %s", msg.err, keptText(msg.path)))
 	}
 	data, err := os.ReadFile(msg.path)
 	if err != nil {
-		m.setStatus(fmt.Sprintf("reading %s: %v", msg.path, err), true)
-		return m, nil
+		return fail(fmt.Sprintf("reading %s: %v", msg.path, err))
 	}
 	edited, err := ParseEditFile(string(data))
 	if err != nil {
-		m.setStatus(fmt.Sprintf("edit of %s not applied: %v (your text is in %s)", msg.subject, err, msg.path), true)
-		return m, nil
+		return fail(fmt.Sprintf("edit of %s not applied: %v; %s", msg.subject, err, keptText(msg.path)))
 	}
-	os.Remove(msg.path)
 	if edited.Title == "" {
-		m.setStatus("title empty: edit of "+msg.subject+" cancelled", false)
+		m.setStatus(withWarning("title empty: edit of "+msg.subject+" cancelled; "+keptText(msg.path), msg.warning), false)
 		return m, nil
 	}
 	changed := changedFields(msg.orig, edited)
 	if changed == "" {
-		m.setStatus("no changes to "+msg.subject, false)
+		os.Remove(msg.path)
+		m.setStatus(withWarning("no changes to "+msg.subject, msg.warning), false)
 		return m, nil
 	}
 	// Unchanged fields keep their stored text exactly: the file cannot carry
@@ -129,7 +146,15 @@ func (m Model) finishEdit(msg editDoneMsg) (tea.Model, tea.Cmd) {
 		final.Notes = edited.Notes
 	}
 	orig := msg.orig
-	md := Modal{Decision: DecisionEdit, Subject: msg.subject, Edit: &final, EditOrig: &orig, Changed: changed}
+	md := Modal{Decision: DecisionEdit, Subject: msg.subject, Edit: &final, EditOrig: &orig, Changed: changed, EditPath: msg.path}
 	m.ui.Modal = &md
 	return m.toConfirm(&md)
+}
+
+// cancelledText is the status of a modal closed without a decision.
+func cancelledText(md *Modal) string {
+	if md != nil && md.EditPath != "" {
+		return "cancelled; " + keptText(md.EditPath)
+	}
+	return "cancelled"
 }

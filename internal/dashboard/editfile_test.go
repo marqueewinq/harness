@@ -69,17 +69,17 @@ func TestResolveEditor(t *testing.T) {
 		{nil, []string{"/usr/bin/nano"}},
 	}
 	for _, tc := range cases {
-		got, err := ResolveEditor(func(k string) string { return tc.env[k] }, look)
-		if err != nil || !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("env %v: %v %v, want %v", tc.env, got, err, tc.want)
+		got, warning, err := ResolveEditor(func(k string) string { return tc.env[k] }, look)
+		if err != nil || warning != "" || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("env %v: %v %q %v, want %v", tc.env, got, warning, err, tc.want)
 		}
 	}
 	delete(found, "nano")
-	if got, _ := ResolveEditor(func(string) string { return "" }, look); !reflect.DeepEqual(got, []string{"/usr/bin/vi"}) {
+	if got, _, _ := ResolveEditor(func(string) string { return "" }, look); !reflect.DeepEqual(got, []string{"/usr/bin/vi"}) {
 		t.Errorf("fallback to vi: %v", got)
 	}
 	delete(found, "vi")
-	if _, err := ResolveEditor(func(string) string { return "" }, look); err == nil || !strings.Contains(err.Error(), "EDITOR") {
+	if _, _, err := ResolveEditor(func(string) string { return "" }, look); err == nil || !strings.Contains(err.Error(), "EDITOR") {
 		t.Errorf("no editor: %v", err)
 	}
 }
@@ -106,7 +106,7 @@ func TestSplitCommandLine(t *testing.T) {
 		}
 	}
 	look := func(name string) (string, error) { return name, nil }
-	got, err := ResolveEditor(func(k string) string {
+	got, _, err := ResolveEditor(func(k string) string {
 		if k == "EDITOR" {
 			return `"/opt/My Editor/bin/edit" --wait`
 		}
@@ -115,8 +115,19 @@ func TestSplitCommandLine(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, []string{"/opt/My Editor/bin/edit", "--wait"}) {
 		t.Errorf("quoted EDITOR = %q, %v", got, err)
 	}
-	if _, err := ResolveEditor(func(k string) string { return `"broken` }, look); err == nil || !strings.Contains(err.Error(), "$VISUAL") {
-		t.Errorf("unterminated quote: %v", err)
+	// A $VISUAL that does not parse falls back to $EDITOR, with a warning.
+	got, warning, err := ResolveEditor(func(k string) string {
+		if k == "VISUAL" {
+			return `"broken`
+		}
+		return "vim"
+	}, look)
+	if err != nil || !reflect.DeepEqual(got, []string{"vim"}) || !strings.Contains(warning, "ignored $VISUAL") {
+		t.Errorf("broken VISUAL: %q %q %v", got, warning, err)
+	}
+	if got, warning, _ := ResolveEditor(func(k string) string { return `"broken` }, look); !reflect.DeepEqual(got, []string{"nano"}) ||
+		!strings.Contains(warning, "$VISUAL") || !strings.Contains(warning, "$EDITOR") {
+		t.Errorf("both broken: %q %q", got, warning)
 	}
 }
 
