@@ -120,6 +120,8 @@ type diffMsg struct{ diff DiffView }
 type verdictMsg struct {
 	report string
 	err    error
+	// skipped is the decision kind whose confirmation was skipped, if any.
+	skipped string
 }
 
 type tickMsg time.Time
@@ -141,15 +143,20 @@ type Model struct {
 	detailLoading bool
 	detailAgain   bool
 	diffLoading   bool
+
+	// skipConfirm holds decision kinds the human chose "yes, don't ask
+	// again" for. It lives only as long as this Model: never stored.
+	skipConfirm map[string]bool
 }
 
 func NewModel(load Loader, opts Options) Model {
 	return Model{
-		load:    load,
-		opts:    opts,
-		now:     time.Now,
-		loading: true,
-		ui:      UIState{Color: opts.Color, Actions: DefaultActions(opts.AllowActions), Refreshing: true},
+		load:        load,
+		opts:        opts,
+		now:         time.Now,
+		loading:     true,
+		skipConfirm: map[string]bool{},
+		ui:          UIState{Color: opts.Color, Actions: DefaultActions(opts.AllowActions), Refreshing: true},
 	}
 }
 
@@ -357,9 +364,7 @@ func (m Model) handlePickKey(md *Modal, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.syncInput()
 			return m, nil
 		}
-		md.Step, md.Error = StepConfirm, ""
-		m.syncInput()
-		return m, nil
+		return m.toConfirm(md)
 	}
 	md.Choice, md.Error = ReviewTypes[i], ""
 	m.syncInput()
@@ -367,7 +372,7 @@ func (m Model) handlePickKey(md *Modal, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // submit runs the confirmed modal's decision off the UI goroutine.
-func (m Model) submit(md Modal) tea.Cmd {
+func (m Model) submit(md Modal, skipped string) tea.Cmd {
 	load := m.load
 	return func() tea.Msg {
 		var report string
@@ -380,7 +385,7 @@ func (m Model) submit(md Modal) tea.Cmd {
 		default:
 			report, err = load.Verdict(md.Subject, md.Decision, md.Comment, md.SHA)
 		}
-		return verdictMsg{report: report, err: err}
+		return verdictMsg{report: report, err: err, skipped: skipped}
 	}
 }
 
@@ -405,28 +410,19 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if md.Step == StepPick {
 		return m.handlePickKey(&md, msg)
 	}
-	switch msg.Type {
-	case tea.KeyEnter:
+	if md.Step == StepConfirm {
+		return m.handleConfirmKey(&md, msg)
+	}
+	if msg.Type == tea.KeyEnter {
 		value := strings.TrimSpace(m.input.Value())
-		if md.Step == StepComment {
-			if md.Decision == "request_changes" && value == "" {
-				md.Error = "a comment is required to reject"
-				m.syncInput()
-				return m, nil
-			}
-			md.Comment, md.Step, md.Error = value, StepConfirm, ""
-			m.input.Reset()
+		if md.Decision == "request_changes" && value == "" {
+			md.Error = "a comment is required to reject"
 			m.syncInput()
 			return m, nil
 		}
-		if value != md.Subject {
-			md.Error = "typed " + quoteOrEmpty(value) + "; type " + md.Subject + " exactly to confirm"
-			m.syncInput()
-			return m, nil
-		}
-		m.ui.Modal = nil
-		m.setStatus("recording decision for "+md.Subject+"…", false)
-		return m, m.submit(md)
+		md.Comment, md.Error = value, ""
+		m.input.Reset()
+		return m.toConfirm(&md)
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
@@ -434,11 +430,86 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func quoteOrEmpty(s string) string {
-	if s == "" {
-		return "nothing"
+// toConfirm follows the comment or pick step: the y/N chooser, or the
+// decision itself when its kind was set to "don't ask again" this session.
+func (m Model) toConfirm(md *Modal) (tea.Model, tea.Cmd) {
+	if m.skipConfirm[md.Decision] {
+		return m.run(*md, decisionLabel(md.Decision))
 	}
-	return "\"" + s + "\""
+	md.Step, md.Option, md.Error = StepConfirm, ConfirmNo, ""
+	m.syncInput()
+	return m, nil
+}
+
+func (m Model) handleConfirmKey(md *Modal, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	option := md.Option
+	switch msg.String() {
+	case "left", "h", "shift+tab":
+		md.Option = max(md.Option-1, 0)
+		return m, nil
+	case "right", "l", "tab":
+		md.Option = min(md.Option+1, len(ConfirmOptions)-1)
+		return m, nil
+	case "y", "Y":
+		option = ConfirmYes
+	case "n", "N":
+		option = ConfirmNo
+	case "a", "A":
+		option = ConfirmAlways
+	case "enter":
+	default:
+		return m, nil
+	}
+	switch option {
+	case ConfirmYes:
+		return m.run(*md, "")
+	case ConfirmAlways:
+		m.skipConfirm[md.Decision] = true
+		m.ui.AutoConfirm = autoConfirmLabels(m.skipConfirm)
+		return m.run(*md, "")
+	}
+	m.ui.Modal = nil
+	m.setStatus("cancelled", false)
+	return m, nil
+}
+
+// run closes the modal and records the decision; skipped names the kind
+// whose confirmation was skipped, for the status line.
+func (m Model) run(md Modal, skipped string) (tea.Model, tea.Cmd) {
+	m.ui.Modal = nil
+	status := "recording decision for " + md.Subject + "…"
+	if skipped != "" {
+		status += skippedNote(skipped)
+	}
+	m.setStatus(status, false)
+	return m, m.submit(md, skipped)
+}
+
+func skippedNote(kind string) string {
+	return " (confirmation skipped for " + kind + " this session)"
+}
+
+// decisionLabel names a modal decision kind for the user.
+func decisionLabel(decision string) string {
+	switch decision {
+	case "request_changes":
+		return "reject"
+	case DecisionPreApprove:
+		return "pre-approve"
+	case DecisionType:
+		return "type change"
+	}
+	return decision
+}
+
+func autoConfirmLabels(skip map[string]bool) []string {
+	var out []string
+	for _, d := range []string{"approve", "request_changes", DecisionPreApprove, DecisionType} {
+		if skip[d] {
+			out = append(out, decisionLabel(d))
+		}
+	}
+	return out
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -487,7 +558,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(msg.err.Error(), true)
 			return m, nil
 		}
-		m.setStatus(strings.SplitN(strings.TrimSpace(msg.report), "\n", 2)[0], false)
+		status := firstLine(msg.report)
+		if msg.skipped != "" {
+			status += skippedNote(msg.skipped)
+		}
+		m.setStatus(status, false)
 		m.ui.DiffOpen, m.ui.Diff = false, nil
 		return m, m.startRefresh()
 	case tea.KeyMsg:

@@ -141,9 +141,26 @@ type Modal struct {
 	// Current and Choice are the subject's review type and the picked one.
 	Current internal.ReviewType
 	Choice  internal.ReviewType
+	// Option is the highlighted ConfirmOptions entry in the confirm step.
+	Option int
 	// Input is the rendered line editor.
 	Input string
 	Error string
+}
+
+// Confirm step choices, in display order; ConfirmNo is the default.
+const (
+	ConfirmYes = iota
+	ConfirmNo
+	ConfirmAlways
+)
+
+// ConfirmOptions are the confirm step's chooser entries; each Key is a
+// letter of its Label.
+var ConfirmOptions = []Action{
+	ConfirmYes:    {Key: "y", Label: "yes"},
+	ConfirmNo:     {Key: "n", Label: "no"},
+	ConfirmAlways: {Key: "a", Label: "yes, don't ask again"},
 }
 
 type UIState struct {
@@ -167,6 +184,9 @@ type UIState struct {
 	Refreshing bool
 	Color      bool
 	Actions    []Action
+	// AutoConfirm names the decision kinds confirmed without asking for the
+	// rest of this session.
+	AutoConfirm []string
 }
 
 type layout struct {
@@ -330,10 +350,14 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 
 func barActions(ui UIState) []Action {
 	if ui.Modal != nil {
-		if ui.Modal.Step == StepPick {
+		switch ui.Modal.Step {
+		case StepPick:
 			return []Action{{Key: "up", Hint: "↑↓", Label: "choose"}, {Key: "enter", Hint: "enter", Label: "select"}, {Key: "esc", Hint: "esc", Label: "cancel"}}
+		case StepConfirm:
+			return append(append([]Action{}, ConfirmOptions...),
+				Action{Key: "left", Hint: "←→", Label: "choose"}, Action{Key: "enter", Hint: "enter", Label: "pick"}, Action{Key: "esc", Hint: "esc", Label: "no"})
 		}
-		return []Action{{Key: "enter", Hint: "enter", Label: "confirm"}, {Key: "esc", Hint: "esc", Label: "cancel"}}
+		return []Action{{Key: "enter", Hint: "enter", Label: "continue"}, {Key: "esc", Hint: "esc", Label: "cancel"}}
 	}
 	actions := ui.Actions
 	if actions == nil {
@@ -361,6 +385,9 @@ func headerLine(st Styles, s Snapshot, ui UIState) string {
 		text = headerText(s)
 	}
 	line := st.Header.Render(text)
+	if len(ui.AutoConfirm) > 0 {
+		line += st.Dim.Render(" · auto-confirm: " + strings.Join(ui.AutoConfirm, ", "))
+	}
 	if ui.Refreshing {
 		line += " " + st.Running.Render("⟳")
 	}
@@ -514,12 +541,26 @@ func modalLines(st Styles, m *Modal) []string {
 		if m.Comment != "" {
 			lines = append(lines, " Comment: "+m.Comment)
 		}
-		lines = append(lines, fmt.Sprintf(" Type %s to confirm:", m.Subject), " > "+m.Input)
+		lines = append(lines, " "+confirmChooser(st, m.Option))
 	}
 	if m.Error != "" {
 		lines = append(lines, " "+st.Fail.Render(m.Error))
 	}
 	return lines
+}
+
+// confirmChooser draws the y/N chooser with the highlighted option marked.
+func confirmChooser(st Styles, option int) string {
+	var parts []string
+	for i, o := range ConfirmOptions {
+		label := accentKey(st.Accent, st.Plain, o.Label, o.Key)
+		if i == option {
+			parts = append(parts, st.Accent.Render("›")+"["+label+"]")
+		} else {
+			parts = append(parts, "  "+label+" ")
+		}
+	}
+	return strings.Join(parts, "  ")
 }
 
 func typeChangeNote(m *Modal) string {

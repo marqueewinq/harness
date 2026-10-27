@@ -40,10 +40,13 @@ func selectRow(t *testing.T, m Model, i int) Model {
 	return m
 }
 
+// confirm answers the y/N chooser for subject id with yes.
 func confirm(t *testing.T, m Model, id string) Model {
 	t.Helper()
-	m = typeText(t, m, id)
-	return press(t, m, "enter")
+	if m.ui.Modal == nil || m.ui.Modal.Step != StepConfirm || m.ui.Modal.Subject != id {
+		t.Fatalf("not at the confirm step for %s: %+v", id, m.ui.Modal)
+	}
+	return press(t, m, "y")
 }
 
 func TestPreApproveWithoutReviewOnlySetsType(t *testing.T) {
@@ -57,11 +60,9 @@ func TestPreApproveWithoutReviewOnlySetsType(t *testing.T) {
 		t.Errorf("pre-approve modal:\n%s", v)
 	}
 	m = press(t, m, "enter")
-	m = confirm(t, m, "task-031")
-	if m.ui.Modal == nil || len(f.calls) != 0 {
-		t.Fatalf("wrong ID accepted: %v", f.calls)
+	if !strings.Contains(m.View(), "yes, don't ask again") {
+		t.Errorf("no y/N chooser:\n%s", m.View())
 	}
-	m.input.Reset()
 	m = confirm(t, m, "task-030")
 	if want := []string{`type task-030 none ""`}; !reflect.DeepEqual(f.calls, want) {
 		t.Errorf("calls = %v, want %v", f.calls, want)
@@ -278,7 +279,7 @@ func TestRenderTypePickerGolden(t *testing.T) {
 	for _, step := range []ModalStep{StepPick, StepConfirm} {
 		ui := UIState{Selected: rowTask025, Actions: DefaultActions(true), Modal: &Modal{
 			Decision: DecisionType, Subject: "task-025", SHA: "abc12345ff", Step: step,
-			Current: internal.ReviewDefault, Choice: internal.ReviewHuman, Input: "task-02",
+			Current: internal.ReviewDefault, Choice: internal.ReviewHuman, Option: ConfirmNo,
 		}}
 		out := Render(approvalSnapshot(), ui, 120, 30)
 		renderLines(t, out, 30)

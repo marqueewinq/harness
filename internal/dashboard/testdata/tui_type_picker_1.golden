@@ -23,8 +23,8 @@ RECENT (24h)
 
 
 
+
 ── Set review type of task-025 to human? ──
  Revokes the review request at abc12345 and stops its reviewer; the task goes back to CHECKS_PASSED.
- Type task-025 to confirm:
- > task-02
- enter confirm  esc cancel
+   yes   ›[no]    yes, don't ask again 
+ yes  no  yes, don't ask again  ←→ choose  enter pick  esc no

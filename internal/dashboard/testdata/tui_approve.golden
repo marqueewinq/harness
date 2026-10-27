@@ -1,4 +1,4 @@
-harness · main @ 39829b9 · 16:42:07
+harness · main @ 39829b9 · 16:42:07 · auto-confirm: reject, type change
 warning: reading committed review config: boom
 AWAITING REVIEW
 ›! task-026  81742677  12m  agent reviewer orphaned  Reviewer supervision
@@ -16,9 +16,9 @@ MERGE QUEUE
  ! 2 task-029  pid 6001    hb 3m    stale
 RECENT (24h)
  proj-001 › epic-002 Planning layer · epic/planning · 3/7 done
+   task-024  MERGED  18m ago  Terminal verdicts
+
 ── Approve task-026 at 81742677? ──
  Comment: looks good
- Type task-026 to confirm:
- > task-062
- typed "task-062"; type task-026 exactly to confirm
- enter confirm  esc cancel
+   yes   ›[no]    yes, don't ask again 
+ yes  no  yes, don't ask again  ←→ choose  enter pick  esc no

@@ -27,4 +27,4 @@ RECENT (24h)
  Approves the requested commit abc12345 and stops its review.
  Reason (optional, enter to continue):
  > docs only
- enter confirm  esc cancel
+ enter continue  esc cancel

@@ -178,10 +178,10 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 | `q`, `Ctrl-C` | quit |
 | `d` | diff of any task or epic row; `j`/`k`, `pgup`/`pgdn`, `g`/`G` scroll, `esc` closes. With an open review request it is exactly the requested commit (`<base>...<sha>`, base is the task's base branch or main for an epic); otherwise the branch head (`<base>...<branch>`), or a note when there is nothing to diff (not started, branch deleted). The header names the range shown and lists the description, check results on that commit and previous review comments |
 | `x` | expand: descriptions and review comments in the detail and diff panes are wrapped to the pane width with their line breaks kept, but each shows at most 6 lines until `x` expands it; `x` again or moving the selection collapses |
-| `a` | on a row with an open review request: approve; optional comment, then type the task or epic ID to confirm |
-| `r` | on a row with an open review request: reject; a comment is required, then type the ID to confirm |
-| `p` | pre-approve a task row or epic header that is not merged or closed: sets review type `none` (no `review.allow_none` needed: it is a human decision); optional reason, then type the ID to confirm. With a review in flight it also approves the requested commit and stops the reviewer |
-| `t` | review type picker (`default` / `human` / `none`, any direction) for a task row or epic header that is not merged or closed, then type the ID to confirm. With a review in flight, `none` works like `p` and `human` revokes the request, stops the agent reviewer and returns the task to `CHECKS_PASSED`; `default` only changes the type. An `APPROVED` or `QUEUED` task keeps its state |
+| `a` | on a row with an open review request: approve; optional comment, then confirm |
+| `r` | on a row with an open review request: reject; a comment is required, then confirm |
+| `p` | pre-approve a task row or epic header that is not merged or closed: sets review type `none` (no `review.allow_none` needed: it is a human decision); optional reason, then confirm. With a review in flight it also approves the requested commit and stops the reviewer |
+| `t` | review type picker (`default` / `human` / `none`, any direction) for a task row or epic header that is not merged or closed, then confirm. With a review in flight, `none` works like `p` and `human` revokes the request, stops the agent reviewer and returns the task to `CHECKS_PASSED`; `default` only changes the type. An `APPROVED` or `QUEUED` task keeps its state |
 
 Task rows and epic headers show an **approval** column: the review type and
 where its gate stands, e.g. `default · not started yet`, `default · reviewing`,
@@ -191,6 +191,15 @@ never appears under AWAITING REVIEW.
 
 Every hotkey letter is coloured inside its word; keys that do not apply to
 the selected row keep a faint coloured letter and a dimmed word.
+
+Confirming shows what will happen (e.g. "Approve task-026 at 81742677?") and a
+chooser: `y` yes, `n`, `esc` or `enter` no (the default), `a` yes and don't ask
+again; `←`/`→` move the highlight and `enter` picks it. "Don't ask again"
+applies to that kind of decision (approve, reject, pre-approve, type change)
+for the rest of this dashboard session only: nothing is saved, the header
+lists the kinds as `auto-confirm: …`, and the status line notes each skipped
+confirmation. Comments and reasons are still asked for. The CLI prompt of
+`harness review approve|reject` at a terminal still wants the typed ID.
 
 `esc` cancels an approve, reject, pre-approve or type change at any step. The
 verdict goes through the same checks as `harness review approve|reject` (open

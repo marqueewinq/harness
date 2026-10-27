@@ -117,8 +117,8 @@ func TestRenderDiffGolden(t *testing.T) {
 func TestRenderApproveModalGolden(t *testing.T) {
 	ui := UIState{Selected: 0, Actions: DefaultActions(true), Modal: &Modal{
 		Decision: "approve", Subject: "task-026", SHA: "8174267712345", Step: StepConfirm,
-		Comment: "looks good", Input: "task-062", Error: `typed "task-062"; type task-026 exactly to confirm`,
-	}}
+		Comment: "looks good", Option: ConfirmNo,
+	}, AutoConfirm: []string{"reject", "type change"}}
 	out := Render(sampleSnapshot(), ui, 100, 24)
 	renderLines(t, out, 24)
 	checkGolden(t, "tui_approve.golden", out+"\n")
@@ -139,8 +139,20 @@ func TestModalKeyBarColor(t *testing.T) {
 	ui := UIState{Color: true, Modal: &Modal{Decision: "approve", Subject: "task-026"}}
 	out := Render(sampleSnapshot(), ui, 100, 24)
 	bar := out[strings.LastIndex(out, "\n")+1:]
-	if !strings.Contains(bar, st.Accent.Render("enter")+" "+st.Plain.Render("confirm")) || !strings.Contains(bar, st.Accent.Render("esc")) {
+	if !strings.Contains(bar, st.Accent.Render("enter")+" "+st.Plain.Render("continue")) || !strings.Contains(bar, st.Accent.Render("esc")) {
 		t.Errorf("modal key bar = %q", bar)
+	}
+	ui.Modal.Step = StepConfirm
+	out = Render(sampleSnapshot(), ui, 100, 24)
+	bar = out[strings.LastIndex(out, "\n")+1:]
+	for _, o := range ConfirmOptions {
+		if !strings.Contains(bar, enabledKey(st, o.Label, o.Key)) {
+			t.Errorf("chooser key bar lacks accented %q: %q", o.Label, bar)
+		}
+	}
+	if chooser := confirmChooser(st, ConfirmNo); !strings.Contains(chooser, st.Accent.Render("›")+"["+enabledKey(st, "no", "n")+"]") ||
+		!strings.Contains(chooser, enabledKey(st, "yes, don't ask again", "a")) {
+		t.Errorf("chooser = %q", chooser)
 	}
 }
 

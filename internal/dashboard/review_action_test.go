@@ -21,26 +21,24 @@ func TestApproveFlow(t *testing.T) {
 	if m.ui.Modal == nil || m.ui.Modal.Decision != "approve" || m.ui.Modal.Subject != "task-026" || m.ui.Modal.Step != StepComment {
 		t.Fatalf("modal = %+v", m.ui.Modal)
 	}
-	if v := m.View(); !strings.Contains(v, "Approve task-026 at 81742677?") || !strings.Contains(v, "enter confirm") {
+	if v := m.View(); !strings.Contains(v, "Approve task-026 at 81742677?") || !strings.Contains(v, "enter continue") {
 		t.Errorf("approve modal not rendered:\n%s", v)
 	}
 	m = typeText(t, m, "looks good")
 	m = press(t, m, "enter")
-	if m.ui.Modal.Step != StepConfirm || m.ui.Modal.Comment != "looks good" {
+	if m.ui.Modal.Step != StepConfirm || m.ui.Modal.Comment != "looks good" || m.ui.Modal.Option != ConfirmNo {
 		t.Fatalf("after comment: %+v", m.ui.Modal)
 	}
-	m = typeText(t, m, "task-062")
-	m = press(t, m, "enter")
-	if m.ui.Modal == nil || !strings.Contains(m.ui.Modal.Error, "type task-026 exactly") || len(f.verdicts) != 0 {
-		t.Fatalf("wrong ID accepted: modal=%+v verdicts=%v", m.ui.Modal, f.verdicts)
+	if v := m.View(); !strings.Contains(v, "›[no]") || !strings.Contains(v, "yes, don't ask again") {
+		t.Errorf("chooser not drawn with no highlighted:\n%s", v)
 	}
-	if !strings.Contains(m.View(), "type task-026 exactly") {
-		t.Errorf("inline error not rendered:\n%s", m.View())
+	// Letters other than the chooser's do nothing.
+	m = press(t, m, "x")
+	if m.ui.Modal == nil || len(f.verdicts) != 0 {
+		t.Fatalf("stray key answered the chooser: %+v %v", m.ui.Modal, f.verdicts)
 	}
-	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyCtrlU})
-	m = typeText(t, m, "task-026")
 	calls := f.snapCalls
-	m = press(t, m, "enter")
+	m = press(t, m, "y")
 	want := []verdictCall{{"task-026", "approve", "looks good", "8174267712345"}}
 	if len(f.verdicts) != 1 || f.verdicts[0] != want[0] {
 		t.Fatalf("verdicts = %+v, want %+v", f.verdicts, want)
@@ -65,9 +63,7 @@ func TestRejectRequiresComment(t *testing.T) {
 		t.Fatalf("empty reject comment accepted: %+v", m.ui.Modal)
 	}
 	m = typeText(t, m, "split the migration")
-	m = press(t, m, "enter")
-	m = typeText(t, m, "epic-002")
-	m = press(t, m, "enter")
+	m = press(t, m, "enter", "right", "left", "left", "enter")
 	if len(f.verdicts) != 1 || f.verdicts[0] != (verdictCall{"epic-002", "request_changes", "split the migration", "5d1c09aa999"}) {
 		t.Errorf("verdicts = %+v", f.verdicts)
 	}
@@ -75,34 +71,78 @@ func TestRejectRequiresComment(t *testing.T) {
 
 func TestEscCancelsAtEachStep(t *testing.T) {
 	for _, keys := range [][]string{{"a"}, {"a", "enter"}, {"r"}, {"r", "x", "enter"}} {
-		f := &fakeLoader{snap: sampleSnapshot()}
-		m := started(t, f)
-		for _, k := range keys {
-			if k == "x" {
-				m = typeText(t, m, "some comment")
-				continue
+		for _, cancel := range []string{"esc", "n", "enter"} {
+			if cancel != "esc" && keys[len(keys)-1] != "enter" {
+				continue // n and enter only answer the chooser
 			}
-			m = press(t, m, k)
+			f := &fakeLoader{snap: sampleSnapshot()}
+			m := started(t, f)
+			for _, k := range keys {
+				if k == "x" {
+					m = typeText(t, m, "some comment")
+					continue
+				}
+				m = press(t, m, k)
+			}
+			if m.ui.Modal == nil {
+				t.Fatalf("%v: no modal before %s", keys, cancel)
+			}
+			m = press(t, m, cancel)
+			if m.ui.Modal != nil || len(f.verdicts) != 0 || m.ui.Status != "cancelled" {
+				t.Errorf("%v %s: left modal=%+v verdicts=%v status=%q", keys, cancel, m.ui.Modal, f.verdicts, m.ui.Status)
+			}
+			if strings.Contains(m.View(), "don't ask again") {
+				t.Errorf("%v %s: modal still drawn", keys, cancel)
+			}
 		}
-		if m.ui.Modal == nil {
-			t.Fatalf("%v: no modal before esc", keys)
-		}
-		m = press(t, m, "esc")
-		if m.ui.Modal != nil || len(f.verdicts) != 0 || m.ui.Status != "cancelled" {
-			t.Errorf("%v: esc left modal=%+v verdicts=%v status=%q", keys, m.ui.Modal, f.verdicts, m.ui.Status)
-		}
-		if strings.Contains(m.View(), "to confirm") {
-			t.Errorf("%v: modal still drawn", keys)
-		}
+	}
+}
+
+func TestDontAskAgainIsPerKindAndSession(t *testing.T) {
+	f := &fakeLoader{snap: sampleSnapshot()}
+	m := started(t, f)
+	m = press(t, m, "a", "enter", "a")
+	if len(f.verdicts) != 1 || f.verdicts[0].decision != "approve" {
+		t.Fatalf("a did not confirm: %v", f.verdicts)
+	}
+	if v := strings.Split(m.View(), "\n")[0]; !strings.Contains(v, "auto-confirm: approve") {
+		t.Errorf("header lacks auto-confirm: %q", v)
+	}
+
+	// Approve again: the comment step stays, the chooser is skipped.
+	m = press(t, m, "j", "a")
+	if m.ui.Modal == nil || m.ui.Modal.Step != StepComment {
+		t.Fatalf("comment step skipped: %+v", m.ui.Modal)
+	}
+	m = typeText(t, m, "ok")
+	m = press(t, m, "enter")
+	if m.ui.Modal != nil || len(f.verdicts) != 2 || f.verdicts[1] != (verdictCall{"epic-002", "approve", "ok", "5d1c09aa999"}) {
+		t.Fatalf("second approve not run straight away: modal=%+v verdicts=%v", m.ui.Modal, f.verdicts)
+	}
+	if !strings.Contains(m.ui.Status, "(confirmation skipped for approve this session)") {
+		t.Errorf("status = %q", m.ui.Status)
+	}
+
+	// Another kind still asks.
+	m = press(t, m, "r")
+	m = typeText(t, m, "no")
+	m = press(t, m, "enter")
+	if m.ui.Modal == nil || m.ui.Modal.Step != StepConfirm {
+		t.Errorf("reject skipped its confirmation: %+v", m.ui.Modal)
+	}
+
+	// A new session asks again.
+	fresh := started(t, &fakeLoader{snap: sampleSnapshot()})
+	fresh = press(t, fresh, "a", "enter")
+	if fresh.ui.Modal == nil || fresh.ui.Modal.Step != StepConfirm || len(fresh.ui.AutoConfirm) != 0 {
+		t.Errorf("don't-ask-again leaked into a new Model: %+v %v", fresh.ui.Modal, fresh.ui.AutoConfirm)
 	}
 }
 
 func TestVerdictErrorShown(t *testing.T) {
 	f := &fakeLoader{snap: sampleSnapshot(), verdictErr: errors.New("task-026 moved since review was requested (81742677 -> 0badc0de)")}
 	m := started(t, f)
-	m = press(t, m, "a", "enter")
-	m = typeText(t, m, "task-026")
-	m = press(t, m, "enter")
+	m = press(t, m, "a", "enter", "y")
 	if !m.ui.StatusErr || !strings.Contains(m.ui.Status, "moved since review was requested") {
 		t.Errorf("status = %q err=%v", m.ui.Status, m.ui.StatusErr)
 	}
@@ -188,9 +228,7 @@ func TestVerdictPinnedToShownDiff(t *testing.T) {
 	if m.ui.Modal == nil || m.ui.Modal.SHA != "8174267712345" {
 		t.Fatalf("modal SHA = %+v, want the shown diff's 8174267712345", m.ui.Modal)
 	}
-	m = press(t, m, "enter")
-	m = typeText(t, m, "task-026")
-	m = press(t, m, "enter")
+	m = press(t, m, "enter", "y")
 	if len(f.verdicts) != 1 || f.verdicts[0].sha != "8174267712345" {
 		t.Errorf("verdicts = %+v, want SHA of the shown diff", f.verdicts)
 	}
