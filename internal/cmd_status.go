@@ -21,7 +21,7 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		fmt.Printf("Description: %s\n", task.Description)
 	}
 	printNotes(task.Notes)
-	a.markNotesSeen(task.ID)
+	a.markNotesSeen(task.ID, task.Notes)
 	fmt.Printf("Branch: %s\n", task.Branch)
 	fmt.Printf("Worktree: %s\n", task.WorktreePath)
 	fmt.Printf("State: %s\n", task.State)

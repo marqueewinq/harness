@@ -52,10 +52,9 @@ func (a *App) showNewNotes(taskID string) {
 	if err != nil {
 		return
 	}
-	now := time.Now()
 	if notesUnseen(notes, changed, seen) {
 		printNotesBanner(taskID, "", notes, by, changed)
-		a.DB.conn.Exec(`UPDATE tasks SET notes_seen_at = ? WHERE id = ?`, now, taskID)
+		a.markNotesSeen(taskID, notes)
 	}
 	if epicID == "" {
 		return
@@ -68,7 +67,8 @@ func (a *App) showNewNotes(taskID string) {
 	}
 	if notesUnseen(epicNotes, epicChanged, epicSeen) {
 		printNotesBanner(epicID, " (the epic of "+taskID+")", epicNotes, epicBy, epicChanged)
-		a.DB.conn.Exec(`UPDATE tasks SET epic_notes_seen_at = ? WHERE id = ?`, now, taskID)
+		a.DB.conn.Exec(`UPDATE tasks SET epic_notes_seen_at = ? WHERE id = ?
+			AND (SELECT notes FROM epics WHERE id = ?) = ?`, time.Now(), taskID, epicID, epicNotes)
 	}
 }
 
@@ -82,15 +82,17 @@ func (a *App) showNewEpicNotes(epicID string) {
 	}
 	if notesUnseen(notes, changed, seen) {
 		printNotesBanner(epicID, "", notes, by, changed)
-		a.markNotesSeen(epicID)
+		a.markNotesSeen(epicID, notes)
 	}
 }
 
-// markNotesSeen is for commands that already print the subject's notes.
-func (a *App) markNotesSeen(subject string) {
+// markNotesSeen records that shown was displayed. It only takes effect while
+// the stored notes still equal shown, so an edit landing between the read and
+// this write stays unseen and is shown next time.
+func (a *App) markNotesSeen(subject, shown string) {
 	table := "tasks"
 	if IsEpicID(subject) {
 		table = "epics"
 	}
-	a.DB.conn.Exec(`UPDATE `+table+` SET notes_seen_at = ? WHERE id = ?`, time.Now(), subject)
+	a.DB.conn.Exec(`UPDATE `+table+` SET notes_seen_at = ? WHERE id = ? AND notes = ?`, time.Now(), subject, shown)
 }
