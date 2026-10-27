@@ -278,7 +278,7 @@ func TestEpicHeaderSelectable(t *testing.T) {
 	if r := m.selected(); r == nil || r.Key() != "epic:epic-002" || !r.IsEpic {
 		t.Fatalf("selected = %+v", r)
 	}
-	if !strings.Contains(m.View(), "›proj-001 › epic-002") || m.ui.Detail == nil || m.ui.Detail.Key != "epic:epic-002" {
+	if !strings.Contains(m.View(), "›▾ proj-001 › epic-002") || m.ui.Detail == nil || m.ui.Detail.Key != "epic:epic-002" {
 		t.Errorf("epic header not selected with detail:\n%s", m.View())
 	}
 }

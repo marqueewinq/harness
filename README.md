@@ -183,6 +183,10 @@ lease, an unfinished rebase in the worktree, or a review waiting for a human.
 | `↑`/`↓`, `j`/`k` | select a row: a review, a task, or an epic header under IN FLIGHT (`g`/`G` first/last) |
 | `enter`, `tab` | toggle the detail pane: state history, checks, review request and reviewer run, queue lease, live check log; `pgup`/`pgdn` scroll it |
 | `f` | refresh now |
+| `v` | switch view: **active** (reviews, in-flight tasks, merge queue, last 24h) ⇄ **all** (every project › epic › task of any state and age, epics without tasks, "No epic"; merged and closed rows dimmed). The header shows `view: all` |
+| `/` | filter the current view as you type (case-insensitive: id, title, state, review type, epic); `enter` keeps it and returns to the list, `esc` clears it. The header shows `filter: …`; a task match keeps its epic header |
+| `space` | on an epic header: fold or unfold its tasks (`▸`/`▾`, with the task count). Folding lasts for the session, across refreshes and views |
+| `c` | collapse every epic of the current view, or expand them all when all are collapsed |
 | `q`, `Ctrl-C` | quit |
 | `d` | diff of any task or epic row; `j`/`k`, `pgup`/`pgdn`, `g`/`G` scroll, `esc` closes. With an open review request it is exactly the requested commit (`<base>...<sha>`, base is the task's base branch or main for an epic); otherwise the branch head (`<base>...<branch>`), or a note when there is nothing to diff (not started, branch deleted). The header names the range shown and lists the description, check results on that commit and previous review comments |
 | `x` | expand: descriptions, notes and review comments in the detail and diff panes are wrapped to the pane width with their line breaks kept, but each shows at most 6 lines until `x` expands it; `x` again or moving the selection collapses |

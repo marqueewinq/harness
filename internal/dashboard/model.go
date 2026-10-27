@@ -204,7 +204,8 @@ func NewModel(load Loader, opts Options) Model {
 		now:         time.Now,
 		loading:     true,
 		skipConfirm: map[string]bool{},
-		ui:          UIState{Color: opts.Color, Actions: DefaultActions(opts.AllowActions), Refreshing: true},
+		ui: UIState{Color: opts.Color, Actions: DefaultActions(opts.AllowActions), Refreshing: true,
+			List: ListOptions{View: ViewActive, Collapsed: map[string]bool{}, Folding: true}},
 	}
 }
 
@@ -241,6 +242,10 @@ func DefaultActions(allowed bool) []Action {
 		{Key: "d", Label: "diff", Enabled: hasRow, Start: func(m *Model, r Row) tea.Cmd { return m.openDiff(r) }},
 		{Key: "x", Label: "expand", Enabled: func(c Context) bool { return c.Expandable }},
 		{Key: "enter", Hint: "enter", Label: "details", Enabled: hasRow},
+		{Key: "v", Label: "view"},
+		{Key: "/", Hint: "/", Label: "filter"},
+		{Key: " ", Hint: "space", Label: "fold", Enabled: func(c Context) bool { return c.Row != nil && c.Row.Kind == RowEpic }},
+		{Key: "c", Label: "collapse"},
 		{Key: "f", Label: "refresh"},
 		{Key: "q", Label: "quit"},
 		{Key: "up", Hint: "↑↓", Label: "select"},
@@ -331,7 +336,16 @@ func (m *Model) move(delta int) tea.Cmd {
 // applySnapshot keeps the selection on the same row when it still exists.
 func (m *Model) applySnapshot(s Snapshot) {
 	m.snap = s
-	m.rows = Rows(s)
+	m.relist()
+}
+
+// relist rebuilds the rows for the current snapshot, view, filter and
+// folding. The selection stays on the same row while it is listed, else on
+// the row now at its position (the nearest one). It returns the detail load
+// when the selection moved to another row.
+func (m *Model) relist() tea.Cmd {
+	before := m.selKey
+	m.rows = RowsFor(m.snap, m.ui.List)
 	sel := -1
 	for i, r := range m.rows {
 		if r.Key() == m.selKey {
@@ -346,6 +360,90 @@ func (m *Model) applySnapshot(s Snapshot) {
 		m.selKey = r.Key()
 	}
 	m.fixOffset()
+	if m.selKey != before {
+		return m.startDetail()
+	}
+	return nil
+}
+
+func (m *Model) toggleView() tea.Cmd {
+	if m.ui.List.View == ViewAll {
+		m.ui.List.View = ViewActive
+	} else {
+		m.ui.List.View = ViewAll
+	}
+	return m.relist()
+}
+
+// toggleFold folds or unfolds the selected epic header's tasks.
+func (m *Model) toggleFold() tea.Cmd {
+	r := m.selected()
+	if r == nil || r.Kind != RowEpic {
+		m.setStatus("space folds an epic header; select one", true)
+		return nil
+	}
+	m.ui.List.Collapsed[r.ID] = !m.ui.List.Collapsed[r.ID]
+	return m.relist()
+}
+
+// toggleFoldAll collapses every epic of the current view, or expands them
+// all when none is expanded. A selected task whose epic folds away hands the
+// selection to its epic header.
+func (m *Model) toggleFoldAll() tea.Cmd {
+	groups := m.snap.Groups
+	if m.ui.List.View == ViewAll {
+		groups = m.snap.Browse
+	}
+	collapse := false
+	for _, g := range groups {
+		if g.Epic != nil && !m.ui.List.Collapsed[g.Epic.ID] {
+			collapse = true
+		}
+	}
+	for _, g := range groups {
+		if g.Epic != nil {
+			m.ui.List.Collapsed[g.Epic.ID] = collapse
+		}
+	}
+	if r := m.selected(); collapse && r != nil && r.Kind == RowTask && r.Group != nil && r.Group.Epic != nil {
+		m.selKey = "epic:" + r.Group.Epic.ID
+	}
+	return m.relist()
+}
+
+func (m *Model) startFilter() tea.Cmd {
+	m.input = textinput.New()
+	m.input.Prompt = ""
+	m.input.CharLimit = 200
+	m.input.Cursor.SetMode(cursor.CursorStatic)
+	m.input.SetValue(m.ui.List.Filter)
+	m.input.CursorEnd()
+	m.ui.Filtering = true
+	cmd := m.input.Focus()
+	m.ui.FilterInput = m.input.View()
+	m.fixOffset()
+	return cmd
+}
+
+// handleFilterKey edits the filter incrementally; enter keeps it, esc
+// clears it.
+func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
+	case tea.KeyEnter:
+		m.ui.Filtering = false
+		m.fixOffset()
+		return m, nil
+	case tea.KeyEsc:
+		m.ui.Filtering, m.ui.List.Filter = false, ""
+		return m, m.relist()
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	m.ui.FilterInput = m.input.View()
+	m.ui.List.Filter = m.input.Value()
+	return m, tea.Batch(cmd, m.relist())
 }
 
 func (m *Model) setStatus(text string, isErr bool) {
@@ -654,6 +752,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.finishEdit(msg)
 		return next, cmd
 	case tea.KeyMsg:
+		if m.ui.Filtering {
+			return m.handleFilterKey(msg)
+		}
 		if m.ui.Modal != nil {
 			return m.handleModalKey(msg)
 		}
@@ -752,6 +853,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDiffKey(k)
 	}
 	switch k {
+	case "v":
+		return m, m.toggleView()
+	case "/":
+		return m, m.startFilter()
+	case " ":
+		return m, m.toggleFold()
+	case "c":
+		return m, m.toggleFoldAll()
 	case "up", "k":
 		return m, m.move(-1)
 	case "down", "j":

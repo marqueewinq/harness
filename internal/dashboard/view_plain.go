@@ -64,7 +64,7 @@ func UseColor(isTerminal bool, noColor string) bool {
 func RenderPlain(s Snapshot, width int, color bool) string {
 	st := NewStyles(color)
 	lines := append([]string{st.Header.Render(headerText(s))}, warningLines(st, s)...)
-	list, _ := listLines(st, s)
+	list, _ := listLines(st, s, ListOptions{})
 	for _, l := range list {
 		lines = append(lines, l.text)
 	}
@@ -94,59 +94,129 @@ type listLine struct {
 	row  int
 }
 
+// Dashboard list views.
+const (
+	ViewActive = "active"
+	ViewAll    = "all"
+)
+
+// ListOptions shape the list. The zero value is the active view with no
+// filter and no fold markers: what --once prints.
+type ListOptions struct {
+	View string
+	// Filter keeps rows whose id, title, state, review type or epic contains
+	// it, ignoring case.
+	Filter string
+	// Collapsed epics show their header only; Folding draws ▸/▾ and task
+	// counts on epic headers and applies Collapsed.
+	Collapsed map[string]bool
+	Folding   bool
+}
+
+func (o ListOptions) matches(fields ...string) bool {
+	if o.Filter == "" {
+		return true
+	}
+	f := strings.ToLower(o.Filter)
+	for _, s := range fields {
+		if strings.Contains(strings.ToLower(s), f) {
+			return true
+		}
+	}
+	return false
+}
+
 // listLines lays out the sections; rows lists the selectable rows in display order.
-func listLines(st Styles, s Snapshot) (lines []listLine, rows []Row) {
+func listLines(st Styles, s Snapshot, o ListOptions) (lines []listLine, rows []Row) {
 	add := func(text string) { lines = append(lines, listLine{text: text, row: -1}) }
 	addRow := func(text string, r Row) {
 		lines = append(lines, listLine{text: text, row: len(rows)})
 		rows = append(rows, r)
 	}
-	section := func(title string, empty bool) bool {
-		if empty {
-			add(st.Dim.Render(title + " · none"))
-			return false
-		}
+	// A section whose rows are all filtered out collapses to "· none".
+	section := func(title string, body func()) {
+		start := len(lines)
 		add(st.Section.Render(title))
-		return true
+		body()
+		if len(lines) == start+1 {
+			lines[start].text = st.Dim.Render(title + " · none")
+		}
+	}
+	groups := func(gs []EpicGroup, line func(TaskRow) string, selectable, dimDone bool) {
+		for gi := range gs {
+			g := &gs[gi]
+			epicText := ""
+			if g.Epic != nil {
+				epicText = g.Epic.ID + " " + g.Epic.Title
+			}
+			var shown []*TaskRow
+			for i := range g.Tasks {
+				t := &g.Tasks[i]
+				if o.matches(t.ID, t.Title, string(t.State), string(t.ReviewType), epicText) {
+					shown = append(shown, t)
+				}
+			}
+			if len(shown) == 0 && !(g.Epic != nil && o.matches(epicText, string(g.Epic.ReviewType))) {
+				continue
+			}
+			header := groupHeader(st, *g)
+			folded := false
+			if g.Epic != nil && selectable && o.Folding {
+				folded = o.Collapsed[g.Epic.ID]
+				marker := "▾"
+				if folded {
+					marker = "▸"
+				}
+				header = " " + st.Accent.Render(marker) + header + fmt.Sprintf(" · %d tasks", len(g.Tasks))
+			}
+			if g.Epic != nil && selectable {
+				addRow(header, Row{Kind: RowEpic, ID: g.Epic.ID, IsEpic: true, Group: g})
+			} else {
+				add(header)
+			}
+			if folded {
+				continue
+			}
+			for _, t := range shown {
+				text := line(*t)
+				if dimDone && finished(t.State) {
+					// Keep the leading gutter space plain: the cursor replaces it.
+					text = " " + st.Dim.Render(strings.TrimPrefix(ansi.Strip(text), " "))
+				}
+				addRow(text, Row{Kind: RowTask, ID: t.ID, Task: t, Group: g})
+			}
+		}
 	}
 
-	if section("AWAITING REVIEW", len(s.Reviews) == 0) {
+	section("AWAITING REVIEW", func() {
 		for i := range s.Reviews {
 			r := &s.Reviews[i]
-			addRow(reviewLine(st, *r), Row{Kind: RowReview, ID: r.SubjectID, IsEpic: r.IsEpic, Review: r})
-		}
-	}
-	if section("IN FLIGHT", len(s.Groups) == 0) {
-		for gi := range s.Groups {
-			g := &s.Groups[gi]
-			if g.Epic != nil {
-				addRow(groupHeader(st, *g), Row{Kind: RowEpic, ID: g.Epic.ID, IsEpic: true, Group: g})
-			} else {
-				add(groupHeader(st, *g))
-			}
-			for i := range g.Tasks {
-				t := &g.Tasks[i]
-				addRow(taskLine(st, *t), Row{Kind: RowTask, ID: t.ID, Task: t})
+			if o.matches(r.SubjectID, r.Title, r.Reviewer) {
+				addRow(reviewLine(st, *r), Row{Kind: RowReview, ID: r.SubjectID, IsEpic: r.IsEpic, Review: r})
 			}
 		}
+	})
+	if o.View == ViewAll {
+		section("ALL TASKS", func() { groups(s.Browse, func(t TaskRow) string { return taskLine(st, t) }, true, true) })
+	} else {
+		section("IN FLIGHT", func() { groups(s.Groups, func(t TaskRow) string { return taskLine(st, t) }, true, false) })
 	}
-	if section("MERGE QUEUE", len(s.Queue) == 0) {
+	section("MERGE QUEUE", func() {
 		for _, q := range s.Queue {
-			add(queueLine(st, q))
-		}
-	}
-	recentTitle := "RECENT (24h)"
-	if s.All {
-		recentTitle = "DONE"
-	}
-	if section(recentTitle, len(s.Recent) == 0) {
-		for _, g := range s.Recent {
-			add(groupHeader(st, g))
-			for i := range g.Tasks {
-				t := &g.Tasks[i]
-				addRow(recentLine(st, *t), Row{Kind: RowTask, ID: t.ID, Task: t})
+			if o.matches(q.TaskID) {
+				add(queueLine(st, q))
 			}
 		}
+	})
+	if o.View != ViewAll {
+		recentTitle := "RECENT (24h)"
+		if s.All {
+			recentTitle = "DONE"
+		}
+		section(recentTitle, func() { groups(s.Recent, func(t TaskRow) string { return recentLine(st, t) }, false, false) })
+	}
+	if o.Filter != "" && len(rows) == 0 {
+		add(st.Dim.Render("no matches"))
 	}
 	return lines, rows
 }

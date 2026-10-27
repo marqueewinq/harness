@@ -61,8 +61,13 @@ func (r Row) RequestSHA() string {
 	return ""
 }
 
+// Rows lists the selectable rows of the plain active list.
 func Rows(s Snapshot) []Row {
-	_, rows := listLines(NewStyles(false), s)
+	return RowsFor(s, ListOptions{})
+}
+
+func RowsFor(s Snapshot, o ListOptions) []Row {
+	_, rows := listLines(NewStyles(false), s, o)
 	return rows
 }
 
@@ -203,6 +208,11 @@ type UIState struct {
 	// AutoConfirm names the decision kinds confirmed without asking for the
 	// rest of this session.
 	AutoConfirm []string
+	// List is the view, filter and folding of the list.
+	List ListOptions
+	// Filtering: the filter line editor is open; FilterInput is its rendering.
+	Filtering   bool
+	FilterInput string
 }
 
 type layout struct {
@@ -217,10 +227,13 @@ type layout struct {
 
 func computeLayout(st Styles, s Snapshot, ui UIState, height int) layout {
 	l := layout{selLine: -1}
-	l.lines, l.rows = listLines(st, s)
+	l.lines, l.rows = listLines(st, s, ui.List)
 	l.header = append([]string{headerLine(st, s, ui)}, warningLines(st, s)...)
 	avail := height - len(l.header) - 1 - len(modalLines(st, ui.Modal))
 	if ui.Status != "" {
+		avail--
+	}
+	if ui.Filtering {
 		avail--
 	}
 	if avail < 0 {
@@ -312,7 +325,7 @@ func Expandable(s Snapshot, ui UIState, width int) bool {
 		}
 		_, hidden = paneLines(st, ui.Diff.Header, ui.Diff.HeaderSpans, width-1, false)
 	default:
-		sel := selectedRow(Rows(s), ui)
+		sel := selectedRow(RowsFor(s, ui.List), ui)
 		if !ui.DetailOpen || sel == nil || ui.Detail == nil || ui.Detail.Key != sel.Key() {
 			return false
 		}
@@ -357,6 +370,9 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 		}
 		out = append(out, " "+style.Render(ui.Status))
 	}
+	if ui.Filtering {
+		out = append(out, " "+st.Accent.Render("/")+" "+ui.FilterInput)
+	}
 	out = append(out, keyBar(st, barActions(ui), Context{Row: sel, Expandable: Expandable(s, ui, width)}))
 	for i, line := range out {
 		out[i] = ansi.Truncate(line, width, "…")
@@ -365,6 +381,9 @@ func Render(s Snapshot, ui UIState, width, height int) string {
 }
 
 func barActions(ui UIState) []Action {
+	if ui.Filtering {
+		return []Action{{Key: "enter", Hint: "enter", Label: "keep filter"}, {Key: "esc", Hint: "esc", Label: "clear"}}
+	}
 	if ui.Modal != nil {
 		switch ui.Modal.Step {
 		case StepPick:
@@ -401,6 +420,12 @@ func headerLine(st Styles, s Snapshot, ui UIState) string {
 		text = headerText(s)
 	}
 	line := st.Header.Render(text)
+	if ui.List.View == ViewAll {
+		line += " · " + st.Accent.Render("view: all")
+	}
+	if ui.List.Filter != "" {
+		line += " · " + st.Accent.Render("filter: "+ui.List.Filter)
+	}
 	if len(ui.AutoConfirm) > 0 {
 		line += st.Dim.Render(" · auto-confirm: " + strings.Join(ui.AutoConfirm, ", "))
 	}

@@ -1,0 +1,34 @@
+harness · main @ 39829b9 · 16:42:07
+warning: reading committed review config: boom
+AWAITING REVIEW
+ ! task-026  81742677  12m  agent reviewer orphaned  Reviewer supervision
+ ! epic-002  5d1c09aa   3m  human  Planning layer
+IN FLIGHT
+›▸ proj-001 › epic-002 Planning layer · epic/planning · 3/7 done · review requested · 3 tasks
+ No epic
+   task-030  IN_PROGRESS         5m  A very long task title that will certainly not fit into the configured w…
+ ! task-031  CHECKS_FAILED      26h  ✗ lint  checks failed  Broken
+MERGE QUEUE
+   1 task-028  pid 5150    hb 4s    live
+ ! 2 task-029  pid 6001    hb 3m    stale
+RECENT (24h)
+ proj-001 › epic-002 Planning layer · epic/planning · 3/7 done
+   task-024  MERGED  18m ago  Terminal verdicts
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ approve  reject  pre-approve  type  edit  diff  expand  enter details  view  / filter  space fold  collapse …

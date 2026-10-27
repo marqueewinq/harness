@@ -27,4 +27,4 @@ MERGE QUEUE
  History:
    10-26 15:40:00  (created) → IN_PROGRESS
    10-26 15:42:07  QUEUED → MERGE_FAILED
- approve  reject  pre-approve  type  edit  diff  expand  enter details  refresh  quit  ↑↓ select
+ approve  reject  pre-approve  type  edit  diff  expand  enter details  view  / filter  space fold …

@@ -42,7 +42,10 @@ type Snapshot struct {
 	Groups     []EpicGroup
 	Queue      []QueueRow
 	Recent     []EpicGroup
-	Warnings   []string
+	// Browse is every task of any state and age under every epic (epics
+	// without tasks included), for the dashboard's "all" view.
+	Browse   []EpicGroup
+	Warnings []string
 }
 
 type ReviewRow struct {
@@ -357,16 +360,23 @@ func BuildSnapshot(app *internal.App, now time.Time, all bool) (Snapshot, error)
 		m[epicID] = g
 		return g
 	}
+	browse := map[string]*EpicGroup{}
+	for _, e := range epics {
+		group(browse, e.ID)
+	}
 	for i := range tasks {
 		t := &tasks[i]
 		epicID := t.EpicID
 		if epicByID[epicID] == nil {
 			epicID = ""
 		}
+		row := b.taskRow(t)
+		g := group(browse, epicID)
+		g.Tasks = append(g.Tasks, row)
 		switch {
 		case inFlight(t.State) || (all && t.State == internal.StatePlanned):
 			g := group(groups, epicID)
-			g.Tasks = append(g.Tasks, b.taskRow(t))
+			g.Tasks = append(g.Tasks, row)
 		case finished(t.State):
 			since := b.stateSince(t)
 			if !all && now.Sub(since) > recentWindow {
@@ -378,6 +388,7 @@ func BuildSnapshot(app *internal.App, now time.Time, all bool) (Snapshot, error)
 	}
 	s.Groups = sortGroups(groups)
 	s.Recent = sortGroups(recent)
+	s.Browse = sortGroups(browse)
 	return s, nil
 }
 
