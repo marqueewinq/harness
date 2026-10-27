@@ -110,14 +110,14 @@ func (a *App) runReviewer(review ReviewConfig, reqID int, subjectID, prompt, tok
 	err = cmd.Wait()
 	stopHeartbeat()
 
-	outcome, exitCode := ReviewerNoVerdict, 0
+	outcome, exitCode, msg := ReviewerNoVerdict, 0, ""
 	switch {
 	case sigCtx.Err() != nil:
 		outcome, exitCode = ReviewerInterrupted, InterruptedExitCode
-		fmt.Fprintln(os.Stderr, "\nharness: reviewer interrupted")
+		msg = "reviewer interrupted"
 	case ctx.Err() == context.DeadlineExceeded:
 		outcome, exitCode = ReviewerTimeout, TimeoutExitCode
-		fmt.Fprintf(os.Stderr, "\nharness: reviewer timed out after %s (review.timeout)\n", timeout)
+		msg = fmt.Sprintf("reviewer timed out after %s (review.timeout)", timeout)
 	case errors.Is(err, exec.ErrWaitDelay):
 		// The reviewer itself exited 0; a leftover child held its output.
 	case err != nil:
@@ -125,7 +125,7 @@ func (a *App) runReviewer(review ReviewConfig, reqID int, subjectID, prompt, tok
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		}
-		fmt.Fprintf(os.Stderr, "\nharness: reviewer failed: %v\n", err)
+		msg = fmt.Sprintf("reviewer failed: %v", err)
 	}
 	if outcome != ReviewerInterrupted && outcome != ReviewerTimeout {
 		// Background children may outlive a reviewer that exited; they must
@@ -134,6 +134,11 @@ func (a *App) runReviewer(review ReviewConfig, reqID int, subjectID, prompt, tok
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 	stored, ferr := a.DB.FinishReviewerRun(reqID, outcome, exitCode)
+	if stored == ReviewerStopped {
+		fmt.Fprintln(os.Stderr, "\nharness: reviewer stopped: a human resolved the review request")
+	} else if msg != "" {
+		fmt.Fprintf(os.Stderr, "\nharness: %s\n", msg)
+	}
 	if ferr != nil {
 		return "", fmt.Errorf("recording reviewer outcome: %w", ferr)
 	}
@@ -165,20 +170,29 @@ func (a *App) startReviewerHeartbeat(reqID, ownerPID int) (stop func()) {
 }
 
 // deliverReview launches the reviewer (agent) or prints instructions (human).
-// An agent run that ends without a verdict is an error naming retryHint. The
+// An agent run that ends without a verdict is an error naming retryHint,
+// unless a human stopped the review meanwhile: then it returns the request's
+// resolution (approved_by_human or revoked_by_human), otherwise "". The
 // token is never printed.
-func (a *App) deliverReview(review ReviewConfig, reqID int, subjectID, title, diff, prevComments, token, retryHint string) error {
+func (a *App) deliverReview(review ReviewConfig, reqID int, subjectID, title, diff, prevComments, token, retryHint string) (string, error) {
 	prompt := composeReviewPrompt(review, subjectID, title, diff, prevComments)
 	if review.Type == "agent" {
 		fmt.Println("Launching automated reviewer...")
 		outcome, err := a.runReviewer(review, reqID, subjectID, prompt, token)
 		if err != nil {
-			return err
+			return "", err
+		}
+		if outcome == ReviewerStopped {
+			req, err := a.DB.GetReviewRequest(reqID)
+			if err != nil {
+				return "", err
+			}
+			return req.Resolution, nil
 		}
 		if outcome != ReviewerVerdict {
-			return fmt.Errorf("reviewer exited without a verdict (outcome: %s); the review request is closed and its token revoked; %s", outcome, retryHint)
+			return "", fmt.Errorf("reviewer exited without a verdict (outcome: %s); the review request is closed and its token revoked; %s", outcome, retryHint)
 		}
-		return nil
+		return "", nil
 	}
 
 	contextFile, err := os.CreateTemp("", "harness-review-context-*.txt")
@@ -193,7 +207,16 @@ func (a *App) deliverReview(review ReviewConfig, reqID int, subjectID, title, di
 	fmt.Printf("  harness work diff %s\n", subjectID)
 	fmt.Printf("  harness review approve %s\n", subjectID)
 	fmt.Printf("  harness review reject --comment \"...\" %s\n", subjectID)
-	return nil
+	return "", nil
+}
+
+// stoppedByHumanReport describes a review a human stopped while its reviewer
+// ran; next is the follow-up command after an approval.
+func stoppedByHumanReport(resolution, subject, next string) string {
+	if resolution == resolutionApprovedByHuman {
+		return fmt.Sprintf("\nReview stopped: %s was approved by a human.\nNext: %s\n", subject, next)
+	}
+	return fmt.Sprintf("\nReview stopped: the request for %s was revoked by a human; no verdict was recorded.\n", subject)
 }
 
 func (a *App) CmdReviewRequest(taskID string) error {
@@ -242,8 +265,18 @@ func (a *App) CmdReviewRequest(taskID string) error {
 
 	fmt.Printf("Task %s is now REVIEW_REQUESTED (%s).\n\n", id, shortSHA(head))
 	retry := fmt.Sprintf("task %s stays REVIEW_REQUESTED; run: harness work check %s, then harness review request %s", id, id, id)
-	if err := a.deliverReview(review, reqID, id, task.Title, diff, prevComments, token, retry); err != nil {
+	stopped, err := a.deliverReview(review, reqID, id, task.Title, diff, prevComments, token, retry)
+	if err != nil {
 		return err
+	}
+	if stopped != "" {
+		task, err = a.DB.GetTask(id)
+		if err != nil {
+			return err
+		}
+		fmt.Print(stoppedByHumanReport(stopped, "task "+id, "run harness work merge"))
+		fmt.Printf("Task %s is %s.\n", id, task.State)
+		return nil
 	}
 	if review.Type != "agent" {
 		return nil

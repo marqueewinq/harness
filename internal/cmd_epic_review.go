@@ -32,7 +32,11 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Review requested for epic %s (%s).\n\n", epicID, shortSHA(head))
-	return a.deliverReview(review, reqID, epicID, e.Title, diff, prevComments, token, "run: harness review request "+epicID)
+	stopped, err := a.deliverReview(review, reqID, epicID, e.Title, diff, prevComments, token, "run: harness review request "+epicID)
+	if stopped != "" {
+		fmt.Print(stoppedByHumanReport(stopped, "epic "+epicID, "run harness epic merge "+epicID))
+	}
+	return err
 }
 
 func (a *App) cmdEpicReviewApprove(epicID, comment string) error {

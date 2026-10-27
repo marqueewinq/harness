@@ -15,6 +15,7 @@ func TestValidTransitions(t *testing.T) {
 		{StateChecksPassed, StateReviewRequested},
 		{StateReviewRequested, StateApproved},
 		{StateReviewRequested, StateRequestChanges},
+		{StateReviewRequested, StateChecksPassed},
 		{StateRequestChanges, StateChecksRunning},
 		{StateApproved, StateQueued},
 		{StateApproved, StateChecksRunning},

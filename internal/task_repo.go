@@ -169,23 +169,25 @@ func (db *DB) ListTasksByEpic(epicID string) ([]Task, error) {
 }
 
 func (db *DB) UpdateTaskState(id string, state TaskState) error {
-	return db.WithTx(func(tx *sql.Tx) error {
-		var current string
-		if err := tx.QueryRow(`SELECT state FROM tasks WHERE id = ?`, id).Scan(&current); err != nil {
-			return fmt.Errorf("reading current state for %s: %w", id, err)
-		}
-		if !ValidTransition(TaskState(current), state) {
-			return fmt.Errorf("invalid transition %s -> %s for task %s", current, state, id)
-		}
-		_, err := tx.Exec(
-			`UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?`,
-			string(state), time.Now(), id,
-		)
-		if err != nil {
-			return err
-		}
-		return recordTransition(tx, "task_state_transitions", "task_id", id, current, string(state))
-	})
+	return db.WithTx(func(tx *sql.Tx) error { return updateTaskStateTx(tx, id, state) })
+}
+
+func updateTaskStateTx(tx *sql.Tx, id string, state TaskState) error {
+	var current string
+	if err := tx.QueryRow(`SELECT state FROM tasks WHERE id = ?`, id).Scan(&current); err != nil {
+		return fmt.Errorf("reading current state for %s: %w", id, err)
+	}
+	if !ValidTransition(TaskState(current), state) {
+		return fmt.Errorf("invalid transition %s -> %s for task %s", current, state, id)
+	}
+	_, err := tx.Exec(
+		`UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?`,
+		string(state), time.Now(), id,
+	)
+	if err != nil {
+		return err
+	}
+	return recordTransition(tx, "task_state_transitions", "task_id", id, current, string(state))
 }
 
 func (db *DB) CreatePlannedTask(title, description, epicID string) (*Task, error) {

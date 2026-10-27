@@ -143,6 +143,14 @@ func TestEpicReviewerNoVerdictReturnsError(t *testing.T) {
 // real process with the given stdin.
 func startRequestSubprocess(t *testing.T, reviewCmd, extraReview string, stdin io.Reader) (*App, *Task, *exec.Cmd, *syncBuffer) {
 	t.Helper()
+	app, task, cmd, out, _, _ := startRequestSubprocessBin(t, reviewCmd, extraReview, stdin)
+	return app, task, cmd, out
+}
+
+// startRequestSubprocessBin is startRequestSubprocess that also returns the
+// harness binary and the repo dir.
+func startRequestSubprocessBin(t *testing.T, reviewCmd, extraReview string, stdin io.Reader) (*App, *Task, *exec.Cmd, *syncBuffer, string, string) {
+	t.Helper()
 	bin := buildHarnessBinary(t)
 	if strings.Contains(reviewCmd, "%s") {
 		reviewCmd = fmt.Sprintf(reviewCmd, bin)
@@ -166,7 +174,7 @@ func startRequestSubprocess(t *testing.T, reviewCmd, extraReview string, stdin i
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cmd.Process.Kill() })
-	return app, task, cmd, out
+	return app, task, cmd, out, bin, dir
 }
 
 type syncBuffer struct {

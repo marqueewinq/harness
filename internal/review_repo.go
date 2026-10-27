@@ -107,6 +107,8 @@ const (
 	ReviewerFailed      = "failed"
 	ReviewerTimeout     = "timeout"
 	ReviewerInterrupted = "interrupted"
+	// ReviewerStopped: a human resolved the request while the reviewer ran.
+	ReviewerStopped = "stopped_by_human"
 	// ReviewerOrphaned is never stored: it is a running row whose
 	// `harness review request` process is gone, computed on read.
 	ReviewerOrphaned = "orphaned"
@@ -116,6 +118,9 @@ const (
 	resolutionVerdict    = "verdict"
 	resolutionSuperseded = "superseded"
 	resolutionReviewer   = "reviewer_failed"
+
+	resolutionApprovedByHuman = "approved_by_human"
+	resolutionRevokedByHuman  = "revoked_by_human"
 )
 
 // ReviewerHeartbeatTTL must exceed reviewerHeartbeatEvery by a wide margin.
@@ -226,6 +231,12 @@ func (db *DB) GetOpenReviewRequest(taskID, epicID string) (*ReviewRequest, error
 	)))
 }
 
+func (db *DB) GetReviewRequest(id int) (*ReviewRequest, error) {
+	return scanReviewRequest(db.conn.QueryRow(
+		`SELECT `+reviewRequestColumns+` FROM review_requests WHERE id = ?`, id,
+	))
+}
+
 // GetLatestReviewRequest returns nil if the subject was never requested for review.
 func (db *DB) GetLatestReviewRequest(taskID, epicID string) (*ReviewRequest, error) {
 	col, id := reviewSubject(taskID, epicID)
@@ -295,7 +306,9 @@ func (db *DB) HeartbeatReviewerRun(reqID, ownerPID int) error {
 }
 
 // FinishReviewerRun records how the reviewer ended and returns the stored
-// outcome: a verdict recorded on the request wins over exitOutcome. Otherwise
+// outcome: a verdict recorded on the request wins over exitOutcome, and a
+// request a human already stopped (StopReviewRequest) reads as ReviewerStopped
+// and is left as the human resolved it. Otherwise
 // the request is closed without a verdict in the same transaction, so the
 // token dies and a late verdict from a leftover process is refused.
 func (db *DB) FinishReviewerRun(reqID int, exitOutcome string, exitCode int) (string, error) {
@@ -305,13 +318,18 @@ func (db *DB) FinishReviewerRun(reqID int, exitOutcome string, exitCode int) (st
 		if err := tx.QueryRow(`SELECT resolution FROM review_requests WHERE id = ?`, reqID).Scan(&resolution); err != nil {
 			return err
 		}
-		if resolution == resolutionVerdict {
+		switch resolution {
+		case resolutionVerdict:
 			outcome = ReviewerVerdict
-		} else if _, err := tx.Exec(
-			`UPDATE review_requests SET resolved_at = CURRENT_TIMESTAMP, resolution = ? WHERE id = ? AND resolved_at IS NULL`,
-			resolutionReviewer, reqID,
-		); err != nil {
-			return err
+		case resolutionApprovedByHuman, resolutionRevokedByHuman:
+			outcome = ReviewerStopped
+		default:
+			if _, err := tx.Exec(
+				`UPDATE review_requests SET resolved_at = CURRENT_TIMESTAMP, resolution = ? WHERE id = ? AND resolved_at IS NULL`,
+				resolutionReviewer, reqID,
+			); err != nil {
+				return err
+			}
 		}
 		_, err := tx.Exec(
 			`UPDATE review_requests SET reviewer_finished_unix = ?, reviewer_exit_code = ?, reviewer_outcome = ? WHERE id = ?`,
@@ -326,29 +344,66 @@ func (db *DB) FinishReviewerRun(reqID int, exitOutcome string, exitCode int) (st
 // so one request yields at most one verdict.
 func (db *DB) ResolveReviewRequest(req *ReviewRequest, decision, comment, reviewer string) error {
 	return db.WithTx(func(tx *sql.Tx) error {
-		res, err := tx.Exec(
-			`UPDATE review_requests SET resolved_at = CURRENT_TIMESTAMP, resolution = ? WHERE id = ? AND resolved_at IS NULL`,
-			resolutionVerdict, req.ID,
-		)
-		if err != nil {
+		if err := closeOpenRequest(tx, req.ID, resolutionVerdict); err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n != 1 {
-			return fmt.Errorf("review request #%d is already resolved", req.ID)
-		}
-		var taskVal, epicVal interface{}
-		if req.TaskID != "" {
-			taskVal = req.TaskID
-		}
-		if req.EpicID != "" {
-			epicVal = req.EpicID
-		}
-		_, err = tx.Exec(
-			`INSERT INTO reviews (task_id, epic_id, decision, comment, commit_sha, reviewer) VALUES (?, ?, ?, ?, ?, ?)`,
-			taskVal, epicVal, decision, comment, req.CommitSHA, reviewer,
-		)
-		return err
+		return insertReview(tx, req, decision, comment, reviewer)
 	})
+}
+
+// StopReviewRequest closes req on a human's decision. With approver set it
+// records an approve verdict by approver on the requested commit; otherwise
+// the request is revoked without a verdict. A non-empty taskState moves the
+// task in the same transaction. Either way the token is dead on commit, so a
+// reviewer still running gets "already resolved".
+func (db *DB) StopReviewRequest(req *ReviewRequest, approver string, taskState TaskState) error {
+	return db.WithTx(func(tx *sql.Tx) error {
+		resolution := resolutionRevokedByHuman
+		if approver != "" {
+			resolution = resolutionApprovedByHuman
+		}
+		if err := closeOpenRequest(tx, req.ID, resolution); err != nil {
+			return err
+		}
+		if approver != "" {
+			if err := insertReview(tx, req, "approve", "", approver); err != nil {
+				return err
+			}
+		}
+		if taskState != "" {
+			return updateTaskStateTx(tx, req.TaskID, taskState)
+		}
+		return nil
+	})
+}
+
+func closeOpenRequest(tx *sql.Tx, reqID int, resolution string) error {
+	res, err := tx.Exec(
+		`UPDATE review_requests SET resolved_at = CURRENT_TIMESTAMP, resolution = ? WHERE id = ? AND resolved_at IS NULL`,
+		resolution, reqID,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return fmt.Errorf("review request #%d is already resolved", reqID)
+	}
+	return nil
+}
+
+func insertReview(tx *sql.Tx, req *ReviewRequest, decision, comment, reviewer string) error {
+	var taskVal, epicVal interface{}
+	if req.TaskID != "" {
+		taskVal = req.TaskID
+	}
+	if req.EpicID != "" {
+		epicVal = req.EpicID
+	}
+	_, err := tx.Exec(
+		`INSERT INTO reviews (task_id, epic_id, decision, comment, commit_sha, reviewer) VALUES (?, ?, ?, ?, ?, ?)`,
+		taskVal, epicVal, decision, comment, req.CommitSHA, reviewer,
+	)
+	return err
 }
 
 func reviewSubject(taskID, epicID string) (string, string) {
