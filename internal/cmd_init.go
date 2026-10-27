@@ -59,6 +59,9 @@ review:
     Task description:
     {{task_description}}
 
+    Notes from the human (context and constraints for this task):
+    {{task_notes}}
+
     After reviewing, call one of:
       harness review approve {{task_id}}
       harness review reject --comment "your comments" {{task_id}}

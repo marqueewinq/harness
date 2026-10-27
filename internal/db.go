@@ -145,11 +145,68 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v14: %w", err)
 		}
 	}
+	if version < 15 {
+		if err := migrateV15(conn); err != nil {
+			return fmt.Errorf("migration v15: %w", err)
+		}
+	}
 
 	return nil
 }
 
-// notes is free-form text for humans, kept out of reviewer prompts. v3 once
+// notes_changed_at/by record the latest notes edit; notes_seen_at is when an
+// agent's harness command last showed the notes (tasks.epic_notes_seen_at the
+// same for the task's epic). Existing edits are backfilled from
+// subject_edits; seen stays NULL, so non-empty notes are shown once.
+func migrateV15(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// A DB whose recorded version was rewound may already have the columns.
+	addColumn := func(table, col, decl string) error {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, col).Scan(&n); err != nil || n > 0 {
+			return err
+		}
+		_, err := tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + col + ` ` + decl)
+		return err
+	}
+	var stmts []string
+	for _, table := range []string{"tasks", "epics"} {
+		for _, c := range [][2]string{
+			{"notes_changed_at", "TIMESTAMP NULL"},
+			{"notes_changed_by", "TEXT NOT NULL DEFAULT ''"},
+			{"notes_seen_at", "TIMESTAMP NULL"},
+		} {
+			if err := addColumn(table, c[0], c[1]); err != nil {
+				return err
+			}
+		}
+		lastNotesEdit := `(SELECT %s FROM subject_edits e WHERE e.subject_id = ` + table + `.id
+			AND (', ' || e.fields || ',') LIKE '%%, notes,%%' ORDER BY e.id DESC LIMIT 1)`
+		stmts = append(stmts,
+			`UPDATE `+table+` SET notes_changed_at = `+fmt.Sprintf(lastNotesEdit, "e.created_at")+`,
+				notes_changed_by = COALESCE(`+fmt.Sprintf(lastNotesEdit, "e.edited_by")+`, '')`,
+		)
+	}
+	if err := addColumn("tasks", "epic_notes_seen_at", "TIMESTAMP NULL"); err != nil {
+		return err
+	}
+	stmts = append(stmts,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (15)`,
+	)
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// notes is the human's free-form text for a task or epic. v3 once
 // added tasks.notes and v6 dropped it, so the column is added only if absent.
 // subject_edits is the audit log of title/description/notes edits; it is
 // separate from the state transition tables so an edit never reads as a state

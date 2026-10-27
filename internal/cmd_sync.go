@@ -41,6 +41,7 @@ func (a *App) CmdWorkSync(taskID string, cont, abort bool) error {
 	if err != nil {
 		return err
 	}
+	a.showNewNotes(id)
 	wt := NewGitClient(task.WorktreePath)
 
 	if abort {

@@ -39,6 +39,9 @@ review:
     Task description:
     {{task_description}}
 
+    Notes from the human (context and constraints for this task):
+    {{task_notes}}
+
     Reject only for real defects; mention nitpicks in the approve comment.
     Record your verdict by running exactly one of:
       harness review approve {{task_id}} --comment "summary"

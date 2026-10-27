@@ -11,6 +11,7 @@ func (a *App) CmdWorkClose(taskID string, cleanup bool) error {
 	if err != nil {
 		return err
 	}
+	a.showNewNotes(id)
 
 	if !ValidTransition(task.State, StateClosed) {
 		return fmt.Errorf("cannot close task in state %s", task.State)

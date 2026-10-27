@@ -10,6 +10,7 @@ func (a *App) CmdEpicMerge(epicID string) error {
 	if err != nil {
 		return err
 	}
+	a.showNewEpicNotes(epicID)
 	if e.Branch == "" {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}

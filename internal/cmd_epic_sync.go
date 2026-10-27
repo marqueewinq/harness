@@ -18,6 +18,7 @@ func (a *App) CmdEpicSync(epicID string, cont, abort bool) error {
 	if err != nil {
 		return err
 	}
+	a.showNewEpicNotes(epicID)
 	if e.Branch == "" || e.Branch == a.Config.MainBranch {
 		return fmt.Errorf("epic %s has no branch of its own to sync", epicID)
 	}

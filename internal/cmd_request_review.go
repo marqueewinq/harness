@@ -13,13 +13,20 @@ import (
 )
 
 // Single pass, so placeholders that occur inside the diff are left alone.
-func composeReviewPrompt(review ReviewConfig, subjectID, title, diff, prevComments string) string {
-	return strings.NewReplacer(
+// notes are the task's (or, for an epic review, the epic's); a template
+// committed before {{task_notes}} existed still gets non-empty notes appended.
+func composeReviewPrompt(review ReviewConfig, subjectID, title, notes, diff, prevComments string) string {
+	prompt := strings.NewReplacer(
 		"{{diff}}", diff,
 		"{{previous_comments}}", prevComments,
 		"{{task_description}}", title,
 		"{{task_id}}", subjectID,
+		"{{task_notes}}", notes,
 	).Replace(review.Prompt)
+	if !strings.Contains(review.Prompt, "{{task_notes}}") && strings.TrimSpace(notes) != "" {
+		prompt += "\n\nNotes from the human (context and constraints for this task):\n" + strings.TrimRight(notes, "\n") + "\n"
+	}
+	return prompt
 }
 
 // trustedReviewConfig reads the review section from the config committed on
@@ -174,8 +181,8 @@ func (a *App) startReviewerHeartbeat(reqID, ownerPID int) (stop func()) {
 // unless a human stopped the review meanwhile: then it returns the request's
 // resolution (approved_by_human or revoked_by_human), otherwise "". The
 // token is never printed.
-func (a *App) deliverReview(review ReviewConfig, reqID int, subjectID, title, diff, prevComments, token, retryHint string) (string, error) {
-	prompt := composeReviewPrompt(review, subjectID, title, diff, prevComments)
+func (a *App) deliverReview(review ReviewConfig, reqID int, subjectID, title, notes, diff, prevComments, token, retryHint string) (string, error) {
+	prompt := composeReviewPrompt(review, subjectID, title, notes, diff, prevComments)
 	if review.Type == "agent" {
 		fmt.Println("Launching automated reviewer...")
 		outcome, err := a.runReviewer(review, reqID, subjectID, prompt, token)
@@ -228,6 +235,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 	if err != nil {
 		return err
 	}
+	a.showNewNotes(id)
 	if task.ReviewType == ReviewNone {
 		return refuseReviewOfNone(id, "harness work merge "+id)
 	}
@@ -268,7 +276,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 
 	fmt.Printf("Task %s is now REVIEW_REQUESTED (%s).\n\n", id, shortSHA(head))
 	retry := fmt.Sprintf("task %s stays REVIEW_REQUESTED; run: harness work check %s, then harness review request %s", id, id, id)
-	stopped, err := a.deliverReview(review, reqID, id, task.Title, diff, prevComments, token, retry)
+	stopped, err := a.deliverReview(review, reqID, id, task.Title, task.Notes, diff, prevComments, token, retry)
 	if err != nil {
 		return err
 	}

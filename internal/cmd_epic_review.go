@@ -10,6 +10,7 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	if err != nil {
 		return err
 	}
+	a.showNewEpicNotes(epicID)
 	if e.ReviewType == ReviewNone {
 		return refuseReviewOfNone(epicID, "harness epic merge "+epicID)
 	}
@@ -35,7 +36,7 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	prevComments := FormatPreviousComments(reviews)
 
 	fmt.Printf("Review requested for epic %s (%s).\n\n", epicID, shortSHA(head))
-	stopped, err := a.deliverReview(review, reqID, epicID, e.Title, diff, prevComments, token, "run: harness review request "+epicID)
+	stopped, err := a.deliverReview(review, reqID, epicID, e.Title, e.Notes, diff, prevComments, token, "run: harness review request "+epicID)
 	if stopped != "" {
 		fmt.Print(stoppedByHumanReport(stopped, "epic "+epicID, "run harness epic merge "+epicID))
 	}

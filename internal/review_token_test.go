@@ -128,7 +128,7 @@ func TestLocalReviewCmdEditIgnored(t *testing.T) {
 
 func TestComposeReviewPromptSinglePass(t *testing.T) {
 	t.Parallel()
-	got := composeReviewPrompt(ReviewConfig{Prompt: "{{task_id}}: {{diff}}"}, "task-7", "t", "+ {{task_id}} {{previous_comments}}", "prev")
+	got := composeReviewPrompt(ReviewConfig{Prompt: "{{task_id}}: {{diff}}"}, "task-7", "t", "", "+ {{task_id}} {{previous_comments}}", "prev")
 	if got != "task-7: + {{task_id}} {{previous_comments}}" {
 		t.Errorf("prompt = %q; placeholders inside the diff must survive", got)
 	}

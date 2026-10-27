@@ -96,11 +96,21 @@ func TestRecordTerminalEditMergedTaskAndEpic(t *testing.T) {
 	}
 }
 
-func TestNotesNotInReviewPrompt(t *testing.T) {
-	review := ReviewConfig{Prompt: "{{task_description}}|{{task_id}}"}
-	task := &Task{ID: "task-001", Title: "T", Description: "D", Notes: "SECRET NOTES"}
-	if p := composeReviewPrompt(review, task.ID, task.Title, "diff", "none"); strings.Contains(p, "SECRET") {
-		t.Errorf("prompt has notes: %q", p)
+func TestNotesInReviewPrompt(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, prompt, notes, want string
+	}{
+		{"placeholder", "{{task_id}}|{{task_notes}}|{{diff}}", "keep the API stable", "task-001|keep the API stable|+ {{task_notes}}"},
+		{"placeholder, empty notes", "{{task_id}}|{{task_notes}}|", "", "task-001||"},
+		{"auto-append", "{{task_id}}", "keep the API stable\n",
+			"task-001\n\nNotes from the human (context and constraints for this task):\nkeep the API stable\n"},
+		{"no placeholder, empty notes", "{{task_id}}", "  ", "task-001"},
+	} {
+		diff := "+ {{task_notes}}"
+		if got := composeReviewPrompt(ReviewConfig{Prompt: tc.prompt}, "task-001", "T", tc.notes, diff, "none"); got != tc.want {
+			t.Errorf("%s: prompt = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -153,8 +163,8 @@ func TestMigrateV14ToleratesExistingNotesColumn(t *testing.T) {
 	defer db.Close()
 	var v int
 	db.conn.QueryRow(`SELECT version FROM schema_version`).Scan(&v)
-	if v != 14 {
-		t.Errorf("version = %d", v)
+	if v < 14 {
+		t.Errorf("version = %d, want >= 14", v)
 	}
 	for _, table := range []string{"tasks", "epics"} {
 		var n int

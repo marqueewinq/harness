@@ -11,6 +11,7 @@ func (a *App) CmdWorkCommit(taskID, message string, extraGitArgs []string) error
 	if err != nil {
 		return err
 	}
+	a.showNewNotes(id)
 
 	epicID, projID := a.resolveTaskHierarchy(task)
 	rendered := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, message)

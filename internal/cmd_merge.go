@@ -102,6 +102,7 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	if err != nil {
 		return err
 	}
+	a.showNewNotes(id)
 	if task.State == StateQueued || task.State == StateMerging {
 		return a.recoverAbandonedMerge(id)
 	}

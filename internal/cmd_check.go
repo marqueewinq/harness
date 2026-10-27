@@ -19,6 +19,7 @@ func (a *App) CmdWorkCheck(taskID string) error {
 	if err != nil {
 		return err
 	}
+	a.showNewNotes(id)
 
 	if !ValidTransition(task.State, StateChecksRunning) {
 		return fmt.Errorf("cannot run checks in state %s", task.State)

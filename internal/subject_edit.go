@@ -42,7 +42,8 @@ func diffFields(a, b SubjectText) []string {
 // editable, including merged and closed ones. The change and its audit entry
 // are written in one transaction. A description edited during an open review
 // only reaches later review requests, whose prompt is composed at request
-// time; notes never reach a reviewer.
+// time, and so do notes; changed notes are also shown once to the agent by
+// its next harness command on the task (showNewNotes).
 func (a *App) RecordTerminalEdit(subject string, old, new SubjectText, via string) (string, error) {
 	new.Title = strings.TrimSpace(new.Title)
 	if new.Title == "" {
@@ -86,6 +87,11 @@ func (db *DB) editSubject(subject string, old, new SubjectText, who string) (str
 		if _, err := tx.Exec(`UPDATE `+table+` SET title = ?, description = ?, notes = ?, updated_at = ? WHERE id = ?`,
 			new.Title, new.Description, new.Notes, now, subject); err != nil {
 			return err
+		}
+		if stored.Notes != new.Notes {
+			if _, err := tx.Exec(`UPDATE `+table+` SET notes_changed_at = ?, notes_changed_by = ? WHERE id = ?`, now, who, subject); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Exec(`INSERT INTO subject_edits (subject_id, fields, edited_by, created_at) VALUES (?, ?, ?, ?)`,
 			subject, strings.Join(fields, ", "), who, now)

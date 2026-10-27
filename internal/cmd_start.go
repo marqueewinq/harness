@@ -7,6 +7,7 @@ func (a *App) CmdTaskStart(taskID, baseBranch string) error {
 	if err != nil {
 		return err
 	}
+	a.showNewNotes(taskID)
 	if task.State != StatePlanned {
 		return fmt.Errorf("task %s is %s, not PLANNED", taskID, task.State)
 	}

@@ -23,7 +23,8 @@ type Task struct {
 	ReviewTypeSetBy string
 	ReviewTypeSetAt time.Time // zero when never set (pre-review-types rows)
 
-	// Notes is free-form text for humans; it never goes into a reviewer prompt.
+	// Notes is the human's free-form instructions and context; it reaches the
+	// agent (showNewNotes) and the reviewer prompt ({{task_notes}}).
 	Notes string
 }
 

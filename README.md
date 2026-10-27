@@ -299,11 +299,20 @@ review:
     Review {{task_id}}: {{task_description}}
     {{diff}}
     Previous comments: {{previous_comments}}
+    Notes from the human: {{task_notes}}
 ```
 
 The `cmd` placeholders are `{{prompt_file}}` and `{{task_id}}`. The `prompt`
-placeholders are `{{diff}}`, `{{previous_comments}}`, `{{task_description}}`
-and `{{task_id}}`.
+placeholders are `{{diff}}`, `{{previous_comments}}`, `{{task_description}}`,
+`{{task_notes}}` and `{{task_id}}`. `{{task_notes}}` is the task's notes (the
+epic's for an epic review); a prompt without it still gets non-empty notes
+appended under "Notes from the human".
+
+Notes a human edits (dashboard `e`) also reach the implementing agent: the
+next `harness` command on the task (`work check/commit/diff/sync/merge/close`,
+`review request`, `task start`) first prints them once in a "New notes from
+the human" banner, together with changed notes of the task's epic. `work
+status` and `task view` print the notes and count as seen.
 
 `merge.require.review` was removed: a config that still sets it fails to load.
 Use review types and `review.allow_none` instead.
