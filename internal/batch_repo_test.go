@@ -35,8 +35,8 @@ func TestBatchReadsMatchPerTaskReads(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
 	defer db.Close()
-	a, _ := db.CreateTask("a", "", "a", "/tmp/a", "main", "", "")
-	b, _ := db.CreateTask("b", "", "b", "/tmp/b", "main", "", "")
+	a, _ := db.CreateTask("a", "", "a", "/tmp/a", "main", "", "", ReviewSetting{})
+	b, _ := db.CreateTask("b", "", "b", "/tmp/b", "main", "", "", ReviewSetting{})
 	for _, s := range []TaskState{StateChecksRunning, StateChecksFailed, StateChecksRunning, StateChecksFailed} {
 		if err := db.UpdateTaskState(a.ID, s); err != nil {
 			t.Fatal(err)

@@ -6,7 +6,7 @@ func (a *App) CmdEpicNew(title, description, projectID, branchFlag string, branc
 	if projectID == "" {
 		return fmt.Errorf("--project is required")
 	}
-	reviewType, reviewSetBy, err := a.creationReviewType(review)
+	reviewSetting, err := a.creationReviewType(review)
 	if err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func (a *App) CmdEpicNew(title, description, projectID, branchFlag string, branc
 	}
 	// else: epic_feature_branches: false + no --branch -> no branch
 
-	e, err := a.DB.CreateEpic(title, description, projectID, branch)
+	e, err := a.DB.CreateEpic(title, description, projectID, branch, reviewSetting)
 	if err != nil {
 		// Clean up branch if we created it
 		if branch != "" && !branchFlagSet {
@@ -46,10 +46,7 @@ func (a *App) CmdEpicNew(title, description, projectID, branchFlag string, branc
 		}
 		return err
 	}
-	if err := a.DB.SetReviewType(e.ID, reviewType, reviewSetBy); err != nil {
-		return fmt.Errorf("created %s, but its review type stays default: %w", e.ID, err)
-	}
-	fmt.Printf("Created %s: %q (%s, review: %s)\n", e.ID, e.Title, projectID, reviewType)
+	fmt.Printf("Created %s: %q (%s, review: %s)\n", e.ID, e.Title, projectID, e.ReviewType)
 	if branch != "" {
 		fmt.Printf("Branch: %s\n", branch)
 	}

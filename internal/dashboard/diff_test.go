@@ -67,7 +67,7 @@ func TestBuildDiffEpic(t *testing.T) {
 	gitOut(t, wt, "add", ".")
 	gitOut(t, wt, "commit", "-q", "-m", "epic work")
 	head := gitOut(t, wt, "rev-parse", "HEAD")
-	epic, _ := app.DB.CreateEpic("E", "epic description\nsecond line", proj.ID, "epic/e")
+	epic, _ := app.DB.CreateEpic("E", "epic description\nsecond line", proj.ID, "epic/e", internal.ReviewSetting{})
 	row := Row{Kind: RowEpic, ID: epic.ID, IsEpic: true}
 
 	v, err := BuildDiff(app, row)

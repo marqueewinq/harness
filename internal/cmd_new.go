@@ -3,7 +3,7 @@ package internal
 import "fmt"
 
 func (a *App) CmdNew(title, baseBranch, epicID, description, review string) error {
-	reviewType, reviewSetBy, err := a.creationReviewType(review)
+	reviewSetting, err := a.creationReviewType(review)
 	if err != nil {
 		return err
 	}
@@ -14,18 +14,15 @@ func (a *App) CmdNew(title, baseBranch, epicID, description, review string) erro
 		return err
 	}
 
-	task, err := a.DB.CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID)
+	task, err := a.DB.CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID, reviewSetting)
 	if err != nil {
 		a.Git.RemoveWorktree(worktreePath)
 		a.Git.DeleteBranch(branch)
 		return fmt.Errorf("creating task: %w", err)
 	}
-	if err := a.DB.SetReviewType(task.ID, reviewType, reviewSetBy); err != nil {
-		return fmt.Errorf("created %s, but its review type stays default: %w", task.ID, err)
-	}
 
 	fmt.Printf("Created %s: %q\n", task.ID, title)
-	fmt.Printf("Review type: %s\n", reviewType)
+	fmt.Printf("Review type: %s\n", task.ReviewType)
 	fmt.Printf("Branch: %s\n", branch)
 	baseInfo := baseBranch
 	if parentTaskID != "" {

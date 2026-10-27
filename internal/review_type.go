@@ -49,8 +49,28 @@ func FormatReviewType(r ReviewType, setBy string, setAt time.Time) string {
 	return s
 }
 
-// SetReviewType is the only writer of a subject's review type. The CLI calls
-// it only at creation; later changes belong to the dashboard.
+// ReviewSetting is a review type with who set it. The zero value stores
+// default with no recorded setter.
+type ReviewSetting struct {
+	Type  ReviewType
+	SetBy string
+}
+
+// columnValues returns review_type, review_type_set_by, review_type_set_at.
+func (s ReviewSetting) columnValues(now time.Time) (string, string, interface{}) {
+	t := s.Type
+	if t == "" {
+		t = ReviewDefault
+	}
+	if s.SetBy == "" {
+		return string(t), "", nil
+	}
+	return string(t), s.SetBy, now
+}
+
+// SetReviewType changes an existing subject's review type; creation stores
+// it with the row. No CLI command calls it: after creation the type changes
+// only through the dashboard.
 func (db *DB) SetReviewType(subjectID string, r ReviewType, setBy string) error {
 	if !r.Valid() {
 		return fmt.Errorf("invalid review type %q", r)
@@ -75,23 +95,41 @@ func (db *DB) SetReviewType(subjectID string, r ReviewType, setBy string) error 
 // creationReviewType validates --review for a new task or epic and returns
 // who to record as having set it. `none` is a self-declared opt-out, so it is
 // gated on the config committed on main: a local edit must not enable it.
-func (a *App) creationReviewType(flag string) (ReviewType, string, error) {
+func (a *App) creationReviewType(flag string) (ReviewSetting, error) {
 	r, err := ParseReviewType(flag)
 	if err != nil {
-		return "", "", fmt.Errorf("--review: %w", err)
+		return ReviewSetting{}, fmt.Errorf("--review: %w", err)
 	}
 	if r != ReviewNone {
-		return r, ReviewSetByCreator, nil
+		return ReviewSetting{Type: r, SetBy: ReviewSetByCreator}, nil
 	}
 	review, err := a.CommittedReviewConfig()
 	if err != nil {
-		return "", "", fmt.Errorf("--review=none: %w", err)
+		return ReviewSetting{}, fmt.Errorf("--review=none: %w", err)
 	}
 	if !review.AllowNone {
-		return "", "", fmt.Errorf("--review=none is refused: .harness.yaml committed on %s does not set review.allow_none: true.\n"+
+		return ReviewSetting{}, fmt.Errorf("--review=none is refused: .harness.yaml committed on %s does not set review.allow_none: true.\n"+
 			"To allow self-declared no-review tasks and epics, add `allow_none: true` under `review:` and merge it into %s (a local edit does not count).\n"+
-			"Otherwise use --review=default or --review=human, or have a human pre-approve it from the dashboard",
+			"Otherwise use --review=default or --review=human",
 			a.Config.MainBranch, a.Config.MainBranch)
 	}
-	return r, ReviewSetBySelfDeclared, nil
+	return ReviewSetting{Type: r, SetBy: ReviewSetBySelfDeclared}, nil
+}
+
+func (t *Task) setReview(typ, setBy string, setAt interface{}) {
+	t.ReviewType, t.ReviewTypeSetBy = ReviewType(typ), setBy
+	t.ReviewTypeSetAt, _ = setAt.(time.Time)
+}
+
+func (e *Epic) setReview(typ, setBy string, setAt interface{}) {
+	e.ReviewType, e.ReviewTypeSetBy = ReviewType(typ), setBy
+	e.ReviewTypeSetAt, _ = setAt.(time.Time)
+}
+
+func (t *Task) ReviewSummary() string {
+	return FormatReviewType(t.ReviewType, t.ReviewTypeSetBy, t.ReviewTypeSetAt)
+}
+
+func (e *Epic) ReviewSummary() string {
+	return FormatReviewType(e.ReviewType, e.ReviewTypeSetBy, e.ReviewTypeSetAt)
 }

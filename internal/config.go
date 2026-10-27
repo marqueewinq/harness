@@ -39,13 +39,11 @@ const DefaultReviewTimeout = 30 * time.Minute
 // ReviewConfig must stay comparable with ==: trustedReviewConfig compares the
 // committed and working-tree copies.
 type ReviewConfig struct {
-	Type    string `yaml:"type"`
-	Cmd     string `yaml:"cmd"`
-	Prompt  string `yaml:"prompt"`
-	Timeout string `yaml:"timeout,omitempty"` // Go duration for review.cmd; default 30m
-	// Read only from the committed config: lets a creator self-declare
-	// --review=none.
-	AllowNone bool `yaml:"allow_none"`
+	Type      string `yaml:"type"`
+	Cmd       string `yaml:"cmd"`
+	Prompt    string `yaml:"prompt"`
+	Timeout   string `yaml:"timeout,omitempty"` // Go duration for review.cmd; default 30m
+	AllowNone bool   `yaml:"allow_none"`        // honoured only as committed on main
 }
 
 func (r ReviewConfig) TimeoutDuration() time.Duration {

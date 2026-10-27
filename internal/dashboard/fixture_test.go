@@ -101,7 +101,7 @@ var statePath = map[internal.TaskState][]internal.TaskState{
 func seedTask(t *testing.T, app *internal.App, title, epicID string, state internal.TaskState) *internal.Task {
 	t.Helper()
 	if state == internal.StatePlanned {
-		task, err := app.DB.CreatePlannedTask(title, "", epicID)
+		task, err := app.DB.CreatePlannedTask(title, "", epicID, internal.ReviewSetting{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,7 +112,7 @@ func seedTask(t *testing.T, app *internal.App, title, epicID string, state inter
 
 func seedTaskAt(t *testing.T, app *internal.App, title, epicID string, state internal.TaskState, worktree string) *internal.Task {
 	t.Helper()
-	task, err := app.DB.CreateTask(title, "", internal.Slugify(title), worktree, "main", "", epicID)
+	task, err := app.DB.CreateTask(title, "", internal.Slugify(title), worktree, "main", "", epicID, internal.ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}

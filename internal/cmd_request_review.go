@@ -228,6 +228,9 @@ func (a *App) CmdReviewRequest(taskID string) error {
 	if err != nil {
 		return err
 	}
+	if task.ReviewType == ReviewNone {
+		return refuseReviewOfNone(id, "harness work merge "+id)
+	}
 	if task.State != StateChecksPassed {
 		return fmt.Errorf("cannot request review in state %s (need CHECKS_PASSED)", task.State)
 	}
@@ -251,7 +254,7 @@ func (a *App) CmdReviewRequest(taskID string) error {
 		return fmt.Errorf("%s moved since checks ran (%s -> %s); run: harness work check",
 			task.Branch, shortSHA(runs[0].CommitSHA), shortSHA(head))
 	}
-	token, reqID, err := a.DB.OpenReviewRequestID(id, "", head)
+	review, token, reqID, err := a.openReviewFor(id, "", head, task.ReviewType, review)
 	if err != nil {
 		return err
 	}

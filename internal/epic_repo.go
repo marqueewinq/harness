@@ -39,7 +39,7 @@ func scanEpic(s rowScanner) (*Epic, error) {
 	return e, nil
 }
 
-func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, error) {
+func (db *DB) CreateEpic(title, description, projectID, branch string, review ReviewSetting) (*Epic, error) {
 	if _, err := db.GetProject(projectID); err != nil {
 		return nil, fmt.Errorf("project %q not found", projectID)
 	}
@@ -54,10 +54,13 @@ func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, e
 		if branch != "" {
 			branchVal = branch
 		}
+		reviewType, reviewSetBy, reviewSetAt := review.columnValues(now)
 		_, err = tx.Exec(
-			`INSERT INTO epics (id, project_id, title, description, status, branch, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, 'open', ?, ?, ?)`,
+			`INSERT INTO epics (id, project_id, title, description, status, branch, created_at, updated_at,
+			                    review_type, review_type_set_by, review_type_set_at)
+			 VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)`,
 			id, projectID, title, description, branchVal, now, now,
+			reviewType, reviewSetBy, reviewSetAt,
 		)
 		if err != nil {
 			return fmt.Errorf("creating epic: %w", err)
@@ -65,7 +68,8 @@ func (db *DB) CreateEpic(title, description, projectID, branch string) (*Epic, e
 		if err := recordTransition(tx, "epic_state_transitions", "epic_id", id, "", string(EpicStatusOpen)); err != nil {
 			return err
 		}
-		epic = &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: EpicStatusOpen, Branch: branch, CreatedAt: now, UpdatedAt: now, ReviewType: ReviewDefault}
+		epic = &Epic{ID: id, ProjectID: projectID, Title: title, Description: description, Status: EpicStatusOpen, Branch: branch, CreatedAt: now, UpdatedAt: now}
+		epic.setReview(reviewType, reviewSetBy, reviewSetAt)
 		return nil
 	})
 	if err != nil {
@@ -121,6 +125,10 @@ func (db *DB) ListEpicsByProject(projectID string) ([]Epic, error) {
 }
 
 func (db *DB) UpdateEpicStatus(id string, status EpicStatus) error {
+	return db.UpdateEpicStatusNote(id, status, "")
+}
+
+func (db *DB) UpdateEpicStatusNote(id string, status EpicStatus, note string) error {
 	return db.WithTx(func(tx *sql.Tx) error {
 		var current string
 		if err := tx.QueryRow(`SELECT status FROM epics WHERE id = ?`, id).Scan(&current); err != nil {
@@ -130,7 +138,7 @@ func (db *DB) UpdateEpicStatus(id string, status EpicStatus) error {
 		if err != nil {
 			return err
 		}
-		return recordTransition(tx, "epic_state_transitions", "epic_id", id, current, string(status))
+		return recordTransitionNote(tx, "epic_state_transitions", "epic_id", id, current, string(status), note)
 	})
 }
 

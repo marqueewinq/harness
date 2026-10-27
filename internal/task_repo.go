@@ -48,7 +48,7 @@ func scanTask(s rowScanner) (*Task, error) {
 	return t, nil
 }
 
-func (db *DB) CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID string) (*Task, error) {
+func (db *DB) CreateTask(title, description, branch, worktreePath, baseBranch, parentTaskID, epicID string, review ReviewSetting) (*Task, error) {
 	var task *Task
 	err := db.WithTx(func(tx *sql.Tx) error {
 		id, err := nextID(tx, "tasks", "task", 3)
@@ -64,10 +64,13 @@ func (db *DB) CreateTask(title, description, branch, worktreePath, baseBranch, p
 		if epicID != "" {
 			epicVal = epicID
 		}
+		reviewType, reviewSetBy, reviewSetAt := review.columnValues(now)
 		_, err = tx.Exec(
-			`INSERT INTO tasks (id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO tasks (id, title, description, branch, worktree_path, state, base_branch, parent_task_id, epic_id, created_at, updated_at,
+			                    review_type, review_type_set_by, review_type_set_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id, title, description, branch, worktreePath, string(StateInProgress), baseBranch, parentVal, epicVal, now, now,
+			reviewType, reviewSetBy, reviewSetAt,
 		)
 		if err != nil {
 			return fmt.Errorf("creating task: %w", err)
@@ -79,8 +82,9 @@ func (db *DB) CreateTask(title, description, branch, worktreePath, baseBranch, p
 			ID: id, Title: title, Description: description, Branch: branch,
 			WorktreePath: worktreePath, State: StateInProgress,
 			BaseBranch: baseBranch, ParentTaskID: parentTaskID, EpicID: epicID,
-			CreatedAt: now, UpdatedAt: now, ReviewType: ReviewDefault,
+			CreatedAt: now, UpdatedAt: now,
 		}
+		task.setReview(reviewType, reviewSetBy, reviewSetAt)
 		return nil
 	})
 	if err != nil {
@@ -190,7 +194,7 @@ func updateTaskStateTx(tx *sql.Tx, id string, state TaskState) error {
 	return recordTransition(tx, "task_state_transitions", "task_id", id, current, string(state))
 }
 
-func (db *DB) CreatePlannedTask(title, description, epicID string) (*Task, error) {
+func (db *DB) CreatePlannedTask(title, description, epicID string, review ReviewSetting) (*Task, error) {
 	var task *Task
 	err := db.WithTx(func(tx *sql.Tx) error {
 		id, err := nextID(tx, "tasks", "task", 3)
@@ -202,10 +206,13 @@ func (db *DB) CreatePlannedTask(title, description, epicID string) (*Task, error
 		if epicID != "" {
 			epicVal = epicID
 		}
+		reviewType, reviewSetBy, reviewSetAt := review.columnValues(now)
 		_, err = tx.Exec(
-			`INSERT INTO tasks (id, title, description, branch, worktree_path, state, epic_id, created_at, updated_at)
-			 VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+			`INSERT INTO tasks (id, title, description, branch, worktree_path, state, epic_id, created_at, updated_at,
+			                    review_type, review_type_set_by, review_type_set_at)
+			 VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
 			id, title, description, string(StatePlanned), epicVal, now, now,
+			reviewType, reviewSetBy, reviewSetAt,
 		)
 		if err != nil {
 			return fmt.Errorf("creating planned task: %w", err)
@@ -216,8 +223,9 @@ func (db *DB) CreatePlannedTask(title, description, epicID string) (*Task, error
 		task = &Task{
 			ID: id, Title: title, Description: description,
 			State: StatePlanned, EpicID: epicID,
-			CreatedAt: now, UpdatedAt: now, ReviewType: ReviewDefault,
+			CreatedAt: now, UpdatedAt: now,
 		}
+		task.setReview(reviewType, reviewSetBy, reviewSetAt)
 		return nil
 	})
 	if err != nil {

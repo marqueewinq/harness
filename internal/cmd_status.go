@@ -132,7 +132,9 @@ func (a *App) CmdWorkStatus(taskID string) error {
 		}
 		fmt.Printf("  %s Work in worktree\n", mark(task.WorktreePath != ""))
 		fmt.Printf("  %s All checks pass\n", mark(checksOK))
-		if task.ReviewType != ReviewNone {
+		if task.ReviewType == ReviewNone {
+			fmt.Println("  [-] Review not required (review type none)")
+		} else {
 			fmt.Printf("  %s Review approved\n", mark(reviewOK))
 		}
 	}
@@ -144,11 +146,21 @@ func (a *App) CmdWorkStatus(taskID string) error {
 	case StateChecksFailed, StateMergeFailed:
 		fmt.Println("Next: fix the failures, then run: harness work check")
 	case StateChecksPassed:
-		fmt.Println("Next: run harness review request")
+		switch task.ReviewType {
+		case ReviewNone:
+			fmt.Println("Next: run harness work merge (review type none: no review step)")
+		case ReviewHuman:
+			fmt.Println("Next: run harness review request; then a human approves or rejects at a terminal or in harness dashboard")
+		default:
+			fmt.Println("Next: run harness review request")
+		}
 	case StateRequestChanges:
 		fmt.Println("Next: address review comments, then run: harness work check")
 	case StateReviewRequested:
-		if a.Config.Review.Cmd != "" {
+		if task.ReviewType == ReviewHuman {
+			fmt.Println("Next: waiting for a human verdict (review type human).")
+			fmt.Printf("      At an interactive terminal: harness review approve|reject %s, or a/r in harness dashboard\n", task.ID)
+		} else if a.Config.Review.Cmd != "" {
 			fmt.Println("Next: if no reviewer is running, run harness work check, then harness review request")
 		} else if a.Config.Review.Type == "human" {
 			fmt.Println("Next: waiting for human review.")
@@ -175,7 +187,11 @@ func (a *App) CmdWorkStatus(taskID string) error {
 			if from == "" {
 				from = "(created)"
 			}
-			fmt.Printf("  %s  %s -> %s\n", tr.CreatedAt.Format("15:04:05"), from, tr.ToState)
+			note := ""
+			if tr.Note != "" {
+				note = "  (" + tr.Note + ")"
+			}
+			fmt.Printf("  %s  %s -> %s%s\n", tr.CreatedAt.Format("15:04:05"), from, tr.ToState, note)
 		}
 	}
 

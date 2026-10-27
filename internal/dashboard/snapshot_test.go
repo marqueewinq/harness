@@ -203,8 +203,8 @@ func TestSnapshotEpicGrouping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e2, _ := app.DB.CreateEpic("Later epic", "", p2.ID, "")
-	e1, _ := app.DB.CreateEpic("Planning layer", "", p1.ID, "epic/planning")
+	e2, _ := app.DB.CreateEpic("Later epic", "", p2.ID, "", internal.ReviewSetting{})
+	e1, _ := app.DB.CreateEpic("Planning layer", "", p1.ID, "epic/planning", internal.ReviewSetting{})
 
 	seedTask(t, app, "m1", e1.ID, internal.StateMerged)
 	seedTask(t, app, "c1", e1.ID, internal.StateClosed)
@@ -251,7 +251,7 @@ func TestSnapshotReviews(t *testing.T) {
 	t.Parallel()
 	app := newRepo(t, agentConfig)
 	proj, _ := app.DB.CreateProject("P", "")
-	epic, _ := app.DB.CreateEpic("E", "", proj.ID, "epic/e")
+	epic, _ := app.DB.CreateEpic("E", "", proj.ID, "epic/e", internal.ReviewSetting{})
 	task := seedTask(t, app, "orphan", "", internal.StateReviewRequested)
 	_, reqID, err := app.DB.OpenReviewRequestID(task.ID, "", "8174267712345")
 	if err != nil {

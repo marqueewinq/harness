@@ -101,32 +101,46 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	if task.State == StateQueued || task.State == StateMerging {
 		return a.recoverAbandonedMerge(id)
 	}
-	if task.State != StateApproved {
-		return fmt.Errorf("cannot merge in state %s (need APPROVED)", task.State)
+	// Only review type none may skip the approval; any type may merge once APPROVED.
+	unreviewed := task.State == StateChecksPassed && task.ReviewType == ReviewNone
+	if task.State != StateApproved && !unreviewed {
+		if task.ReviewType == ReviewNone {
+			return fmt.Errorf("cannot merge in state %s (need CHECKS_PASSED or APPROVED)", task.State)
+		}
+		return fmt.Errorf("cannot merge in state %s (need APPROVED; review type %s)", task.State, task.ReviewType)
 	}
 
-	latestApproval, err := a.DB.GetLatestApproval(id)
-	if err != nil {
-		return err
-	}
-	if latestApproval == nil || latestApproval.CommitSHA == "" {
-		return fmt.Errorf("task %s has no approval pinned to a commit; run: harness work check %s, then harness review request %s", id, id, id)
-	}
-	currentHead, err := a.Git.RevParse(task.Branch)
-	if err != nil {
-		return fmt.Errorf("resolving %s: %w", task.Branch, err)
-	}
-	if currentHead != latestApproval.CommitSHA {
-		if err := a.DB.UpdateTaskState(id, StateInProgress); err != nil {
+	unreviewedNote := ""
+	if unreviewed {
+		if _, err := a.unreviewedMergeCommit(task); err != nil {
 			return err
 		}
-		fmt.Printf("Task %s is now IN_PROGRESS.\n", id)
-		fmt.Println("Next: run harness work check")
-		return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
-			shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
-	}
-	if err := a.requireChecksAt(id, latestApproval.CommitSHA); err != nil {
-		return err
+		unreviewedNote = unreviewedMergeNote(task.ReviewSummary())
+		fmt.Printf("Task %s has review type none: %s.\n", id, unreviewedNote)
+	} else {
+		latestApproval, err := a.DB.GetLatestApproval(id)
+		if err != nil {
+			return err
+		}
+		if latestApproval == nil || latestApproval.CommitSHA == "" {
+			return fmt.Errorf("task %s has no approval pinned to a commit; run: harness work check %s, then harness review request %s", id, id, id)
+		}
+		currentHead, err := a.Git.RevParse(task.Branch)
+		if err != nil {
+			return fmt.Errorf("resolving %s: %w", task.Branch, err)
+		}
+		if currentHead != latestApproval.CommitSHA {
+			if err := a.DB.UpdateTaskState(id, StateInProgress); err != nil {
+				return err
+			}
+			fmt.Printf("Task %s is now IN_PROGRESS.\n", id)
+			fmt.Println("Next: run harness work check")
+			return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
+				shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
+		}
+		if err := a.requireChecksAt(id, latestApproval.CommitSHA); err != nil {
+			return err
+		}
 	}
 
 	// From here on Ctrl-C/SIGTERM must not kill harness mid-merge: the merge
@@ -139,7 +153,11 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	if _, err := a.DB.EnqueueTask(id, os.Getpid()); err != nil {
 		return fmt.Errorf("enqueue %s: %w", id, err)
 	}
-	if err := a.DB.UpdateTaskState(id, StateQueued); err != nil {
+	queue := func() error { return a.DB.UpdateTaskState(id, StateQueued) }
+	if unreviewed {
+		queue = func() error { return a.DB.QueueWithoutReview(id, unreviewedNote) }
+	}
+	if err := queue(); err != nil {
 		a.DB.DequeueOwned(id, os.Getpid())
 		return err
 	}
@@ -207,6 +225,9 @@ func (a *App) CmdWorkMerge(taskID string) error {
 	fmt.Printf("Merging %s into %s (strategy: %s)...\n", task.Branch, targetBranch, strategy.Name())
 	epicID, projID := a.resolveTaskHierarchy(task)
 	mergeMessage := BuildCommitMessage(a.Config.Commit.Message, task.ID, epicID, projID, task.Title)
+	if unreviewedNote != "" {
+		mergeMessage += "\n\n" + unreviewedNote
+	}
 
 	if err := a.mergeIntoTarget(strategy, task.Branch, targetBranch, mergeMessage, id); err != nil {
 		fmt.Println("Next: harness work sync (rebase onto the latest base and resolve conflicts), then harness work check")

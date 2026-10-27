@@ -38,6 +38,8 @@ func TestMigrationV12AddsReviewTypeToExistingDB(t *testing.T) {
 		`ALTER TABLE epics DROP COLUMN review_type`,
 		`ALTER TABLE epics DROP COLUMN review_type_set_by`,
 		`ALTER TABLE epics DROP COLUMN review_type_set_at`,
+		`ALTER TABLE task_state_transitions DROP COLUMN note`,
+		`ALTER TABLE epic_state_transitions DROP COLUMN note`,
 		`UPDATE schema_version SET version = 11`,
 		`INSERT INTO tasks (id, title, state, created_at, updated_at) VALUES ('task-001', 'old', 'PLANNED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		`INSERT INTO projects (id, title, created_at, updated_at) VALUES ('proj-001', 'p', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
@@ -56,8 +58,8 @@ func TestMigrationV12AddsReviewTypeToExistingDB(t *testing.T) {
 	defer db.Close()
 	var version int
 	db.conn.QueryRow(`SELECT version FROM schema_version`).Scan(&version)
-	if version != 12 {
-		t.Errorf("schema version = %d, want 12", version)
+	if version < 12 {
+		t.Errorf("schema version = %d, want >= 12", version)
 	}
 	task, err := db.GetTask("task-001")
 	if err != nil {
@@ -79,7 +81,7 @@ func TestSetReviewType(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
 	defer db.Close()
-	task, err := db.CreatePlannedTask("t", "", "")
+	task, err := db.CreatePlannedTask("t", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}

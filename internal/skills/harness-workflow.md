@@ -26,7 +26,9 @@ If the task is already IN_PROGRESS, continue in its worktree.
 4. `harness work check` — runs configured checks (tests, build, lint as a DAG)
 5. `harness review request` — pins the reviewed commit and launches the
    configured reviewer (`review.cmd`), which records the verdict. With
-   `review.type: human`, a person records it from an interactive terminal.
+   `review.type: human`, or for a task of review type `human`, no reviewer
+   is launched and a person records it from an interactive terminal. A task
+   of review type `none` has no review step: after step 4, go to step 8.
 6. You cannot approve or reject your own task: verdicts need the one-time
    token harness gives only to the reviewer it launches. The reviewer gets
    no terminal (stdin is /dev/null; the prompt is in `{{prompt_file}}`) and is

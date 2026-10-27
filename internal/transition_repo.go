@@ -11,6 +11,7 @@ type TaskStateTransition struct {
 	FromState string
 	ToState   string
 	CreatedAt time.Time
+	Note      string
 }
 
 type EpicStateTransition struct {
@@ -19,6 +20,7 @@ type EpicStateTransition struct {
 	FromState string
 	ToState   string
 	CreatedAt time.Time
+	Note      string
 }
 
 type ProjectStateTransition struct {
@@ -38,13 +40,24 @@ func recordTransition(ex dbExecer, table, idCol, id, from, to string) error {
 	return err
 }
 
+// recordTransitionNote is for task and epic transitions only; project
+// transitions have no note column.
+func recordTransitionNote(ex dbExecer, table, idCol, id, from, to, note string) error {
+	query := fmt.Sprintf(
+		`INSERT INTO %s (%s, from_state, to_state, created_at, note) VALUES (?, ?, ?, ?, ?)`,
+		table, idCol,
+	)
+	_, err := ex.Exec(query, id, from, to, time.Now(), note)
+	return err
+}
+
 func (db *DB) RecordTaskTransition(taskID, fromState, toState string) error {
 	return recordTransition(db.conn, "task_state_transitions", "task_id", taskID, fromState, toState)
 }
 
 func (db *DB) GetTaskTransitions(taskID string) ([]TaskStateTransition, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, task_id, from_state, to_state, created_at
+		`SELECT id, task_id, from_state, to_state, created_at, note
 		 FROM task_state_transitions WHERE task_id = ? ORDER BY created_at ASC`, taskID,
 	)
 	if err != nil {
@@ -55,7 +68,7 @@ func (db *DB) GetTaskTransitions(taskID string) ([]TaskStateTransition, error) {
 	var transitions []TaskStateTransition
 	for rows.Next() {
 		var t TaskStateTransition
-		if err := rows.Scan(&t.ID, &t.TaskID, &t.FromState, &t.ToState, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.TaskID, &t.FromState, &t.ToState, &t.CreatedAt, &t.Note); err != nil {
 			return nil, err
 		}
 		transitions = append(transitions, t)
@@ -69,7 +82,7 @@ func (db *DB) RecordEpicTransition(epicID, fromState, toState string) error {
 
 func (db *DB) GetEpicTransitions(epicID string) ([]EpicStateTransition, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, epic_id, from_state, to_state, created_at
+		`SELECT id, epic_id, from_state, to_state, created_at, note
 		 FROM epic_state_transitions WHERE epic_id = ? ORDER BY created_at ASC`, epicID,
 	)
 	if err != nil {
@@ -80,7 +93,7 @@ func (db *DB) GetEpicTransitions(epicID string) ([]EpicStateTransition, error) {
 	var transitions []EpicStateTransition
 	for rows.Next() {
 		var t EpicStateTransition
-		if err := rows.Scan(&t.ID, &t.EpicID, &t.FromState, &t.ToState, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.EpicID, &t.FromState, &t.ToState, &t.CreatedAt, &t.Note); err != nil {
 			return nil, err
 		}
 		transitions = append(transitions, t)

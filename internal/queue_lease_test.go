@@ -46,7 +46,7 @@ func insertQueueRow(t *testing.T, app *App, taskID string, pid int, heartbeat ti
 func TestMergeReclaimsDeadHead(t *testing.T) {
 	t.Parallel()
 	app, task := approvedTask(t)
-	ghost, err := app.DB.CreateTask("ghost", "", "ghost", "/tmp/ghost", "main", "", "")
+	ghost, err := app.DB.CreateTask("ghost", "", "ghost", "/tmp/ghost", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}

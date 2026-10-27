@@ -6,7 +6,7 @@ import (
 )
 
 func (a *App) CmdTaskNew(title, description, epicID, review string) error {
-	reviewType, reviewSetBy, err := a.creationReviewType(review)
+	reviewSetting, err := a.creationReviewType(review)
 	if err != nil {
 		return err
 	}
@@ -19,18 +19,15 @@ func (a *App) CmdTaskNew(title, description, epicID, review string) error {
 			fmt.Printf("Warning: epic %s is closed\n", epicID)
 		}
 	}
-	task, err := a.DB.CreatePlannedTask(title, description, epicID)
+	task, err := a.DB.CreatePlannedTask(title, description, epicID, reviewSetting)
 	if err != nil {
 		return err
-	}
-	if err := a.DB.SetReviewType(task.ID, reviewType, reviewSetBy); err != nil {
-		return fmt.Errorf("created %s, but its review type stays default: %w", task.ID, err)
 	}
 	epicInfo := ""
 	if epicID != "" {
 		epicInfo = fmt.Sprintf(", %s", epicID)
 	}
-	fmt.Printf("Created %s: %q (PLANNED%s, review: %s)\n", task.ID, title, epicInfo, reviewType)
+	fmt.Printf("Created %s: %q (PLANNED%s, review: %s)\n", task.ID, title, epicInfo, task.ReviewType)
 	if description != "" {
 		fmt.Printf("Description: %s\n", description)
 	}

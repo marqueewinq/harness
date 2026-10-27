@@ -128,7 +128,7 @@ func TestBuildEpicDetail(t *testing.T) {
 	t.Parallel()
 	app := newRepo(t, humanConfig)
 	proj, _ := app.DB.CreateProject("P", "")
-	epic, _ := app.DB.CreateEpic("Planning layer", "", proj.ID, "epic/planning")
+	epic, _ := app.DB.CreateEpic("Planning layer", "", proj.ID, "epic/planning", internal.ReviewSetting{})
 	seedTask(t, app, "done", epic.ID, internal.StateMerged)
 	seedTask(t, app, "open", epic.ID, internal.StateInProgress)
 	if _, err := app.DB.OpenReviewRequest("", epic.ID, "5d1c09aa999"); err != nil {

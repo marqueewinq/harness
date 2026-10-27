@@ -245,6 +245,7 @@ This table matches `internal/state.go`. Any state except `NEW`, `CHECKS_RUNNING`
 | REVIEW_REQUESTED | CHECKS_RUNNING | `harness work check` | New commits during review |
 | REQUEST_CHANGES | CHECKS_RUNNING | `harness work check` | Agent fixes code based on review comments, re-runs checks |
 | APPROVED | QUEUED | `harness work merge` | Branch head equals the approved commit |
+| CHECKS_PASSED | QUEUED | `harness work merge` | Review type `none` only (`DB.QueueWithoutReview`, not in the generic table): latest check run is on the branch head, passed, and covers `merge.require.checks` |
 | APPROVED | IN_PROGRESS | `harness work merge` | Branch moved after approval (stale review) |
 | APPROVED | CHECKS_RUNNING | `harness work check` | Re-run after approval |
 | QUEUED | MERGING | Queue head reached | This task is first in the queue |

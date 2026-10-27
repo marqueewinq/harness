@@ -9,8 +9,8 @@ func TestDepCRUD(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	t1, _ := db.CreatePlannedTask("task one", "", "")
-	t2, _ := db.CreatePlannedTask("task two", "", "")
+	t1, _ := db.CreatePlannedTask("task one", "", "", ReviewSetting{})
+	t2, _ := db.CreatePlannedTask("task two", "", "", ReviewSetting{})
 
 	err := db.AddDependency(t1.ID, t2.ID, "blocks")
 	if err != nil {
@@ -40,7 +40,7 @@ func TestDepSelfDependency(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	t1, _ := db.CreatePlannedTask("task one", "", "")
+	t1, _ := db.CreatePlannedTask("task one", "", "", ReviewSetting{})
 	err := db.AddDependency(t1.ID, t1.ID, "blocks")
 	if err == nil {
 		t.Fatal("expected error for self-dependency")
@@ -52,9 +52,9 @@ func TestDepCycleDetection(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	t1, _ := db.CreatePlannedTask("task one", "", "")
-	t2, _ := db.CreatePlannedTask("task two", "", "")
-	t3, _ := db.CreatePlannedTask("task three", "", "")
+	t1, _ := db.CreatePlannedTask("task one", "", "", ReviewSetting{})
+	t2, _ := db.CreatePlannedTask("task two", "", "", ReviewSetting{})
+	t3, _ := db.CreatePlannedTask("task three", "", "", ReviewSetting{})
 
 	db.AddDependency(t1.ID, t2.ID, "blocks")
 	db.AddDependency(t2.ID, t3.ID, "blocks")
@@ -76,8 +76,8 @@ func TestDepIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	t1, _ := db.CreatePlannedTask("task one", "", "")
-	t2, _ := db.CreatePlannedTask("task two", "", "")
+	t1, _ := db.CreatePlannedTask("task one", "", "", ReviewSetting{})
+	t2, _ := db.CreatePlannedTask("task two", "", "", ReviewSetting{})
 
 	err := db.AddDependency(t1.ID, t2.ID, "blocks")
 	if err != nil {

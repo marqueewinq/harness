@@ -159,7 +159,7 @@ func TestApproveIsSingleUsePerRequest(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
 	defer db.Close()
-	task, err := db.CreateTask("t", "", "b", "/tmp/x", "main", "", "")
+	task, err := db.CreateTask("t", "", "b", "/tmp/x", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}

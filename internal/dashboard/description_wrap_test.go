@@ -24,7 +24,7 @@ const longDescription = "first paragraph alpha beta gamma delta epsilon zeta eta
 func descriptionModel(t *testing.T) Model {
 	t.Helper()
 	app := newRepo(t, humanConfig)
-	if _, err := app.DB.CreateTask("described", longDescription, "described", t.TempDir(), "main", "", ""); err != nil {
+	if _, err := app.DB.CreateTask("described", longDescription, "described", t.TempDir(), "main", "", "", internal.ReviewSetting{}); err != nil {
 		t.Fatal(err)
 	}
 	m := NewModel(AppLoader(app, false), Options{Interval: time.Millisecond})

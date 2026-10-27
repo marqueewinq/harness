@@ -17,24 +17,27 @@ func (a *App) CmdEpicMerge(epicID string) error {
 		return fmt.Errorf("epic %s branch is %s (nothing to merge)", epicID, a.Config.MainBranch)
 	}
 
-	// Check for approval
-	latestApproval, err := a.DB.GetLatestEpicApproval(epicID)
-	if err != nil {
-		return err
-	}
-	if latestApproval == nil {
-		return fmt.Errorf("epic %s has no approval. Run: harness review request %s", epicID, epicID)
-	}
-
-	// Staleness check
-	currentHead, err := a.Git.RevParse(e.Branch)
-	if err != nil {
-		return fmt.Errorf("cannot get HEAD of %s: %w", e.Branch, err)
-	}
-	if latestApproval.CommitSHA != "" && currentHead != latestApproval.CommitSHA {
-		fmt.Printf("Run: harness review request %s\n", epicID)
-		return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
-			shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
+	unreviewedNote := ""
+	if e.ReviewType == ReviewNone {
+		unreviewedNote = unreviewedMergeNote(e.ReviewSummary())
+		fmt.Printf("Epic %s has review type none: %s.\n", epicID, unreviewedNote)
+	} else {
+		latestApproval, err := a.DB.GetLatestEpicApproval(epicID)
+		if err != nil {
+			return err
+		}
+		if latestApproval == nil {
+			return fmt.Errorf("epic %s has no approval. Run: harness review request %s", epicID, epicID)
+		}
+		currentHead, err := a.Git.RevParse(e.Branch)
+		if err != nil {
+			return fmt.Errorf("cannot get HEAD of %s: %w", e.Branch, err)
+		}
+		if latestApproval.CommitSHA != "" && currentHead != latestApproval.CommitSHA {
+			fmt.Printf("Run: harness review request %s\n", epicID)
+			return fmt.Errorf("review is stale: approved commit %s but branch is now at %s",
+				shortSHA(latestApproval.CommitSHA), shortSHA(currentHead))
+		}
 	}
 
 	// Warn about open tasks
@@ -85,13 +88,16 @@ func (a *App) CmdEpicMerge(epicID string) error {
 	// be deleted, and so mergeIntoTarget doesn't mistake it for the target.
 	a.Git.RemoveWorktree(tmpWorktree)
 	message := BuildCommitMessage(a.Config.Commit.Message, "", epicID, e.ProjectID, e.Title)
+	if unreviewedNote != "" {
+		message += "\n\n" + unreviewedNote
+	}
 	if err := a.mergeIntoTarget(strategy, e.Branch, a.Config.MainBranch, message, epicID); err != nil {
 		return fmt.Errorf("merge failed: %w", err)
 	}
 
 	a.Git.DeleteBranch(e.Branch)
 	a.DB.UpdateEpicBranch(epicID, "")
-	a.DB.UpdateEpicStatus(epicID, EpicStatusClosed)
+	a.DB.UpdateEpicStatusNote(epicID, EpicStatusClosed, unreviewedNote)
 
 	fmt.Println("Merge successful.")
 	fmt.Printf("Epic %s is now closed.\n", epicID)

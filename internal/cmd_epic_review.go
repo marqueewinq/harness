@@ -10,6 +10,9 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	if err != nil {
 		return err
 	}
+	if e.ReviewType == ReviewNone {
+		return refuseReviewOfNone(epicID, "harness epic merge "+epicID)
+	}
 	if e.Branch == "" {
 		return fmt.Errorf("epic %s has no branch", epicID)
 	}
@@ -22,7 +25,7 @@ func (a *App) cmdEpicReviewRequest(epicID string) error {
 	if err != nil {
 		return fmt.Errorf("resolving %s: %w", e.Branch, err)
 	}
-	token, reqID, err := a.DB.OpenReviewRequestID("", epicID, head)
+	review, token, reqID, err := a.openReviewFor("", epicID, head, e.ReviewType, review)
 	if err != nil {
 		return err
 	}

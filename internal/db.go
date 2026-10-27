@@ -135,8 +135,33 @@ func createSchema(conn *sql.DB) error {
 			return fmt.Errorf("migration v12: %w", err)
 		}
 	}
+	if version < 13 {
+		if err := migrateV13(conn); err != nil {
+			return fmt.Errorf("migration v13: %w", err)
+		}
+	}
 
 	return nil
+}
+
+// note records why a transition skipped a gate (e.g. a merge without review).
+func migrateV13(conn *sql.DB) error {
+	tx, err := conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		`ALTER TABLE task_state_transitions ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE epic_state_transitions ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
+		`DELETE FROM schema_version`,
+		`INSERT INTO schema_version (version) VALUES (13)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // Existing tasks and epics keep today's review gate (default) with no

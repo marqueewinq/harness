@@ -322,7 +322,7 @@ func setupTask(t *testing.T) (*App, string, *Task) {
 func setupTaskInState(t *testing.T, state TaskState) (*App, *Task) {
 	t.Helper()
 	db := openTestDB(t)
-	task, err := db.CreateTask("test task", "", "fake-branch", "/tmp/fake-wt", "main", "", "")
+	task, err := db.CreateTask("test task", "", "fake-branch", "/tmp/fake-wt", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1395,7 +1395,7 @@ func TestE2EEpicMergeNoBranch(t *testing.T) {
 	// Create epic with epic_feature_branches default but --branch="" explicitly means use default behavior
 	// Actually to test no branch, we need to use --branch=main which means no merge needed,
 	// or use epic_feature_branches=false. Let's use the DB directly for a clean test.
-	app.DB.CreateEpic("No Branch", "", "proj-001", "")
+	app.DB.CreateEpic("No Branch", "", "proj-001", "", ReviewSetting{})
 
 	err := app.CmdEpicMerge("epic-001")
 	if err == nil {

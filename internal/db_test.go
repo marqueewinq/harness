@@ -41,7 +41,7 @@ func TestNextIDPast999(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	task, err := db.CreatePlannedTask("next", "", "")
+	task, err := db.CreatePlannedTask("next", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestConcurrentCreateTask(t *testing.T) {
 				return
 			}
 			defer db.Close()
-			_, err = db.CreatePlannedTask("t", "", "")
+			_, err = db.CreatePlannedTask("t", "", "", ReviewSetting{})
 			errs <- err
 		}()
 	}
@@ -89,7 +89,7 @@ func TestTaskCRUD(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	task, err := db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "")
+	task, err := db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestTaskCRUD(t *testing.T) {
 		t.Errorf("State = %q, want %q", task.State, StateInProgress)
 	}
 
-	task2, err := db.CreateTask("add feature", "", "add-feature", ".worktrees/add-feature", "main", "", "")
+	task2, err := db.CreateTask("add feature", "", "add-feature", ".worktrees/add-feature", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestGetTaskByBranch(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "")
+	db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "", ReviewSetting{})
 	got, err := db.GetTaskByBranch("fix-bug")
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestCheckRunCRUD(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 
 	err := db.RecordCheckRun("task-001", "test", 0, "ok\n", "", 1, time.Now(), time.Now(), "abc123")
 	if err != nil {
@@ -179,7 +179,7 @@ func TestReviewCRUD(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 
 	for _, decision := range []string{"request_changes", "approve"} {
 		token, err := db.OpenReviewRequest("task-001", "", "abc")
@@ -233,8 +233,8 @@ func TestMergeQueue(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("task A", "", "branch-a", ".worktrees/a", "main", "", "")
-	db.CreateTask("task B", "", "branch-b", ".worktrees/b", "main", "", "")
+	db.CreateTask("task A", "", "branch-a", ".worktrees/a", "main", "", "", ReviewSetting{})
+	db.CreateTask("task B", "", "branch-b", ".worktrees/b", "main", "", "", ReviewSetting{})
 
 	pos1, err := db.EnqueueTask("task-001", 1)
 	if err != nil {
@@ -298,17 +298,17 @@ func TestGetSubtasks(t *testing.T) {
 	defer db.Close()
 
 	// Create parent
-	parent, err := db.CreateTask("parent", "", "parent-branch", ".worktrees/parent", "main", "", "")
+	parent, err := db.CreateTask("parent", "", "parent-branch", ".worktrees/parent", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create 2 children
-	_, err = db.CreateTask("child 1", "", "child-1", ".worktrees/child-1", parent.Branch, parent.ID, "")
+	_, err = db.CreateTask("child 1", "", "child-1", ".worktrees/child-1", parent.Branch, parent.ID, "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.CreateTask("child 2", "", "child-2", ".worktrees/child-2", parent.Branch, parent.ID, "")
+	_, err = db.CreateTask("child 2", "", "child-2", ".worktrees/child-2", parent.Branch, parent.ID, "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestGetSubtasksNone(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	parent, err := db.CreateTask("parent", "", "parent-branch", ".worktrees/parent", "main", "", "")
+	parent, err := db.CreateTask("parent", "", "parent-branch", ".worktrees/parent", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestNextRunGroup(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 
 	// No runs yet -> group 1
 	group, err := db.NextRunGroup("task-001")
@@ -381,7 +381,7 @@ func TestGetLatestCheckRunsEmpty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 
 	runs, err := db.GetLatestCheckRuns("task-001")
 	if err != nil {
@@ -408,9 +408,9 @@ func TestGetQueuePositionMultiple(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("task A", "", "branch-a", ".worktrees/a", "main", "", "")
-	db.CreateTask("task B", "", "branch-b", ".worktrees/b", "main", "", "")
-	db.CreateTask("task C", "", "branch-c", ".worktrees/c", "main", "", "")
+	db.CreateTask("task A", "", "branch-a", ".worktrees/a", "main", "", "", ReviewSetting{})
+	db.CreateTask("task B", "", "branch-b", ".worktrees/b", "main", "", "", ReviewSetting{})
+	db.CreateTask("task C", "", "branch-c", ".worktrees/c", "main", "", "", ReviewSetting{})
 
 	db.EnqueueTask("task-001", 1)
 	db.EnqueueTask("task-002", 1)
@@ -445,7 +445,7 @@ func TestRecordReviewWithCommitSHA(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 
 	sha := "abc123def456abc123def456abc123def456abc1"
 	err := db.RecordReview("task-001", "approve", "", sha)
@@ -470,7 +470,7 @@ func TestGetLatestApproval(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 
 	// Record request_changes, then approve with SHA
 	db.RecordReview("task-001", "request_changes", "fix it", "")
@@ -497,7 +497,7 @@ func TestGetLatestApprovalNone(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 
 	approval, err := db.GetLatestApproval("task-001")
 	if err != nil {
@@ -599,7 +599,7 @@ func TestEpicCRUD(t *testing.T) {
 
 	proj, _ := db.CreateProject("Test project", "")
 
-	e, err := db.CreateEpic("OAuth2 support", "", proj.ID, "")
+	e, err := db.CreateEpic("OAuth2 support", "", proj.ID, "", ReviewSetting{})
 	if err != nil {
 		t.Fatal("create:", err)
 	}
@@ -618,7 +618,7 @@ func TestEpicCRUD(t *testing.T) {
 		t.Errorf("title = %q", e2.Title)
 	}
 
-	db.CreateEpic("Rate limiting", "", proj.ID, "")
+	db.CreateEpic("Rate limiting", "", proj.ID, "", ReviewSetting{})
 	epics, _ := db.ListEpicsByProject(proj.ID)
 	if len(epics) != 2 {
 		t.Fatalf("len = %d, want 2", len(epics))
@@ -641,7 +641,7 @@ func TestEpicRequiresProject(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	_, err := db.CreateEpic("Orphan epic", "", "proj-999", "")
+	_, err := db.CreateEpic("Orphan epic", "", "proj-999", "", ReviewSetting{})
 	if err == nil {
 		t.Fatal("expected error for nonexistent project")
 	}
@@ -654,7 +654,7 @@ func TestEpicBranchCRUD(t *testing.T) {
 
 	proj, _ := db.CreateProject("Test project", "")
 
-	e, err := db.CreateEpic("With branch", "", proj.ID, "epic/with-branch")
+	e, err := db.CreateEpic("With branch", "", proj.ID, "epic/with-branch", ReviewSetting{})
 	if err != nil {
 		t.Fatal("create:", err)
 	}
@@ -667,7 +667,7 @@ func TestEpicBranchCRUD(t *testing.T) {
 		t.Errorf("get branch = %q, want epic/with-branch", e2.Branch)
 	}
 
-	e3, _ := db.CreateEpic("No branch", "", proj.ID, "")
+	e3, _ := db.CreateEpic("No branch", "", proj.ID, "", ReviewSetting{})
 	if e3.Branch != "" {
 		t.Errorf("branch = %q, want empty", e3.Branch)
 	}
@@ -696,7 +696,7 @@ func TestEpicReviewCRUD(t *testing.T) {
 	defer db.Close()
 
 	proj, _ := db.CreateProject("Test project", "")
-	db.CreateEpic("Test epic", "", proj.ID, "")
+	db.CreateEpic("Test epic", "", proj.ID, "", ReviewSetting{})
 
 	err := db.RecordEpicReview("epic-001", "request_changes", "fix it", "")
 	if err != nil {
@@ -744,7 +744,7 @@ func TestTaskStateTransitions(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "")
+	db.CreateTask("fix bug", "", "fix-bug", ".worktrees/fix-bug", "main", "", "", ReviewSetting{})
 	transitions, err := db.GetTaskTransitions("task-001")
 	if err != nil {
 		t.Fatal(err)
@@ -775,7 +775,7 @@ func TestPlannedTaskTransitions(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreatePlannedTask("plan it", "", "")
+	db.CreatePlannedTask("plan it", "", "", ReviewSetting{})
 	transitions, _ := db.GetTaskTransitions("task-001")
 	if len(transitions) != 1 {
 		t.Fatalf("len = %d, want 1", len(transitions))
@@ -800,7 +800,7 @@ func TestEpicStateTransitions(t *testing.T) {
 	defer db.Close()
 
 	db.CreateProject("proj", "")
-	db.CreateEpic("epic", "", "proj-001", "")
+	db.CreateEpic("epic", "", "proj-001", "", ReviewSetting{})
 
 	transitions, _ := db.GetEpicTransitions("epic-001")
 	if len(transitions) != 1 {
@@ -849,7 +849,7 @@ func TestCheckRunCommitSHA(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "")
+	db.CreateTask("test", "", "test-branch", ".worktrees/test", "main", "", "", ReviewSetting{})
 	sha := "abc123def456"
 	db.RecordCheckRun("task-001", "lint", 0, "ok", "", 1, time.Now(), time.Now(), sha)
 
@@ -909,7 +909,7 @@ func TestUpdateTaskStateRejectsInvalidTransition(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "")
+	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -930,7 +930,7 @@ func TestUpdateTaskStateAcceptsValidTransition(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "")
+	task, err := db.CreateTask("test task", "", "test-branch", "/tmp/wt", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -951,7 +951,7 @@ func TestStartTaskRejectsNonPlannedState(t *testing.T) {
 	defer db.Close()
 
 	// Create an IN_PROGRESS task (not PLANNED)
-	task, err := db.CreateTask("active task", "", "branch", "/tmp/wt", "main", "", "")
+	task, err := db.CreateTask("active task", "", "branch", "/tmp/wt", "main", "", "", ReviewSetting{})
 	if err != nil {
 		t.Fatal(err)
 	}

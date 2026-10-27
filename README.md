@@ -101,9 +101,18 @@ Every task and epic has a review type, chosen at creation with
 type):
 
 - `default`: the reviewer configured in `review:` on main.
-- `human`: only a human verdict counts.
-- `none`: no review gate. Refused unless `.harness.yaml` committed on main has
-  `review.allow_none: true` (default false); a local edit does not count.
+- `human`: `review request` pins the commit but launches no agent reviewer
+  and issues no token, whatever `review.type` says; only a human verdict at an
+  interactive terminal (or in the dashboard) resolves it.
+- `none`: no review gate. Refused at creation unless `.harness.yaml` committed
+  on main has `review.allow_none: true` (default false); a local edit does not
+  count. `review request` is refused; `harness work merge` accepts the task
+  from `CHECKS_PASSED`, pinned to the checked commit: the latest check run must
+  be on the current branch head, all of it passed, and `merge.require.checks`
+  passed there. If the branch moved, re-run checks. An epic of type `none`
+  merges without an epic approval (checks still re-run per
+  `merge.rerun_checks`). The merge records "merged without review (review: …)"
+  in the state history and, for squash merges, the commit message.
 
 There is no CLI path to change the type afterwards. Each type records who set
 it and when, e.g. `none · self-declared (allow_none) · 2026-10-27 10:12`;
